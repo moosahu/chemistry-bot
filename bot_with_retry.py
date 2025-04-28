@@ -7,6 +7,7 @@ import os
 import time
 import sys
 import base64
+import re # استيراد وحدة التعبيرات النمطية
 from io import BytesIO
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler, ConversationHandler
@@ -48,10 +49,10 @@ except Exception as e:
     sys.exit(f"Unexpected error initializing database: {e}")
 
 
-# حالات المحادثة لإضافة سؤال وحذف/عرض سؤال
+# حالات المحادثة لإضافة سؤال وحذف/عرض سؤال واستيراد
 (ADD_QUESTION_TEXT, ADD_OPTIONS, ADD_CORRECT_ANSWER, ADD_EXPLANATION, ADD_CHAPTER, ADD_LESSON, 
  ADD_QUESTION_IMAGE_PROMPT, WAITING_QUESTION_IMAGE, ADD_OPTION_IMAGES_PROMPT, WAITING_OPTION_IMAGE,
- DELETE_CONFIRM, SHOW_ID, IMPORT_CHANNEL_PROMPT) = range(13)
+ DELETE_CONFIRM, SHOW_ID, IMPORT_CHANNEL_PROMPT, WAITING_FORWARDED_QUESTIONS) = range(14)
 
 # --- وظائف التحقق من الصلاحيات ---
 def is_admin(user_id: int) -> bool:
@@ -460,7 +461,7 @@ def add_option_images_prompt(update: Update, context: CallbackContext) -> int:
         option_text = context.user_data['new_question']['options'][0]
         query.edit_message_text(
             f"الرجاء إرسال صورة للخيار الأول: {option_text}\n\n"
-            "(يمكنك إرسال أي صورة أخرى للتخطي)"
+            "(يمكنك إرسال أي رسالة نصية للتخطي)"
         )
         return WAITING_OPTION_IMAGE
     else:
@@ -468,24 +469,29 @@ def add_option_images_prompt(update: Update, context: CallbackContext) -> int:
         return save_question(update, context)
 
 def add_option_image(update: Update, context: CallbackContext) -> int:
-    """استلام صورة خيار."""
+    """استلام صورة خيار أو تخطيها."""
     user_id = update.effective_user.id
     current_index = context.user_data['current_option_index']
-    logger.info(f"Admin {user_id}: Received option image for option {current_index+1}")
+    file_id = None
     
-    # الحصول على معرف الصورة من تليجرام
-    photo = update.message.photo[-1]  # أخذ أكبر نسخة من الصورة
-    file_id = photo.file_id
-    
-    # تخزين معرف الصورة للخيار الحالي
-    context.user_data['new_question']['option_image_ids'][current_index] = file_id
-    
-    # إرسال رسالة تأكيد مع معاينة الصورة
-    option_text = context.user_data['new_question']['options'][current_index]
-    update.message.reply_photo(
-        photo=file_id,
-        caption=f"تم استلام صورة للخيار {current_index+1}: {option_text}"
-    )
+    if update.message.photo:
+        # الحصول على معرف الصورة من تليجرام
+        photo = update.message.photo[-1]  # أخذ أكبر نسخة من الصورة
+        file_id = photo.file_id
+        logger.info(f"Admin {user_id}: Received option image for option {current_index+1}")
+        # تخزين معرف الصورة للخيار الحالي
+        context.user_data['new_question']['option_image_ids'][current_index] = file_id
+        # إرسال رسالة تأكيد مع معاينة الصورة
+        option_text = context.user_data['new_question']['options'][current_index]
+        update.message.reply_photo(
+            photo=file_id,
+            caption=f"تم استلام صورة للخيار {current_index+1}: {option_text}"
+        )
+    else:
+        # المستخدم أرسل نصاً للتخطي
+        logger.info(f"Admin {user_id}: Skipped option image for option {current_index+1}")
+        update.message.reply_text(f"تم تخطي صورة الخيار {current_index+1}.")
+        context.user_data['new_question']['option_image_ids'][current_index] = None
     
     # التحقق مما إذا كان هناك المزيد من الخيارات
     current_index += 1
@@ -495,12 +501,12 @@ def add_option_image(update: Update, context: CallbackContext) -> int:
         option_text = context.user_data['new_question']['options'][current_index]
         update.message.reply_text(
             f"الرجاء إرسال صورة للخيار {current_index+1}: {option_text}\n\n"
-            "(يمكنك إرسال أي صورة أخرى للتخطي)"
+            "(يمكنك إرسال أي رسالة نصية للتخطي)"
         )
         return WAITING_OPTION_IMAGE
     else:
         # تم استلام صور لجميع الخيارات، نتابع لحفظ السؤال
-        update.message.reply_text("تم استلام صور جميع الخيارات. جاري حفظ السؤال...")
+        update.message.reply_text("تم الانتهاء من إضافة صور الخيارات. جاري حفظ السؤال...")
         return save_question(update, context)
 
 def save_question(update: Update, context: CallbackContext) -> int:
@@ -844,7 +850,7 @@ def delete_question_execute(update: Update, context: CallbackContext) -> None:
         reply_markup=reply_markup
     )
 
-# --- استيراد الأسئلة من قناة تليجرام ---
+# --- استيراد الأسئلة من قناة تليجرام (باستخدام إعادة التوجيه) ---
 def import_channel_start(update: Update, context: CallbackContext) -> int:
     """بدء عملية استيراد الأسئلة من قناة تليجرام."""
     user_id = update.effective_user.id
@@ -855,123 +861,170 @@ def import_channel_start(update: Update, context: CallbackContext) -> int:
         return ConversationHandler.END
     
     context.user_data['conversation_state'] = 'import_channel'
+    context.user_data['import_stats'] = {'success': 0, 'failed': 0}
+    
     update.callback_query.edit_message_text(
-        "📥 استيراد أسئلة من قناة تليجرام\n\n"
-        "الرجاء إرسال معرف القناة أو رابطها (مثال: @channel_name أو https://t.me/channel_name)\n\n"
-        "ملاحظة: يجب أن يكون البوت عضواً في القناة ليتمكن من قراءة الرسائل."
+        "📥 **استيراد أسئلة من قناة تليجرام**\n\n"
+        "نظراً لقيود واجهة برمجة تطبيقات تليجرام، لا يمكن للبوت قراءة سجل الرسائل القديمة مباشرة.\n\n"
+        "**الحل:**\n"
+        "1. اذهب إلى القناة التي تحتوي على الأسئلة.\n"
+        "2. قم **بإعادة توجيه (Forward)** الرسائل التي تحتوي على الأسئلة إلى هذه المحادثة (مع البوت).\n"
+        "3. يجب أن تكون الرسائل بالتنسيق الموضح أدناه.\n"
+        "4. عند الانتهاء، أرسل الأمر /done\n\n"
+        "**التنسيق المطلوب للرسالة:**\n"
+        "```"
+        "السؤال: نص السؤال هنا\n"
+        "الخيارات:\n"
+        "أ. الخيار الأول\n"
+        "ب. الخيار الثاني\n"
+        "ج. الخيار الثالث\n"
+        "د. الخيار الرابع\n"
+        "الإجابة الصحيحة: أ\n"
+        "الشرح: شرح الإجابة هنا (اختياري)\n"
+        "الفصل: اسم الفصل هنا (اختياري)\n"
+        "الدرس: اسم الدرس هنا (اختياري)"
+        "```\n"
+        "(يمكن إرفاق صورة مع الرسالة لتكون صورة السؤال)"
+        , parse_mode=ParseMode.MARKDOWN
     )
-    return IMPORT_CHANNEL_PROMPT
+    return WAITING_FORWARDED_QUESTIONS
 
-def process_channel_import(update: Update, context: CallbackContext) -> int:
-    """معالجة معرف القناة واستيراد الأسئلة منها."""
+def parse_question_text(text: str, photo_id: str = None) -> dict | None:
+    """تحليل نص الرسالة لاستخراج بيانات السؤال."""
+    if not text:
+        return None
+
+    data = {
+        'question_text': None,
+        'options': [],
+        'correct_answer_index': None,
+        'explanation': None,
+        'chapter': None,
+        'lesson': None,
+        'question_image_id': photo_id
+    }
+
+    # تعبيرات نمطية لاستخراج الأجزاء المختلفة
+    question_match = re.search(r"(?:السؤال|Question)[:
+
+	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
+    options_match = re.search(r"(?:الخيارات|Options)[:
+
+	 ]+
+?((?:[أ-د]|[a-d]|[1-4])[.
+
+	 ]+.+
+?)+?", text, re.IGNORECASE | re.MULTILINE)
+    correct_answer_match = re.search(r"(?:الإجابة الصحيحة|Correct Answer)[:
+
+	 ]+([أ-د]|[a-d]|[1-4])", text, re.IGNORECASE | re.MULTILINE)
+    explanation_match = re.search(r"(?:الشرح|Explanation)[:
+
+	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
+    chapter_match = re.search(r"(?:الفصل|Chapter)[:
+
+	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
+    lesson_match = re.search(r"(?:الدرس|Lesson)[:
+
+	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
+
+    if not question_match or not options_match or not correct_answer_match:
+        logger.warning("Parsing failed: Missing required fields (Question, Options, Correct Answer)")
+        return None
+
+    data['question_text'] = question_match.group(1).strip()
+    data['explanation'] = explanation_match.group(1).strip() if explanation_match else None
+    data['chapter'] = chapter_match.group(1).strip() if chapter_match else None
+    data['lesson'] = lesson_match.group(1).strip() if lesson_match else None
+
+    # تحليل الخيارات
+    option_lines = options_match.group(1).strip().split('\n')
+    option_map = {}
+    option_labels = ['أ', 'ب', 'ج', 'د', 'a', 'b', 'c', 'd', '1', '2', '3', '4']
+    for line in option_lines:
+        line = line.strip()
+        match = re.match(r"([أ-د]|[a-d]|[1-4])[.
+
+	 ]+(.+)", line)
+        if match:
+            label = match.group(1).lower()
+            option_text = match.group(2).strip()
+            data['options'].append(option_text)
+            option_map[label] = len(data['options']) - 1 # Store index based on label
+
+    if len(data['options']) < 2:
+        logger.warning("Parsing failed: Less than 2 options found.")
+        return None
+
+    # تحديد فهرس الإجابة الصحيحة
+    correct_label = correct_answer_match.group(1).lower()
+    if correct_label in option_map:
+        data['correct_answer_index'] = option_map[correct_label]
+    else:
+        logger.warning(f"Parsing failed: Correct answer label '{correct_label}' not found in options.")
+        return None
+
+    return data
+
+def handle_forwarded_question(update: Update, context: CallbackContext) -> int:
+    """معالجة رسالة معاد توجيهها تحتوي على سؤال."""
     user_id = update.effective_user.id
-    channel_id = update.message.text.strip()
-    logger.info(f"Admin {user_id}: Processing channel import from {channel_id}")
+    logger.info(f"Admin {user_id}: Received forwarded message for import.")
+
+    # التأكد من أن الرسالة معاد توجيهها
+    if not update.message.forward_date:
+        update.message.reply_text("الرجاء إعادة توجيه الرسائل من القناة. أرسل /done عند الانتهاء.")
+        return WAITING_FORWARDED_QUESTIONS
+
+    # استخراج النص والصورة
+    text_content = update.message.text or update.message.caption
+    photo_id = update.message.photo[-1].file_id if update.message.photo else None
+
+    # تحليل النص
+    parsed_data = parse_question_text(text_content, photo_id)
+
+    if parsed_data:
+        try:
+            success = QUIZ_DB.add_question(**parsed_data)
+            if success:
+                context.user_data['import_stats']['success'] += 1
+                update.message.reply_text(f"✅ تم استيراد السؤال بنجاح: {parsed_data['question_text'][:50]}...")
+            else:
+                context.user_data['import_stats']['failed'] += 1
+                update.message.reply_text(f"❌ فشل حفظ السؤال في قاعدة البيانات: {parsed_data['question_text'][:50]}...")
+        except Exception as e:
+            context.user_data['import_stats']['failed'] += 1
+            logger.error(f"Error adding imported question to DB: {e}", exc_info=True)
+            update.message.reply_text(f"❌ حدث خطأ أثناء حفظ السؤال: {str(e)}")
+    else:
+        context.user_data['import_stats']['failed'] += 1
+        update.message.reply_text("⚠️ لم يتم التعرف على تنسيق السؤال في هذه الرسالة. تم تجاهلها.")
+
+    return WAITING_FORWARDED_QUESTIONS
+
+def end_channel_import(update: Update, context: CallbackContext) -> int:
+    """إنهاء عملية استيراد الأسئلة من القناة."""
+    user_id = update.effective_user.id
+    stats = context.user_data.get('import_stats', {'success': 0, 'failed': 0})
+    logger.info(f"Admin {user_id}: Finished channel import. Success: {stats['success']}, Failed: {stats['failed']}")
     
-    # تنظيف معرف القناة
-    if channel_id.startswith('https://t.me/'):
-        channel_id = '@' + channel_id.split('/')[-1]
-    elif not channel_id.startswith('@'):
-        channel_id = '@' + channel_id
-    
-    # إرسال رسالة انتظار
-    status_message = update.message.reply_text(
-        f"جاري محاولة الوصول إلى القناة {channel_id}...\n"
-        "قد تستغرق هذه العملية بعض الوقت حسب عدد الرسائل في القناة."
+    update.message.reply_text(
+        f"🏁 انتهت عملية استيراد الأسئلة.\n\n"
+        f"✅ الأسئلة المستوردة بنجاح: {stats['success']}\n"
+        f"❌ الرسائل التي فشل استيرادها: {stats['failed']}"
     )
     
-    try:
-        # محاولة الوصول إلى القناة
-        context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
-        
-        # هنا نقوم بمحاولة الحصول على آخر 100 رسالة من القناة
-        # ملاحظة: هذا يتطلب أن يكون البوت عضواً في القناة
-        imported_count = 0
-        failed_count = 0
-        
-        try:
-            # محاولة استخدام getHistory API (قد لا تكون متاحة في python-telegram-bot 13.15)
-            # لذلك نستخدم طريقة بديلة للحصول على الرسائل
-            
-            # إرسال رسالة إلى القناة للتأكد من الوصول (سيتم حذفها لاحقاً)
-            test_msg = context.bot.send_message(chat_id=channel_id, text="اختبار الوصول")
-            context.bot.delete_message(chat_id=channel_id, message_id=test_msg.message_id)
-            
-            status_message.edit_text(
-                f"تم الوصول إلى القناة {channel_id} بنجاح!\n"
-                "جاري تحليل الرسائل واستخراج الأسئلة...\n\n"
-                "ملاحظة: سيتم استيراد الأسئلة التي تتبع التنسيق التالي:\n"
-                "- نص السؤال\n"
-                "- أربعة خيارات (أ، ب، ج، د) أو (1، 2، 3، 4)\n"
-                "- الإجابة الصحيحة مشار إليها بوضوح"
-            )
-            
-            # في هذه المرحلة، نحتاج إلى تنفيذ عملية استيراد الأسئلة من القناة
-            # هذا يتطلب تحليل محتوى الرسائل واستخراج الأسئلة والخيارات والإجابات
-            
-            # نظراً لقيود API تليجرام، سنقوم بإرسال رسالة توضح للمستخدم كيفية تنسيق الأسئلة
-            # ليتم استيرادها بشكل صحيح في المستقبل
-            
-            update.message.reply_text(
-                "🔍 تعليمات استيراد الأسئلة من القناة:\n\n"
-                "لضمان استيراد الأسئلة بشكل صحيح، يجب أن تكون الرسائل في القناة بالتنسيق التالي:\n\n"
-                "<b>السؤال:</b> نص السؤال هنا\n"
-                "<b>الخيارات:</b>\n"
-                "أ. الخيار الأول\n"
-                "ب. الخيار الثاني\n"
-                "ج. الخيار الثالث\n"
-                "د. الخيار الرابع\n"
-                "<b>الإجابة الصحيحة:</b> أ\n"
-                "<b>الشرح:</b> شرح الإجابة هنا (اختياري)\n"
-                "<b>الفصل:</b> اسم الفصل هنا (اختياري)\n"
-                "<b>الدرس:</b> اسم الدرس هنا (اختياري)\n\n"
-                "يمكنك أيضاً إرفاق صورة مع السؤال إذا كنت ترغب في ذلك.",
-                parse_mode=ParseMode.HTML
-            )
-            
-            # في هذه المرحلة، سنقوم بإضافة وظيفة لاستيراد الأسئلة من القناة
-            # ولكن نظراً لتعقيد هذه العملية، سنقوم بتنفيذها في تحديث مستقبلي
-            
-            update.message.reply_text(
-                "⚠️ ميزة استيراد الأسئلة من القناة قيد التطوير حالياً.\n\n"
-                "في الإصدار الحالي، يمكنك إضافة الأسئلة يدوياً باستخدام زر 'إضافة سؤال جديد'.\n\n"
-                "سيتم إطلاق ميزة الاستيراد التلقائي في تحديث قريب. شكراً لتفهمك!"
-            )
-            
-        except Unauthorized:
-            update.message.reply_text(
-                f"❌ خطأ: البوت ليس عضواً في القناة {channel_id}.\n\n"
-                "يجب إضافة البوت كعضو في القناة أولاً ليتمكن من قراءة الرسائل."
-            )
-        except Exception as e:
-            logger.error(f"Error importing from channel: {e}", exc_info=True)
-            update.message.reply_text(
-                f"❌ حدث خطأ أثناء محاولة استيراد الأسئلة: {str(e)}\n\n"
-                "يرجى التأكد من صحة معرف القناة وأن البوت عضو فيها."
-            )
-    
-    except Exception as e:
-        logger.error(f"Error in channel import: {e}", exc_info=True)
-        update.message.reply_text(f"❌ حدث خطأ: {str(e)}")
-    
-    # إنهاء المحادثة
+    # تنظيف بيانات المستخدم
+    if 'import_stats' in context.user_data:
+        del context.user_data['import_stats']
     if 'conversation_state' in context.user_data:
         del context.user_data['conversation_state']
-    
+        
     # إعادة عرض قائمة الإدارة
     keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الإدارة", callback_data='menu_admin')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("العملية انتهت. يمكنك العودة إلى قائمة الإدارة.", reply_markup=reply_markup)
+    update.message.reply_text("يمكنك العودة إلى قائمة الإدارة:", reply_markup=reply_markup)
     
-    return ConversationHandler.END
-
-def cancel_import_channel(update: Update, context: CallbackContext) -> int:
-    """إلغاء عملية استيراد الأسئلة من القناة."""
-    user_id = update.effective_user.id
-    logger.info(f"User {user_id} cancelled channel import.")
-    update.message.reply_text('تم إلغاء عملية استيراد الأسئلة من القناة.')
-    if 'conversation_state' in context.user_data:
-        del context.user_data['conversation_state']
     return ConversationHandler.END
 
 # --- وظائف الاختبار ---
@@ -1423,7 +1476,7 @@ def main() -> None:
             ADD_QUESTION_IMAGE_PROMPT: [CallbackQueryHandler(add_question_image_prompt, pattern='^add_image_(yes|no)$')],
             WAITING_QUESTION_IMAGE: [MessageHandler(Filters.photo, add_question_image)],
             ADD_OPTION_IMAGES_PROMPT: [CallbackQueryHandler(add_option_images_prompt, pattern='^add_option_images_(yes|no)$')],
-            WAITING_OPTION_IMAGE: [MessageHandler(Filters.photo, add_option_image)],
+            WAITING_OPTION_IMAGE: [MessageHandler(Filters.photo | (Filters.text & ~Filters.command), add_option_image)], # السماح بالنص للتخطي
         },
         fallbacks=[CommandHandler('cancel', cancel_add_question)],
         per_message=False,
@@ -1436,7 +1489,7 @@ def main() -> None:
         states={
             SHOW_ID: [MessageHandler(Filters.text & ~Filters.command, show_question_by_id)],
         },
-        fallbacks=[CommandHandler('cancel', cancel_add_question)],
+        fallbacks=[CommandHandler('cancel', cancel_add_question)], # يمكن استخدام نفس دالة الإلغاء
         per_message=False,
     )
     dispatcher.add_handler(show_question_conv_handler)
@@ -1447,7 +1500,7 @@ def main() -> None:
         states={
             DELETE_CONFIRM: [MessageHandler(Filters.text & ~Filters.command, delete_question_confirm)],
         },
-        fallbacks=[CommandHandler('cancel', cancel_add_question)],
+        fallbacks=[CommandHandler('cancel', cancel_add_question)], # يمكن استخدام نفس دالة الإلغاء
         per_message=False,
     )
     dispatcher.add_handler(delete_question_conv_handler)
@@ -1455,13 +1508,13 @@ def main() -> None:
     # 6. معالج تأكيد/إلغاء حذف سؤال
     dispatcher.add_handler(CallbackQueryHandler(delete_question_execute, pattern='^(confirm_delete_[0-9]+|cancel_delete)$'))
 
-    # 7. محادثة استيراد الأسئلة من قناة
+    # 7. محادثة استيراد الأسئلة من قناة (باستخدام إعادة التوجيه)
     import_channel_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(import_channel_start, pattern='^admin_import_channel$')],
         states={
-            IMPORT_CHANNEL_PROMPT: [MessageHandler(Filters.text & ~Filters.command, process_channel_import)],
+            WAITING_FORWARDED_QUESTIONS: [MessageHandler(Filters.forwarded & (Filters.text | Filters.caption | Filters.photo), handle_forwarded_question)],
         },
-        fallbacks=[CommandHandler('cancel', cancel_import_channel)],
+        fallbacks=[CommandHandler('done', end_channel_import)],
         per_message=False,
     )
     dispatcher.add_handler(import_channel_conv_handler)
@@ -1472,7 +1525,7 @@ def main() -> None:
     dispatcher.add_handler(CallbackQueryHandler(show_chapter_for_lesson_selection, pattern='^quiz_by_lesson$'))
     dispatcher.add_handler(CallbackQueryHandler(start_chapter_quiz, pattern='^quiz_chapter_'))
     dispatcher.add_handler(CallbackQueryHandler(show_lesson_selection, pattern='^quiz_lesson_chapter_'))
-    dispatcher.add_handler(CallbackQueryHandler(start_lesson_quiz, pattern='^quiz_lesson_[^c]'))
+    dispatcher.add_handler(CallbackQueryHandler(start_lesson_quiz, pattern='^quiz_lesson_[^c]')) # نمط معدل لتجنب التعارض
     dispatcher.add_handler(CallbackQueryHandler(handle_quiz_answer, pattern='^quiz_answer_'))
     dispatcher.add_handler(CallbackQueryHandler(show_next_question, pattern='^quiz_next$'))
     dispatcher.add_handler(CallbackQueryHandler(end_quiz, pattern='^quiz_end$'))
