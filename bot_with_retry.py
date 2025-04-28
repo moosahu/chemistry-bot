@@ -24,7 +24,7 @@ from quiz_db import QuizDatabase
 # ضع معرف المستخدم الرقمي الخاص بك هنا لتقييد الوصول إلى إدارة قاعدة البيانات
 ADMIN_USER_ID = 6448526509 # !!! استبدل هذا بمعرف المستخدم الرقمي الخاص بك !!!
 # توكن البوت
-TOKEN = "YOUR_BOT_8167394360:AAG-b3v-VDmxLtWVQCuBkc694Mt3ZCs18IY" # !!! استبدل هذا بتوكن البوت الخاص بك بدقة تامة !!!
+TOKEN = "8167394360:AAG-b3v-VDmxLtWVQCuBkc694Mt3ZCs18IY" # !!! استبدل هذا بتوكن البوت الخاص بك بدقة تامة !!!
 
 # تكوين التسجيل
 log_file_path = os.path.join(os.path.dirname(__file__), 'bot_log.txt')
@@ -49,10 +49,11 @@ except Exception as e:
     sys.exit(f"Unexpected error initializing database: {e}")
 
 
-# حالات المحادثة لإضافة سؤال وحذف/عرض سؤال واستيراد
+# حالات المحادثة لإضافة سؤال وحذف/عرض سؤال
+# تم إزالة حالات الاستيراد
 (ADD_QUESTION_TEXT, ADD_OPTIONS, ADD_CORRECT_ANSWER, ADD_EXPLANATION, ADD_CHAPTER, ADD_LESSON, 
  ADD_QUESTION_IMAGE_PROMPT, WAITING_QUESTION_IMAGE, ADD_OPTION_IMAGES_PROMPT, WAITING_OPTION_IMAGE,
- DELETE_CONFIRM, SHOW_ID, IMPORT_CHANNEL_PROMPT, WAITING_FORWARDED_QUESTIONS) = range(14)
+ DELETE_CONFIRM, SHOW_ID) = range(12)
 
 # --- وظائف التحقق من الصلاحيات ---
 def is_admin(user_id: int) -> bool:
@@ -109,7 +110,7 @@ def show_admin_menu(update: Update, context: CallbackContext) -> None:
         [InlineKeyboardButton("📋 عرض قائمة الأسئلة", callback_data='admin_list')],
         [InlineKeyboardButton("🗑️ حذف سؤال", callback_data='admin_delete_prompt')],
         [InlineKeyboardButton("ℹ️ عرض سؤال معين", callback_data='admin_show_prompt')],
-        [InlineKeyboardButton("📥 استيراد أسئلة من قناة", callback_data='admin_import_channel')],
+        # تم إزالة زر استيراد الأسئلة
         [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -220,12 +221,7 @@ def main_menu_button_handler(update: Update, context: CallbackContext) -> None:
             query.answer("عذراً، هذا القسم متاح للمسؤول فقط.", show_alert=True)
             return ConversationHandler.END
         return show_question_prompt(update, context)
-    elif data == 'admin_import_channel':
-        # Check if user is admin before starting conversation
-        if not is_admin(user_id):
-            query.answer("عذراً، هذا القسم متاح للمسؤول فقط.", show_alert=True)
-            return ConversationHandler.END
-        return import_channel_start(update, context)
+    # تم إزالة معالج زر استيراد الأسئلة
     # --- معالجات أزرار قائمة الاختبارات ---
     elif data == 'quiz_random':
         start_random_quiz(update, context)
@@ -850,164 +846,7 @@ def delete_question_execute(update: Update, context: CallbackContext) -> None:
         reply_markup=reply_markup
     )
 
-# --- استيراد الأسئلة من قناة تليجرام (باستخدام إعادة التوجيه) ---
-def import_channel_start(update: Update, context: CallbackContext) -> int:
-    """بدء عملية استيراد الأسئلة من قناة تليجرام."""
-    user_id = update.effective_user.id
-    logger.info(f"Admin {user_id}: Starting channel import conversation")
-    
-    if not is_admin(user_id):
-        update.callback_query.answer("عذراً، هذا القسم متاح للمسؤول فقط.", show_alert=True)
-        return ConversationHandler.END
-    
-    context.user_data['conversation_state'] = 'import_channel'
-    context.user_data['import_stats'] = {'success': 0, 'failed': 0}
-    
-    update.callback_query.edit_message_text(
-        "📥 **استيراد أسئلة من قناة تليجرام**\n\n"
-        "نظراً لقيود واجهة برمجة تطبيقات تليجرام، لا يمكن للبوت قراءة سجل الرسائل القديمة مباشرة.\n\n"
-        "**الحل:**\n"
-        "1. اذهب إلى القناة التي تحتوي على الأسئلة.\n"
-        "2. قم **بإعادة توجيه (Forward)** الرسائل التي تحتوي على الأسئلة إلى هذه المحادثة (مع البوت).\n"
-        "3. يجب أن تكون الرسائل بالتنسيق الموضح أدناه.\n"
-        "4. عند الانتهاء، أرسل الأمر /done\n\n"
-        "**التنسيق المطلوب للرسالة:**\n"
-        "```"
-        "السؤال: نص السؤال هنا\n"
-        "الخيارات:\n"
-        "أ. الخيار الأول\n"
-        "ب. الخيار الثاني\n"
-        "ج. الخيار الثالث\n"
-        "د. الخيار الرابع\n"
-        "الإجابة الصحيحة: أ\n"
-        "الشرح: شرح الإجابة هنا (اختياري)\n"
-        "الفصل: اسم الفصل هنا (اختياري)\n"
-        "الدرس: اسم الدرس هنا (اختياري)"
-        "```\n"
-        "(يمكن إرفاق صورة مع الرسالة لتكون صورة السؤال)"
-        , parse_mode=ParseMode.MARKDOWN
-    )
-    return WAITING_FORWARDED_QUESTIONS
-
-def parse_question_text(text: str, photo_id: str = None) -> dict | None:
-    """تحليل نص الرسالة لاستخراج بيانات السؤال."""
-    if not text:
-        return None
-
-    data = {
-        'question_text': None,
-        'options': [],
-        'correct_answer_index': None,
-        'explanation': None,
-        'chapter': None,
-        'lesson': None,
-        'question_image_id': photo_id
-    }
-
-    # تعبيرات نمطية لاستخراج الأجزاء المختلفة
-    question_match = re.search(r"(?:السؤال|Question)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
-    options_match = re.search(r"(?:الخيارات|Options)[:]\s+\n?((?:[أ-د]|[a-d]|[1-4])[.]\s+.+\n?)+?", text, re.IGNORECASE | re.MULTILINE)
-    correct_answer_match = re.search(r"(?:الإجابة الصحيحة|Correct Answer)[:]\s+([أ-د]|[a-d]|[1-4])", text, re.IGNORECASE | re.MULTILINE)
-    explanation_match = re.search(r"(?:الشرح|Explanation)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
-    chapter_match = re.search(r"(?:الفصل|Chapter)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
-    lesson_match = re.search(r"(?:الدرس|Lesson)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
-
-    if not question_match or not options_match or not correct_answer_match:
-        logger.warning("Parsing failed: Missing required fields (Question, Options, Correct Answer)")
-        return None
-
-    data['question_text'] = question_match.group(1).strip()
-    data['explanation'] = explanation_match.group(1).strip() if explanation_match else None
-    data['chapter'] = chapter_match.group(1).strip() if chapter_match else None
-    data['lesson'] = lesson_match.group(1).strip() if lesson_match else None
-
-    # تحليل الخيارات
-    option_lines = options_match.group(1).strip().split('\n')
-    option_map = {}
-    option_labels = ['أ', 'ب', 'ج', 'د', 'a', 'b', 'c', 'd', '1', '2', '3', '4']
-    for line in option_lines:
-        line = line.strip()
-        match = re.match(r"([أ-د]|[a-d]|[1-4])[.]\s+(.+)", line)
-        if match:
-            label = match.group(1).lower()
-            option_text = match.group(2).strip()
-            data['options'].append(option_text)
-            option_map[label] = len(data['options']) - 1 # Store index based on label
-
-    if len(data['options']) < 2:
-        logger.warning("Parsing failed: Less than 2 options found.")
-        return None
-
-    # تحديد فهرس الإجابة الصحيحة
-    correct_label = correct_answer_match.group(1).lower()
-    if correct_label in option_map:
-        data['correct_answer_index'] = option_map[correct_label]
-    else:
-        logger.warning(f"Parsing failed: Correct answer label '{correct_label}' not found in options.")
-        return None
-
-    return data
-
-def handle_forwarded_question(update: Update, context: CallbackContext) -> int:
-    """معالجة رسالة معاد توجيهها تحتوي على سؤال."""
-    user_id = update.effective_user.id
-    logger.info(f"Admin {user_id}: Received forwarded message for import.")
-
-    # التأكد من أن الرسالة معاد توجيهها
-    if not update.message.forward_date:
-        update.message.reply_text("الرجاء إعادة توجيه الرسائل من القناة. أرسل /done عند الانتهاء.")
-        return WAITING_FORWARDED_QUESTIONS
-
-    # استخراج النص والصورة
-    text_content = update.message.text or update.message.caption
-    photo_id = update.message.photo[-1].file_id if update.message.photo else None
-
-    # تحليل النص
-    parsed_data = parse_question_text(text_content, photo_id)
-
-    if parsed_data:
-        try:
-            success = QUIZ_DB.add_question(**parsed_data)
-            if success:
-                context.user_data['import_stats']['success'] += 1
-                update.message.reply_text(f"✅ تم استيراد السؤال بنجاح: {parsed_data['question_text'][:50]}...")
-            else:
-                context.user_data['import_stats']['failed'] += 1
-                update.message.reply_text(f"❌ فشل حفظ السؤال في قاعدة البيانات: {parsed_data['question_text'][:50]}...")
-        except Exception as e:
-            context.user_data['import_stats']['failed'] += 1
-            logger.error(f"Error adding imported question to DB: {e}", exc_info=True)
-            update.message.reply_text(f"❌ حدث خطأ أثناء حفظ السؤال: {str(e)}")
-    else:
-        context.user_data['import_stats']['failed'] += 1
-        update.message.reply_text("⚠️ لم يتم التعرف على تنسيق السؤال في هذه الرسالة. تم تجاهلها.")
-
-    return WAITING_FORWARDED_QUESTIONS
-
-def end_channel_import(update: Update, context: CallbackContext) -> int:
-    """إنهاء عملية استيراد الأسئلة من القناة."""
-    user_id = update.effective_user.id
-    stats = context.user_data.get('import_stats', {'success': 0, 'failed': 0})
-    logger.info(f"Admin {user_id}: Finished channel import. Success: {stats['success']}, Failed: {stats['failed']}")
-    
-    update.message.reply_text(
-        f"🏁 انتهت عملية استيراد الأسئلة.\n\n"
-        f"✅ الأسئلة المستوردة بنجاح: {stats['success']}\n"
-        f"❌ الرسائل التي فشل استيرادها: {stats['failed']}"
-    )
-    
-    # تنظيف بيانات المستخدم
-    if 'import_stats' in context.user_data:
-        del context.user_data['import_stats']
-    if 'conversation_state' in context.user_data:
-        del context.user_data['conversation_state']
-        
-    # إعادة عرض قائمة الإدارة
-    keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الإدارة", callback_data='menu_admin')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("يمكنك العودة إلى قائمة الإدارة:", reply_markup=reply_markup)
-    
-    return ConversationHandler.END
+# --- تم إزالة وظائف استيراد الأسئلة من قناة تليجرام ---
 
 # --- وظائف الاختبار ---
 def start_random_quiz(update: Update, context: CallbackContext) -> None:
@@ -1410,15 +1249,30 @@ def end_quiz(update: Update, context: CallbackContext) -> None:
         )
     except TelegramError as e:
         # إذا كانت الرسالة تحتوي على صورة، نرسل رسالة جديدة بدلاً من تعديل الرسالة الحالية
-        if "There is no text in the message to edit" in str(e):
+        if "There is no text in the message to edit" in str(e) or "message can't be edited" in str(e):
+            logger.info("Original message was a photo, sending new message for quiz end.")
             context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=result_text,
                 reply_markup=reply_markup
             )
+            # محاولة حذف الرسالة الأصلية (الصورة)
+            try:
+                query.delete_message()
+            except Exception as delete_error:
+                logger.warning(f"Could not delete original photo message after sending quiz end: {delete_error}")
         else:
             logger.error(f"Error ending quiz: {e}")
-            raise
+            # لا ترفع الخطأ هنا للسماح للبوت بالاستمرار
+            # إرسال رسالة جديدة كحل بديل
+            try:
+                context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=result_text,
+                    reply_markup=reply_markup
+                )
+            except Exception as send_error:
+                logger.error(f"Failed to send quiz end message as fallback: {send_error}")
     
     # تنظيف بيانات الاختبار
     if 'quiz' in context.user_data:
@@ -1503,18 +1357,9 @@ def main() -> None:
     # 6. معالج تأكيد/إلغاء حذف سؤال
     dispatcher.add_handler(CallbackQueryHandler(delete_question_execute, pattern='^(confirm_delete_[0-9]+|cancel_delete)$'))
 
-    # 7. محادثة استيراد الأسئلة من قناة (باستخدام إعادة التوجيه)
-    import_channel_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(import_channel_start, pattern='^admin_import_channel$')],
-        states={
-            WAITING_FORWARDED_QUESTIONS: [MessageHandler(Filters.forwarded & (Filters.text | Filters.caption | Filters.photo), handle_forwarded_question)],
-        },
-        fallbacks=[CommandHandler('done', end_channel_import)],
-        per_message=False,
-    )
-    dispatcher.add_handler(import_channel_conv_handler)
+    # تم إزالة محادثة استيراد الأسئلة من قناة
 
-    # 8. معالجات أزرار الاختبار
+    # 7. معالجات أزرار الاختبار
     dispatcher.add_handler(CallbackQueryHandler(start_random_quiz, pattern='^quiz_random$'))
     dispatcher.add_handler(CallbackQueryHandler(show_chapter_selection, pattern='^quiz_by_chapter$'))
     dispatcher.add_handler(CallbackQueryHandler(show_chapter_for_lesson_selection, pattern='^quiz_by_lesson$'))
@@ -1525,10 +1370,10 @@ def main() -> None:
     dispatcher.add_handler(CallbackQueryHandler(show_next_question, pattern='^quiz_next$'))
     dispatcher.add_handler(CallbackQueryHandler(end_quiz, pattern='^quiz_end$'))
 
-    # 9. معالج أزرار القوائم (يجب أن يكون بعد معالجات المحادثات المحددة)
+    # 8. معالج أزرار القوائم (يجب أن يكون بعد معالجات المحادثات المحددة)
     dispatcher.add_handler(CallbackQueryHandler(main_menu_button_handler))
 
-    # 10. تسجيل معالج الأخطاء
+    # 9. تسجيل معالج الأخطاء
     dispatcher.add_error_handler(error_handler)
 
     # بدء البوت
@@ -1541,3 +1386,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
