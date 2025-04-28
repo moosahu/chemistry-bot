@@ -23,7 +23,7 @@ from quiz_db import QuizDatabase
 # ضع معرف المستخدم الرقمي الخاص بك هنا لتقييد الوصول إلى إدارة قاعدة البيانات
 ADMIN_USER_ID = 6448526509 # !!! استبدل هذا بمعرف المستخدم الرقمي الخاص بك !!!
 # توكن البوت
-TOKEN = "YOUR_BOT_TOKEN_HERE" # !!! استبدل هذا بتوكن البوت الخاص بك بدقة تامة !!!
+TOKEN = "8167394360:AAG-b3v-VDmxLtWVQCuBkc694Mt3ZCs18IY" # !!! استبدل هذا بتوكن البوت الخاص بك بدقة تامة !!!
 
 # تكوين التسجيل
 log_file_path = os.path.join(os.path.dirname(__file__), 'bot_log.txt')
