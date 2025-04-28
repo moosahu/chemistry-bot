@@ -16,7 +16,7 @@ from telegram.ext import (
 from telegram.error import TelegramError, BadRequest
 
 # استيراد قاعدة البيانات المحسنة مع دعم المراحل الدراسية
-from quiz_db_grades import QuizDatabase
+from quiz_db import QuizDatabase
 
 # إعداد التسجيل
 logging.basicConfig(
