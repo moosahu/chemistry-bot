@@ -24,7 +24,7 @@ from quiz_db import QuizDatabase
 # ضع معرف المستخدم الرقمي الخاص بك هنا لتقييد الوصول إلى إدارة قاعدة البيانات
 ADMIN_USER_ID = 6448526509 # !!! استبدل هذا بمعرف المستخدم الرقمي الخاص بك !!!
 # توكن البوت
-TOKEN = "8167394360:AAG-b3v-VDmxLtWVQCuBkc694Mt3ZCs18IY" # !!! استبدل هذا بتوكن البوت الخاص بك بدقة تامة !!!
+TOKEN = "YOUR_BOT_8167394360:AAG-b3v-VDmxLtWVQCuBkc694Mt3ZCs18IY" # !!! استبدل هذا بتوكن البوت الخاص بك بدقة تامة !!!
 
 # تكوين التسجيل
 log_file_path = os.path.join(os.path.dirname(__file__), 'bot_log.txt')
@@ -905,28 +905,12 @@ def parse_question_text(text: str, photo_id: str = None) -> dict | None:
     }
 
     # تعبيرات نمطية لاستخراج الأجزاء المختلفة
-    question_match = re.search(r"(?:السؤال|Question)[:
-
-	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
-    options_match = re.search(r"(?:الخيارات|Options)[:
-
-	 ]+
-?((?:[أ-د]|[a-d]|[1-4])[.
-
-	 ]+.+
-?)+?", text, re.IGNORECASE | re.MULTILINE)
-    correct_answer_match = re.search(r"(?:الإجابة الصحيحة|Correct Answer)[:
-
-	 ]+([أ-د]|[a-d]|[1-4])", text, re.IGNORECASE | re.MULTILINE)
-    explanation_match = re.search(r"(?:الشرح|Explanation)[:
-
-	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
-    chapter_match = re.search(r"(?:الفصل|Chapter)[:
-
-	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
-    lesson_match = re.search(r"(?:الدرس|Lesson)[:
-
-	 ]+(.+)", text, re.IGNORECASE | re.MULTILINE)
+    question_match = re.search(r"(?:السؤال|Question)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
+    options_match = re.search(r"(?:الخيارات|Options)[:]\s+\n?((?:[أ-د]|[a-d]|[1-4])[.]\s+.+\n?)+?", text, re.IGNORECASE | re.MULTILINE)
+    correct_answer_match = re.search(r"(?:الإجابة الصحيحة|Correct Answer)[:]\s+([أ-د]|[a-d]|[1-4])", text, re.IGNORECASE | re.MULTILINE)
+    explanation_match = re.search(r"(?:الشرح|Explanation)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
+    chapter_match = re.search(r"(?:الفصل|Chapter)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
+    lesson_match = re.search(r"(?:الدرس|Lesson)[:]\s+(.+)", text, re.IGNORECASE | re.MULTILINE)
 
     if not question_match or not options_match or not correct_answer_match:
         logger.warning("Parsing failed: Missing required fields (Question, Options, Correct Answer)")
@@ -943,9 +927,7 @@ def parse_question_text(text: str, photo_id: str = None) -> dict | None:
     option_labels = ['أ', 'ب', 'ج', 'د', 'a', 'b', 'c', 'd', '1', '2', '3', '4']
     for line in option_lines:
         line = line.strip()
-        match = re.match(r"([أ-د]|[a-d]|[1-4])[.
-
-	 ]+(.+)", line)
+        match = re.match(r"([أ-د]|[a-d]|[1-4])[.]\s+(.+)", line)
         if match:
             label = match.group(1).lower()
             option_text = match.group(2).strip()
@@ -1420,10 +1402,23 @@ def end_quiz(update: Update, context: CallbackContext) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     # إرسال النتيجة النهائية
-    query.edit_message_text(
-        text=result_text,
-        reply_markup=reply_markup
-    )
+    # تعديل: التحقق مما إذا كانت الرسالة الحالية تحتوي على صورة
+    try:
+        query.edit_message_text(
+            text=result_text,
+            reply_markup=reply_markup
+        )
+    except TelegramError as e:
+        # إذا كانت الرسالة تحتوي على صورة، نرسل رسالة جديدة بدلاً من تعديل الرسالة الحالية
+        if "There is no text in the message to edit" in str(e):
+            context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=result_text,
+                reply_markup=reply_markup
+            )
+        else:
+            logger.error(f"Error ending quiz: {e}")
+            raise
     
     # تنظيف بيانات الاختبار
     if 'quiz' in context.user_data:
