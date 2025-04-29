@@ -1064,7 +1064,7 @@ def show_next_question_internal(context: CallbackContext, chat_id: int, user_id:
     # Use concatenation to avoid multi-line f-string issues
     q_num_text = f"*السؤال {current_index + 1} من {len(questions)}:*\n" + "\n"
 
-"
+
 
     # Send question (with image if available)
     try:
