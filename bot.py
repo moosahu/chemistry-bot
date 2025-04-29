@@ -1179,7 +1179,7 @@ def handle_answer(update: Update, context: CallbackContext):
 # Use concatenation to avoid multi-line f-string issues
 q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['questions'])}:*\n" + "\n"
 
-"
+
             original_caption = q_num_text + process_text_with_chemical_notation(question['question_text'])
             final_text = original_caption + "
 
