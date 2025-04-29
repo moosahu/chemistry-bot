@@ -1,1 +1,1 @@
-worker: python grade_level_quiz_bot.py
+worker: python bot.py
