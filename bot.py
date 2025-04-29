@@ -876,12 +876,8 @@ def send_question(update: Update, context: CallbackContext, chat_id: int):
     question_text = question_data['question_text']
     options = question_data['options'] # List of strings
     image_data = question_data.get('image_data') # Optional image data (bytes)
-
     # Format question message
-    message_text = f"*السؤال {current_index + 1} من {total_questions}:*
-
-{question_text}"
-
+    message_text = f"*السؤال {current_index + 1} من {total_questions}:*\n\n{question_text}"
     keyboard = create_quiz_question_keyboard(options, question_id)
 
     try:
