@@ -388,8 +388,11 @@ def remove_question_timer(context: CallbackContext):
 
 def start_command(update: Update, context: CallbackContext) -> int:
     """معالجة أمر /start."""
-    user = update.effective_user
-    chat_id = update.effective_chat.id
+    user = update.message.from_user # Correct way for v12.8 CommandHandler
+    if not user: # Fallback for potential edge cases (though unlikely for CommandHandler)
+        logger.warning("Could not get user from update.message.from_user in start_command")
+        return ConversationHandler.END
+    chat_id = update.effective_chat.id # effective_chat is still valid in v12.8
     logger.info(f"User {user.id} in chat {chat_id} started the bot.")
     
     # تخزين معرف المستخدم للوصول إليه لاحقاً في المؤقتات
@@ -2077,22 +2080,30 @@ def end_quiz_internal(context: CallbackContext, chat_id, user_id, end_message="�
             logger.error(f"Failed to send new quiz end message: {send_error}")
 
 # --- معالج الأخطاء --- 
-
-def error_handler(update: object, context: CallbackContext) -> None:
+def error_handler(update, context):
     """Log Errors caused by Updates."""
+    # Log the error before doing anything else
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
-    
-    # محاولة إعلام المستخدم بالخطأ إذا أمكن
-    if isinstance(update, Update) and update.effective_chat:
+
+    # Try to inform the user if possible
+    chat_id = None
+    if update and hasattr(update, 'effective_chat') and update.effective_chat:
+        chat_id = update.effective_chat.id
+
+    if chat_id:
         try:
             context.bot.send_message(
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 text="⚠️ حدث خطأ غير متوقع أثناء معالجة طلبك. يرجى المحاولة مرة أخرى لاحقاً."
             )
         except Unauthorized:
-            logger.warning(f"Bot unauthorized to send message to chat {update.effective_chat.id}")
+            # Can't send message if bot was kicked or blocked
+            logger.warning(f"Bot unauthorized to send message to chat {chat_id}")
         except Exception as e:
-            logger.error(f"Exception while sending error message to user: {e}")
+            # Catch other potential exceptions during sending
+            logger.error(f"Exception while sending error message to user in chat {chat_id}: {e}")
+    else:
+        logger.warning("Could not determine chat_id to send error message.")
 
 # --- الوظيفة الرئيسية --- 
 
