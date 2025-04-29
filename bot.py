@@ -2080,7 +2080,7 @@ def end_quiz_internal(context: CallbackContext, chat_id, user_id, end_message="�
             logger.error(f"Failed to send new quiz end message: {send_error}")
 
 # --- معالج الأخطاء --- 
-def error_handler(update: Update, context: CallbackContext, error: TelegramError):
+def error_handler(update, context, error):
     """Log Errors caused by Updates."""
     # Log the error before doing anything else
     logger.error(msg="Exception while handling an update:", exc_info=error)
@@ -2117,7 +2117,7 @@ def main() -> None:
          logger.warning("QuizDatabase is not initialized. Some features might not work.")
 
     # إنشاء Updater وتمرير توكن البوت إليه.
-    updater = Updater(TOKEN)
+    updater = Updater(TOKEN, use_context=True)
 
     # الحصول على المرسل لتسجيل المعالجات
     dispatcher = updater.dispatcher
