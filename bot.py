@@ -1181,7 +1181,7 @@ q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['question
 
 
             original_caption = q_num_text + process_text_with_chemical_notation(question['question_text'])
-            final_text = original_caption + "
+final_text = original_caption
 
 " + feedback_text
 
