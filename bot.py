@@ -1061,7 +1061,8 @@ def show_next_question_internal(context: CallbackContext, chat_id: int, user_id:
     reply_markup = InlineKeyboardMarkup(keyboard_buttons)
 
     # Format question number
-    q_num_text = f"*السؤال {current_index + 1} من {len(questions)}:*
+    # Use concatenation to avoid multi-line f-string issues
+    q_num_text = f"*السؤال {current_index + 1} من {len(questions)}:*\n" + "\n"
 
 "
 
