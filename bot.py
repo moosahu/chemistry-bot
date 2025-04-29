@@ -1172,12 +1172,12 @@ def handle_answer(update: Update, context: CallbackContext):
         try:
             # Reconstruct original message text/caption
             # Format question number (Fixed string literal)
-q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['questions'])}:*" + "\n\n"
+            q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['questions'])}:*" + "\n\n"
 
             original_caption = q_num_text + process_text_with_chemical_notation(question['question_text'])
-final_text = original_caption + "\n\n" + feedback_text
-# Format question number (Fixed string literal)
-q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['questions'])}:*" + "\n\n"
+            final_text = original_caption + "\n\n" + feedback_text
+
+            # Removed duplicate lines below
 
             if query.message.photo:
                 query.edit_message_caption(
