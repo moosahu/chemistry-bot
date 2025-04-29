@@ -11,7 +11,7 @@ import re
 from io import BytesIO
 from datetime import datetime, timedelta
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, ParseMode
+from telegram.constants import ParseMode
 from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters, CallbackContext, 
     CallbackQueryHandler, ConversationHandler, JobQueue
@@ -68,7 +68,8 @@ except Exception as e:
     SELECTING_CHAPTER_FOR_LESSON_ADMIN
 ) = range(30)
 
-# --- وظائف مساعدة ---
+# --- الملف المصحح ---
+# تم إصلاح استيراد ParseMode وإضافة استيرادات أخرى
 
 def is_admin(user_id):
     """التحقق مما إذا كان المستخدم مسؤولاً."""
@@ -1579,3 +1580,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
