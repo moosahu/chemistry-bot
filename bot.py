@@ -2194,7 +2194,7 @@ def main() -> None:
                  CallbackQueryHandler(select_structure_for_quiz_callback, pattern='^select_grade_admin_'),
                  CallbackQueryHandler(admin_menu_callback, pattern='^menu_admin$'), # زر العودة لقائمة الإدارة
             ],
-            SELECT_CHAPTER_FOR_LESSON_ADMIN: [ # حالة انتظار اختيار الفصل لإدارة الدروس
+            SELECTING_CHAPTER_FOR_LESSON_ADMIN: [ # حالة انتظار اختيار الفصل لإدارة الدروس
                  CallbackQueryHandler(select_structure_for_quiz_callback, pattern='^select_chapter_for_lesson_admin_'),
                  CallbackQueryHandler(manage_lessons_callback, pattern='^admin_manage_lessons$'), # زر العودة
             ],
