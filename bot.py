@@ -1300,8 +1300,7 @@ def handle_new_question_text(update: Update, context: CallbackContext):
 
     question_text = update.message.text
     context.user_data['new_question']['text'] = question_text
-    update.message.reply_text("تم استلام نص السؤال. الآن أرسل الخيارات الأربعة، كل خيار في رسالة منفصلة.
-الخيار الأول:")
+    update.message.reply_text("تم استلام نص السؤال. الآن أرسل الخيارات الأربعة، كل خيار في رسالة منفصلة.\nالخيار الأول:")
     context.user_data['new_question']['options'] = []
     return ADDING_OPTIONS
 
