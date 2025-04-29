@@ -904,4 +904,20 @@ def grade_level_selection_handler(update: Update, context: CallbackContext) -> i
             )
             reply_markup = create_chapters_keyboard(grade_id, context=context)
             if reply_markup:
-                # إضافة زر 
+                # إضافة زر "إضافة فصل جديد" لاحقاً إذا لزم الأمر
+                # query.edit_message_text(chapter_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                # next_state = ADMIN_CHAPTER_MENU # أو حالة أخرى مناسبة
+                pass # مؤقتاً، يجب إضافة منطق هنا لعرض الفصول أو زر الإضافة
+            else:
+                # التعامل مع حالة عدم وجود فصول
+                try:
+                    query.edit_message_text("⚠️ لا توجد فصول متاحة لهذه المرحلة.")
+                except Exception as e:
+                    logger.error(f"Error sending no chapters message (admin): {e}")
+                next_state = ADMIN_GRADE_MENU # العودة لقائمة المراحل 
+        except ValueError:
+            logger.error(f"Invalid grade_id format in admin selection: {query.data}")
+            next_state = ADMIN_GRADE_MENU # العودة لقائمة إدارة المراحل
+        except Exception as e:
+            logger.error(f"Unexpected error in admin grade/chapter selection: {e}")
+            next_state = ADMIN_GRADE_MENU # العودة لقائمة إدارة المراحل 
