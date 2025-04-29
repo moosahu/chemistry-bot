@@ -81,8 +81,7 @@ except Exception as e:
     ADMIN_CHAPTER_MENU, ADMIN_LESSON_MENU, ADDING_GRADE_LEVEL,
     ADDING_CHAPTER, ADDING_LESSON, SELECTING_GRADE_FOR_CHAPTER,
     SELECTING_CHAPTER_FOR_LESSON_ADMIN
-) = range(30)
-
+) = range(27)
 # --- وظائف مساعدة ---
 
 def is_admin(user_id):
