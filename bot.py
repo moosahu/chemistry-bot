@@ -1060,12 +1060,8 @@ def show_next_question_internal(context: CallbackContext, chat_id: int, user_id:
 
     reply_markup = InlineKeyboardMarkup(keyboard_buttons)
 
-    # Format question number
-    q_num_text = f"*السؤال {current_index + 1} من {len(questions)}:*
-
-"
-
-    # Send question (with image if available)
+    # Format question number (Fixed string literal)
+    q_num_text = f"*السؤال {current_index + 1} من {len(questions)}:*" + "\n\n"    # Send question (with image if available)
     try:
         if image_data_base64:
             image_data = base64.b64decode(image_data_base64)
@@ -1179,9 +1175,10 @@ def handle_answer(update: Update, context: CallbackContext):
 
 "
             original_caption = q_num_text + process_text_with_chemical_notation(question['question_text'])
-            final_text = original_caption + "
-
-" + feedback_text
+final_text = original_caption + "\n\n" + feedback_text
+# Format question number (Fixed string literal)
+q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['questions'])}:*" + "\n\n"
+ِ
 
             if query.message.photo:
                 query.edit_message_caption(
