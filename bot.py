@@ -447,20 +447,20 @@ def main_menu_callback(update: Update, context: CallbackContext):
 
     if data == 'menu_info':
         # TODO: Implement chemical info browsing
-        query.edit_message_text(
+        safe_edit_message_text(query,
             text="قسم المعلومات الكيميائية قيد التطوير. عد قريباً!",
             reply_markup=create_main_menu_keyboard(user_id)
         )
         return MAIN_MENU
     elif data == 'menu_quiz':
-        query.edit_message_text(
+        safe_edit_message_text(query,
             text="اختر نوع الاختبار الذي تريده:",
             reply_markup=create_quiz_menu_keyboard()
         )
         return QUIZ_MENU
     elif data == 'menu_reports':
         # TODO: Implement performance reports
-        query.edit_message_text(
+        safe_edit_message_text(query,
             text="قسم تقارير الأداء قيد التطوير. عد قريباً!",
             reply_markup=create_main_menu_keyboard(user_id)
         )
@@ -469,27 +469,27 @@ def main_menu_callback(update: Update, context: CallbackContext):
         about_text = "بوت الكيمياء التعليمي\n"
         about_text += "تم تطوير هذا البوت لمساعدتك في تعلم الكيمياء بطريقة تفاعلية.\n"
         about_text += "الإصدار: 1.0 (متوافق مع python-telegram-bot v12.8)"
-        query.edit_message_text(
+        safe_edit_message_text(query,
             text=about_text,
             reply_markup=create_main_menu_keyboard(user_id)
         )
         return MAIN_MENU
     elif data == 'menu_admin':
         if is_admin(user_id):
-            query.edit_message_text(
+            safe_edit_message_text(query,
                 text="أهلاً بك في قائمة الإدارة. اختر أحد الخيارات:",
                 reply_markup=create_admin_menu_keyboard()
             )
             return ADMIN_MENU
         else:
-            query.edit_message_text(
+            safe_edit_message_text(query,
                 text="عذراً، ليس لديك صلاحية الوصول لهذه القائمة.",
                 reply_markup=create_main_menu_keyboard(user_id)
             )
             return MAIN_MENU
     else:
         # حالة غير متوقعة، العودة للقائمة الرئيسية
-        query.edit_message_text(
+        safe_edit_message_text(query,
             text="خيار غير معروف. العودة للقائمة الرئيسية.",
             reply_markup=create_main_menu_keyboard(user_id)
         )
@@ -932,7 +932,7 @@ def select_quiz_duration_callback(update: Update, context: CallbackContext):
             return ConversationHandler.END # Or back to main menu?
 
         if quiz_type == 'random':
-            questions = QUIZ_DB.get_random_questions(DEFAULT_QUIZ_QUESTIONS)
+            questions = QUIZ_DB.get_questions_by_grade(None, DEFAULT_QUIZ_QUESTIONS) # Use get_questions_by_grade with None for random
         elif quiz_type == 'grade':
             if grade_id == 'all':
                  questions = QUIZ_DB.get_questions_by_grade(None, DEFAULT_QUIZ_QUESTIONS) # None for all grades
@@ -1192,9 +1192,17 @@ def handle_answer(update: Update, context: CallbackContext):
                     reply_markup=None # Remove buttons
                 )
         except BadRequest as e:
-             logger.warning(f"Failed to edit message with feedback (Markdown error?): {e}")
-             # Try sending feedback as a new message
-             context.bot.send_message(chat_id, feedback_text, parse_mode=ParseMode.MARKDOWN)
+            if "Message is not modified" in str(e):
+                # This is expected if the user clicks the button twice quickly
+                logger.info(f"Message not modified (likely duplicate button press): {e}")
+            else:
+                # Assume other BadRequest errors are due to Markdown or other issues
+                logger.warning(f"Failed to edit message with feedback (potential Markdown error?): {e}")
+                # Try sending feedback as a new message as a fallback
+                try:
+                    context.bot.send_message(chat_id, feedback_text, parse_mode=ParseMode.MARKDOWN)
+                except Exception as send_e:
+                    logger.error(f"Failed to send feedback as a new message after edit failed: {send_e}")
         except Exception as e:
             logger.error(f"Error editing message with feedback: {e}")
             # Try sending feedback as a new message
@@ -1800,4 +1808,8 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+from helper_function import safe_edit_message_text
 
