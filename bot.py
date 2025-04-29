@@ -1061,10 +1061,9 @@ def show_next_question_internal(context: CallbackContext, chat_id: int, user_id:
     reply_markup = InlineKeyboardMarkup(keyboard_buttons)
 
     # Format question number
-    # Use concatenation to avoid multi-line f-string issues
-    q_num_text = f"*السؤال {current_index + 1} من {len(questions)}:*\n" + "\n"
+    q_num_text = f"*السؤال {current_index + 1} من {len(questions)}:*
 
-
+"
 
     # Send question (with image if available)
     try:
@@ -1176,12 +1175,11 @@ def handle_answer(update: Update, context: CallbackContext):
         # Edit the original question message to show feedback and remove buttons
         try:
             # Reconstruct original message text/caption
-# Use concatenation to avoid multi-line f-string issues
-q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['questions'])}:*\n" + "\n"
+            q_num_text = f"*السؤال {current_q_index + 1} من {len(quiz_data['questions'])}:*
 
-
+"
             original_caption = q_num_text + process_text_with_chemical_notation(question['question_text'])
-final_text = original_caption
+            final_text = original_caption + "
 
 " + feedback_text
 
