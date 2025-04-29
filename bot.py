@@ -39,6 +39,9 @@ except ImportError as e:
     # قد تحتاج لإيقاف البوت هنا إذا لم يتم استيراد الوحدات الأساسية
     sys.exit("Critical import error, stopping bot.")
 
+# استيراد الدالة المساعدة لمعالجة الأخطاء بأمان
+from helper_function import safe_edit_message_text
+
 # استيراد البيانات الثابتة ووظائف المعادلات
 # Ensure these files exist in the same directory or adjust the import path
 try:
@@ -46,8 +49,6 @@ try:
     from chemical_equations import process_text_with_chemical_notation, format_chemical_equation
     # استيراد الفئة المحسنة لقاعدة البيانات
     from quiz_db import QuizDatabase
-    # استيراد الدالة المساعدة لمعالجة الأخطاء بأمان
-    from helper_function import safe_edit_message_text
 except ImportError as e:
     logger.critical(f"Failed to import local modules (chemistry_data, chemical_equations, quiz_db): {e}")
     sys.exit("Local module import error, stopping bot.")
