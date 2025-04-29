@@ -86,7 +86,7 @@ except Exception as e:
     ADDING_CHAPTER, ADDING_LESSON, SELECTING_GRADE_FOR_CHAPTER,
     SELECTING_CHAPTER_FOR_LESSON_ADMIN, ADMIN_MANAGE_STRUCTURE, # Added state
     ADMIN_MANAGE_GRADES, ADMIN_MANAGE_CHAPTERS, ADMIN_MANAGE_LESSONS # Added states
-) = range(30) # Adjusted range
+) = range(31) # Corrected range to match 31 states
 
 # --- وظائف مساعدة ---
 
