@@ -11,30 +11,20 @@ import re
 from io import BytesIO
 from datetime import datetime, timedelta
 
-# --- استيراد مكتبات تيليجرام (هام جداً) ---
+# --- استيراد مكتبات تيليجرام (متوافق مع الإصدار 12.8) ---
 try:
-    from telegram.constants import ParseMode
-    logger.info("Successfully imported ParseMode from telegram.constants")
-except ImportError as e:
-    logger.error(f"Failed to import ParseMode from telegram.constants: {e}")
-    # محاولة الاستيراد بالطريقة القديمة كاحتياط (قد لا يعمل مع v13+)
-    try:
-        from telegram import ParseMode
-        logger.warning("Imported ParseMode directly from telegram (might be incompatible)")
-    except ImportError:
-        logger.critical("Failed to import ParseMode from both locations!")
-        ParseMode = None # تعيين قيمة افتراضية لتجنب أخطاء لاحقة
-
-try:
-    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+    # في الإصدار 12.x، يتم استيراد ParseMode مباشرة من telegram
+    from telegram import (
+        Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, ParseMode,
+        TelegramError, NetworkError, Unauthorized, BadRequest
+    )
     from telegram.ext import (
         Updater, CommandHandler, MessageHandler, Filters, CallbackContext, 
         CallbackQueryHandler, ConversationHandler, JobQueue
     )
-    from telegram.error import NetworkError, TelegramError, Unauthorized, BadRequest
-    logger.info("Successfully imported other telegram modules")
+    logger.info("Successfully imported telegram modules for v12.8")
 except ImportError as e:
-    logger.critical(f"Failed to import core telegram modules: {e}")
+    logger.critical(f"Failed to import core telegram modules (v12.8): {e}")
     # قد تحتاج لإيقاف البوت هنا إذا لم يتم استيراد الوحدات الأساسية
     sys.exit("Critical import error, stopping bot.")
 
@@ -354,7 +344,7 @@ def question_timer_callback(context: CallbackContext):
                 context.bot.send_message(
                     chat_id=chat_id,
                     text="⏱️ انتهى وقت السؤال! سيتم الانتقال للسؤال التالي تلقائياً.",
-                    parse_mode=ParseMode.MARKDOWN if ParseMode else None
+                    parse_mode=ParseMode.MARKDOWN
                 )
             except Exception as e:
                  logger.error(f"Error sending question timeout message: {e}")
@@ -448,7 +438,7 @@ def about_command(update: Update, context: CallbackContext) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
-        update.message.reply_text(about_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+        update.message.reply_text(about_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         logger.error(f"Error sending about message: {e}")
 
@@ -511,7 +501,7 @@ def main_menu_button_handler(update: Update, context: CallbackContext) -> int:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         try:
-            query.edit_message_text(info_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+            query.edit_message_text(info_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         except BadRequest as e:
              if "Message is not modified" not in str(e):
                  logger.error(f"Error editing message for info menu: {e}")
@@ -573,7 +563,7 @@ def main_menu_button_handler(update: Update, context: CallbackContext) -> int:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         try:
-            query.edit_message_text(reports_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+            query.edit_message_text(reports_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         except BadRequest as e:
              if "Message is not modified" not in str(e):
                  logger.error(f"Error editing message for reports menu: {e}")
@@ -602,7 +592,7 @@ def main_menu_button_handler(update: Update, context: CallbackContext) -> int:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         try:
-            query.edit_message_text(about_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+            query.edit_message_text(about_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         except BadRequest as e:
              if "Message is not modified" not in str(e):
                  logger.error(f"Error editing message for about menu: {e}")
@@ -674,7 +664,7 @@ def quiz_menu_button_handler(update: Update, context: CallbackContext) -> int:
         
         reply_markup = create_quiz_duration_keyboard()
         try:
-            query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+            query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             logger.error(f"Error editing message for quiz duration selection: {e}")
         next_state = SELECTING_QUIZ_DURATION
@@ -690,7 +680,7 @@ def quiz_menu_button_handler(update: Update, context: CallbackContext) -> int:
         reply_markup = create_grade_levels_keyboard(for_quiz=True, context=context)
         if reply_markup:
             try:
-                query.edit_message_text(grade_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+                query.edit_message_text(grade_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             except Exception as e:
                 logger.error(f"Error editing message for grade selection (chapter quiz): {e}")
             next_state = SELECT_GRADE_LEVEL_FOR_QUIZ
@@ -712,7 +702,7 @@ def quiz_menu_button_handler(update: Update, context: CallbackContext) -> int:
         reply_markup = create_grade_levels_keyboard(for_quiz=True, context=context)
         if reply_markup:
             try:
-                query.edit_message_text(grade_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+                query.edit_message_text(grade_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             except Exception as e:
                 logger.error(f"Error editing message for grade selection (lesson quiz): {e}")
             next_state = SELECT_GRADE_LEVEL_FOR_QUIZ
@@ -733,7 +723,7 @@ def quiz_menu_button_handler(update: Update, context: CallbackContext) -> int:
         reply_markup = create_grade_levels_keyboard(for_quiz=True, context=context)
         if reply_markup:
             try:
-                query.edit_message_text(grade_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+                query.edit_message_text(grade_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             except Exception as e:
                 logger.error(f"Error editing message for grade selection (grade quiz): {e}")
             next_state = SELECT_GRADE_LEVEL_FOR_QUIZ
@@ -760,7 +750,7 @@ def quiz_menu_button_handler(update: Update, context: CallbackContext) -> int:
         
         reply_markup = create_quiz_duration_keyboard()
         try:
-            query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+            query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         except Exception as e:
             logger.error(f"Error editing message for review quiz duration: {e}")
         next_state = SELECTING_QUIZ_DURATION
@@ -808,7 +798,7 @@ def grade_level_selection_handler(update: Update, context: CallbackContext) -> i
             
             reply_markup = create_quiz_duration_keyboard()
             try:
-                query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+                query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             except Exception as e:
                 logger.error(f"Error editing message for duration (all grades quiz): {e}")
             next_state = SELECTING_QUIZ_DURATION
@@ -827,7 +817,7 @@ def grade_level_selection_handler(update: Update, context: CallbackContext) -> i
                     reply_markup = create_chapters_keyboard(grade_id, for_quiz=True, context=context)
                     if reply_markup:
                         try:
-                            query.edit_message_text(chapter_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+                            query.edit_message_text(chapter_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
                         except Exception as e:
                             logger.error(f"Error editing message for chapter selection (chapter quiz): {e}")
                         next_state = SELECT_CHAPTER_FOR_QUIZ
@@ -847,7 +837,7 @@ def grade_level_selection_handler(update: Update, context: CallbackContext) -> i
                     reply_markup = create_chapters_keyboard(grade_id, for_lesson=True, context=context)
                     if reply_markup:
                         try:
-                            query.edit_message_text(chapter_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+                            query.edit_message_text(chapter_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
                         except Exception as e:
                             logger.error(f"Error editing message for chapter selection (lesson quiz): {e}")
                         next_state = SELECT_CHAPTER_FOR_LESSON
@@ -873,7 +863,7 @@ def grade_level_selection_handler(update: Update, context: CallbackContext) -> i
                     )
                     reply_markup = create_quiz_duration_keyboard()
                     try:
-                        query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN if ParseMode else None)
+                        query.edit_message_text(duration_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
                     except Exception as e:
                         logger.error(f"Error editing message for duration (grade quiz): {e}")
                     next_state = SELECTING_QUIZ_DURATION

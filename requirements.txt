@@ -1,4 +1,4 @@
-python-telegram-bot==13.17
+python-telegram-bot==12.8
 psycopg2-binary
 pandas
 openpyxl
