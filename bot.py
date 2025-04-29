@@ -26,11 +26,9 @@ logger = logging.getLogger(__name__)
 try:
     # في الإصدار 12.x، يتم استيراد ParseMode مباشرة من telegram
     from telegram import (
-        Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, ParseMode,
-        TelegramError, Unauthorized, BadRequest
+        Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, ParseMode
     )
-    # تم التعديل: استيراد NetworkError من telegram.error
-    from telegram.error import NetworkError 
+    from telegram.error import NetworkError, Unauthorized, BadRequest, TimedOut, ChatMigrated, TelegramError 
     from telegram.ext import (
         Updater, CommandHandler, MessageHandler, Filters, CallbackContext, 
         CallbackQueryHandler, ConversationHandler, JobQueue
