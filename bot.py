@@ -2080,10 +2080,10 @@ def end_quiz_internal(context: CallbackContext, chat_id, user_id, end_message="�
             logger.error(f"Failed to send new quiz end message: {send_error}")
 
 # --- معالج الأخطاء --- 
-def error_handler(update, context):
+def error_handler(update: Update, context: CallbackContext, error: TelegramError):
     """Log Errors caused by Updates."""
     # Log the error before doing anything else
-    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    logger.error(msg="Exception while handling an update:", exc_info=error)
 
     # Try to inform the user if possible
     chat_id = None
