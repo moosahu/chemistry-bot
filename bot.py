@@ -133,57 +133,57 @@ def get_user_name(user):
     else:
         return str(user.id)
 
-# --- Keyboard Creation Functions (Corrected callback_data) ---
+# --- Keyboard Creation Functions (MANUALLY CORRECTED callback_data) ---
 
 def create_main_menu_keyboard(user_id):
     keyboard = [
-        [InlineKeyboardButton("📚 المعلومات الكيميائية", callback_data=\'menu_info\')], # Matches info_handlers entry point
-        [InlineKeyboardButton("📝 الاختبارات", callback_data=\'menu_quiz\')],
-        [InlineKeyboardButton("📊 تقارير الأداء", callback_data=\'menu_reports\')],
-        [InlineKeyboardButton("ℹ️ حول البوت", callback_data=\'menu_about\')]
+        [InlineKeyboardButton("📚 المعلومات الكيميائية", callback_data='menu_info')], # Matches info_handlers entry point
+        [InlineKeyboardButton("📝 الاختبارات", callback_data='menu_quiz')],
+        [InlineKeyboardButton("📊 تقارير الأداء", callback_data='menu_reports')],
+        [InlineKeyboardButton("ℹ️ حول البوت", callback_data='menu_about')]
     ]
     if is_admin(user_id):
-        keyboard.append([InlineKeyboardButton("⚙️ إدارة البوت", callback_data=\'menu_admin\')])
+        keyboard.append([InlineKeyboardButton("⚙️ إدارة البوت", callback_data='menu_admin')])
     return InlineKeyboardMarkup(keyboard)
 
 def create_quiz_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🎯 اختبار تحصيلي عام", callback_data=\'quiz_random_prompt\')],
-        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data=\'quiz_by_chapter_prompt\')],
-        [InlineKeyboardButton("📝 اختبار حسب الدرس", callback_data=\'quiz_by_lesson_prompt\')],
-        [InlineKeyboardButton("🎓 اختبار حسب المرحلة الدراسية", callback_data=\'quiz_by_grade_prompt\')],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=\'main_menu\')]
+        [InlineKeyboardButton("🎯 اختبار تحصيلي عام", callback_data='quiz_random_prompt')],
+        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data='quiz_by_chapter_prompt')],
+        [InlineKeyboardButton("📝 اختبار حسب الدرس", callback_data='quiz_by_lesson_prompt')],
+        [InlineKeyboardButton("🎓 اختبار حسب المرحلة الدراسية", callback_data='quiz_by_grade_prompt')],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def create_admin_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("➕ إضافة سؤال", callback_data=\'admin_add_question\')],
-        [InlineKeyboardButton("🗑️ حذف سؤال", callback_data=\'admin_delete_question\')],
-        [InlineKeyboardButton("🔍 عرض سؤال", callback_data=\'admin_show_question\')],
-        [InlineKeyboardButton("🏫 إدارة المراحل/الفصول/الدروس", callback_data=\'admin_manage_structure\')],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=\'main_menu\')]
+        [InlineKeyboardButton("➕ إضافة سؤال", callback_data='admin_add_question')],
+        [InlineKeyboardButton("🗑️ حذف سؤال", callback_data='admin_delete_question')],
+        [InlineKeyboardButton("🔍 عرض سؤال", callback_data='admin_show_question')],
+        [InlineKeyboardButton("🏫 إدارة المراحل/الفصول/الدروس", callback_data='admin_manage_structure')],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def create_structure_admin_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🏫 إدارة المراحل الدراسية", callback_data=\'admin_manage_grades\')],
-        [InlineKeyboardButton("📚 إدارة الفصول", callback_data=\'admin_manage_chapters\')],
-        [InlineKeyboardButton("📝 إدارة الدروس", callback_data=\'admin_manage_lessons\')],
-        [InlineKeyboardButton("🔙 العودة لقائمة الإدارة", callback_data=\'menu_admin\')]
+        [InlineKeyboardButton("🏫 إدارة المراحل الدراسية", callback_data='admin_manage_grades')],
+        [InlineKeyboardButton("📚 إدارة الفصول", callback_data='admin_manage_chapters')],
+        [InlineKeyboardButton("📝 إدارة الدروس", callback_data='admin_manage_lessons')],
+        [InlineKeyboardButton("🔙 العودة لقائمة الإدارة", callback_data='menu_admin')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def create_quiz_duration_keyboard():
     keyboard = [
-        [InlineKeyboardButton("5 دقائق", callback_data=\'quiz_duration_5\')],
-        [InlineKeyboardButton("10 دقائق", callback_data=\'quiz_duration_10\')],
-        [InlineKeyboardButton("15 دقائق", callback_data=\'quiz_duration_15\')],
-        [InlineKeyboardButton("20 دقائق", callback_data=\'quiz_duration_20\')],
-        [InlineKeyboardButton("30 دقائق", callback_data=\'quiz_duration_30\')],
-        [InlineKeyboardButton("بدون وقت محدد", callback_data=\'quiz_duration_0\')],
-        [InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data=\'menu_quiz\')]
+        [InlineKeyboardButton("5 دقائق", callback_data='quiz_duration_5')],
+        [InlineKeyboardButton("10 دقائق", callback_data='quiz_duration_10')],
+        [InlineKeyboardButton("15 دقائق", callback_data='quiz_duration_15')],
+        [InlineKeyboardButton("20 دقائق", callback_data='quiz_duration_20')],
+        [InlineKeyboardButton("30 دقائق", callback_data='quiz_duration_30')],
+        [InlineKeyboardButton("بدون وقت محدد", callback_data='quiz_duration_0')],
+        [InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data='menu_quiz')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -192,14 +192,14 @@ def create_grade_levels_keyboard(for_quiz=False, context=None):
     keyboard = []
     if grades:
         for grade_id, grade_name in grades:
-            callback_suffix = f\'quiz_{grade_id}\' if for_quiz else f\'admin_{grade_id}\'
-            keyboard.append([InlineKeyboardButton(grade_name, callback_data=f\'grade_{callback_suffix}\')])
+            callback_suffix = f'quiz_{grade_id}' if for_quiz else f'admin_{grade_id}'
+            keyboard.append([InlineKeyboardButton(grade_name, callback_data=f'grade_{callback_suffix}')])
         if for_quiz:
-             keyboard.append([InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data=\'grade_quiz_all\')])
+             keyboard.append([InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data='grade_quiz_all')])
     else:
         logger.info("No grade levels found in the database.")
         return None
-    back_callback = \'menu_quiz\' if for_quiz else \'admin_manage_structure\'
+    back_callback = 'menu_quiz' if for_quiz else 'admin_manage_structure'
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
@@ -209,19 +209,19 @@ def create_chapters_keyboard(grade_level_id, for_quiz=False, for_lesson=False, c
     if chapters:
         for chapter_id, chapter_name in chapters:
             if for_quiz:
-                callback_data = f\'chapter_quiz_{chapter_id}\'
+                callback_data = f'chapter_quiz_{chapter_id}'
             elif for_lesson:
-                 callback_data = f\'lesson_chapter_{chapter_id}\'
+                 callback_data = f'lesson_chapter_{chapter_id}'
             else:
-                callback_data = f\'admin_chapter_{chapter_id}\'
+                callback_data = f'admin_chapter_{chapter_id}'
             keyboard.append([InlineKeyboardButton(chapter_name, callback_data=callback_data)])
     else:
         logger.info(f"No chapters found for grade level {grade_level_id}.")
         return None
     if for_quiz or for_lesson:
-        back_callback = \'quiz_by_grade_prompt\'
+        back_callback = 'quiz_by_grade_prompt'
     else:
-        back_callback = \'admin_manage_structure\'
+        back_callback = 'admin_manage_structure'
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
@@ -230,15 +230,15 @@ def create_lessons_keyboard(chapter_id, for_quiz=False, context=None):
     keyboard = []
     if lessons:
         for lesson_id, lesson_name in lessons:
-            callback_data = f\'lesson_quiz_{lesson_id}\' if for_quiz else f\'admin_lesson_{lesson_id}\'
+            callback_data = f'lesson_quiz_{lesson_id}' if for_quiz else f'admin_lesson_{lesson_id}'
             keyboard.append([InlineKeyboardButton(lesson_name, callback_data=callback_data)])
     else:
         logger.info(f"No lessons found for chapter {chapter_id}.")
         return None
     if for_quiz:
-        back_callback = \'quiz_by_lesson_prompt\'
+        back_callback = 'quiz_by_lesson_prompt'
     else:
-        back_callback = \'admin_manage_structure\'
+        back_callback = 'admin_manage_structure'
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
@@ -247,15 +247,15 @@ def create_quiz_question_keyboard(options, question_id):
     shuffled_options = list(enumerate(options))
     random.shuffle(shuffled_options)
     for original_index, option_text in shuffled_options:
-        callback_data = f\'answer_{question_id}_{original_index}\'
+        callback_data = f'answer_{question_id}_{original_index}'
         keyboard.append([InlineKeyboardButton(option_text, callback_data=callback_data)])
-    keyboard.append([InlineKeyboardButton("⏭️ تخطي السؤال", callback_data=f\'skip_{question_id}\')])
+    keyboard.append([InlineKeyboardButton("⏭️ تخطي السؤال", callback_data=f'skip_{question_id}')])
     return InlineKeyboardMarkup(keyboard)
 
 def create_results_menu_keyboard(quiz_id):
     keyboard = [
-        [InlineKeyboardButton("🔄 إعادة الاختبار", callback_data=\'menu_quiz\')],
-        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data=\'main_menu\')]
+        [InlineKeyboardButton("🔄 إعادة الاختبار", callback_data='menu_quiz')],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='main_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -323,7 +323,7 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
     query.answer()
 
     # Determine next action based on callback data
-    if data == \'menu_info\':
+    if data == 'menu_info':
         # This should now be handled by info_menu_conv_handler entry point
         logger.info("Transitioning to info menu via info_menu_conv_handler entry point")
         # We need to call the entry point function of the other handler
@@ -335,19 +335,19 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
              safe_edit_message_text(query, text="Error accessing info menu.")
              return MAIN_MENU # Stay in main menu
 
-    elif data == \'menu_quiz\':
+    elif data == 'menu_quiz':
         text = "اختر نوع الاختبار الذي تريده:"
         keyboard = create_quiz_menu_keyboard()
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return QUIZ_MENU # Transition to quiz menu state
 
-    elif data == \'menu_reports\':
+    elif data == 'menu_reports':
         text = "📊 قسم تقارير الأداء قيد التطوير حالياً."
         keyboard = create_main_menu_keyboard(user_id)
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return MAIN_MENU # Stay in main menu
 
-    elif data == \'menu_about\':
+    elif data == 'menu_about':
         text = ("**حول بوت الكيمياء التعليمي**\n\n"
                 "هذا البوت يهدف لمساعدتك في تعلم الكيمياء واختبار معلوماتك.\n"
                 "**المميزات الحالية:**\n"
@@ -360,13 +360,13 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
         safe_edit_message_text(query, text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
         return MAIN_MENU # Stay in main menu
 
-    elif data == \'menu_admin\' and is_admin(user_id):
+    elif data == 'menu_admin' and is_admin(user_id):
         text = "⚙️ قائمة إدارة البوت:"
         keyboard = create_admin_menu_keyboard()
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return ADMIN_MENU # Transition to admin menu state
 
-    elif data == \'main_menu\': # Handle explicit return to main menu
+    elif data == 'main_menu': # Handle explicit return to main menu
         return start(update, context) # Reuse start handler logic
 
     else:
@@ -383,23 +383,23 @@ def quiz_menu_callback(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     logger.info(f"Quiz menu callback: User {user_id} chose {data}")
 
-    if data == \'quiz_random_prompt\':
+    if data == 'quiz_random_prompt':
         text = "قسم الاختبار التحصيلي العام قيد التطوير."
         safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
         return QUIZ_MENU
-    elif data == \'quiz_by_chapter_prompt\':
+    elif data == 'quiz_by_chapter_prompt':
         text = "قسم الاختبار حسب الفصل قيد التطوير."
         safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
         return QUIZ_MENU
-    elif data == \'quiz_by_lesson_prompt\':
+    elif data == 'quiz_by_lesson_prompt':
         text = "قسم الاختبار حسب الدرس قيد التطوير."
         safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
         return QUIZ_MENU
-    elif data == \'quiz_by_grade_prompt\':
+    elif data == 'quiz_by_grade_prompt':
         text = "قسم الاختبار حسب المرحلة الدراسية قيد التطوير."
         safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
         return QUIZ_MENU
-    elif data == \'main_menu\':
+    elif data == 'main_menu':
         return start(update, context)
     else:
         return QUIZ_MENU # Stay in quiz menu for unknown options
@@ -415,19 +415,19 @@ def admin_menu_callback(update: Update, context: CallbackContext) -> int:
         query.answer("عذراً، هذه المنطقة مخصصة للمشرفين فقط.")
         return ConversationHandler.END # Or return to MAIN_MENU
 
-    if data == \'admin_add_question\':
+    if data == 'admin_add_question':
         text = "قسم إضافة الأسئلة قيد التطوير."
         safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
         return ADMIN_MENU
-    elif data == \'admin_delete_question\':
+    elif data == 'admin_delete_question':
         text = "قسم حذف الأسئلة قيد التطوير."
         safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
         return ADMIN_MENU
-    elif data == \'admin_show_question\':
+    elif data == 'admin_show_question':
         text = "قسم عرض الأسئلة قيد التطوير."
         safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
         return ADMIN_MENU
-    elif data == \'admin_manage_structure\':
+    elif data == 'admin_manage_structure':
         text = "إدارة المراحل/الفصول/الدروس قيد التطوير."
         # Example: Show structure admin menu if implemented
         # keyboard = create_structure_admin_menu_keyboard()
@@ -435,7 +435,7 @@ def admin_menu_callback(update: Update, context: CallbackContext) -> int:
         # return ADMIN_MANAGE_STRUCTURE # Need this state defined
         safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
         return ADMIN_MENU # Stay in admin menu for now
-    elif data == \'main_menu\':
+    elif data == 'main_menu':
         return start(update, context)
     else:
         return ADMIN_MENU # Stay in admin menu
@@ -489,24 +489,24 @@ def main():
     # --- Setup Main Conversation Handler --- #
     # This handler manages the main states: MAIN_MENU, QUIZ_MENU, ADMIN_MENU
     main_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler(\'start\', start)],
+        entry_points=[CommandHandler('start', start)],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(main_menu_callback, pattern=\'^menu_\'), # Handles main menu buttons
-                CallbackQueryHandler(main_menu_callback, pattern=\'^main_menu$\') # Handles explicit return button
+                CallbackQueryHandler(main_menu_callback, pattern='^menu_'), # Handles main menu buttons
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Handles explicit return button
             ],
             QUIZ_MENU: [
-                CallbackQueryHandler(quiz_menu_callback, pattern=\'^quiz_\'), # Handles quiz menu buttons
-                CallbackQueryHandler(main_menu_callback, pattern=\'^main_menu$\') # Handles return button
+                CallbackQueryHandler(quiz_menu_callback, pattern='^quiz_'), # Handles quiz menu buttons
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Handles return button
             ],
             ADMIN_MENU: [
-                CallbackQueryHandler(admin_menu_callback, pattern=\'^admin_\'), # Handles admin menu buttons
-                CallbackQueryHandler(main_menu_callback, pattern=\'^main_menu$\') # Handles return button
+                CallbackQueryHandler(admin_menu_callback, pattern='^admin_'), # Handles admin menu buttons
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Handles return button
             ],
             # Add other top-level states here if needed (e.g., TAKING_QUIZ)
         },
         fallbacks=[
-            CommandHandler(\'start\', start) # Allow restarting with /start
+            CommandHandler('start', start) # Allow restarting with /start
             # Add other fallbacks like /cancel if needed
         ],
         # If conversations time out, return to start
@@ -532,7 +532,7 @@ def main():
     if HEROKU_APP_NAME:
         # Run on Heroku using Webhook
         logger.info(f"Starting webhook for Heroku app {HEROKU_APP_NAME}")
-        # --- MODIFIED WEBHOOK PATH --- #
+        # --- Use Simple Webhook Path --- #
         WEBHOOK_PATH = "/webhook" # Use a simple, static path
         updater.start_webhook(listen="0.0.0.0",
                               port=PORT,
@@ -548,6 +548,6 @@ def main():
     logger.info("Bot started and running...")
     updater.idle()
 
-if __name__ == \'__main__\':
+if __name__ == '__main__':
     main()
 
