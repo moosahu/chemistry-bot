@@ -6,12 +6,12 @@ import logging # Added for setup_database logging
 
 logger = logging.getLogger(__name__) # Added for setup_database logging
 
-def connect_db(): # Renamed from get_db_connection
+def connect_db(db_url): # Renamed and added db_url parameter
     """Returns a connection to the PostgreSQL database."""
-    db_url = os.environ.get("DATABASE_URL")
+    # db_url = os.environ.get("DATABASE_URL") # Removed, URL is now passed as argument
     if not db_url:
-        logger.error("DATABASE_URL environment variable not set.") # Changed to logger.error
-        raise ValueError("DATABASE_URL environment variable not set.")
+        logger.error("Database URL was not provided to connect_db function.") # Updated error message
+        raise ValueError("Database URL was not provided.")
     
     try:
         conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
