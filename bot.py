@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 # Get sensitive info from environment variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL") # Defined globally here
 ADMIN_USER_IDS = [int(uid.strip()) for uid in os.environ.get("ADMIN_USER_IDS", "").split(",") if uid.strip().isdigit()]
 PORT = int(os.environ.get("PORT", 8443))
 HEROKU_APP_NAME = os.environ.get("HEROKU_APP_NAME")
@@ -80,7 +80,12 @@ except ImportError:
     # ELEMENTS, COMPOUNDS, CONCEPTS = {}, {}, {} # Define as empty if import fails
 
 # Initialize database connection and QuizDatabase instance
-DB_CONN = connect_db(DATABASE_URL)
+# Check if DATABASE_URL was fetched successfully before using it
+if not DATABASE_URL:
+    logger.error("DATABASE_URL environment variable not set or empty. Bot cannot connect to DB.")
+    sys.exit("Database configuration error.")
+
+DB_CONN = connect_db(DATABASE_URL) # Use the globally defined variable
 if DB_CONN:
     setup_database(DB_CONN)
     QUIZ_DB = QuizDatabase(DB_CONN)
@@ -373,41 +378,29 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
         )
         return QUIZ_MENU
     elif data == 'menu_reports':
-        # TODO: Implement performance reports
-        safe_edit_message_text(query,
-            text="قسم تقارير الأداء قيد التطوير. عد قريباً!",
-            reply_markup=create_main_menu_keyboard(user_id)
-        )
-        return MAIN_MENU
+        safe_edit_message_text(query, text="ميزة تقارير الأداء قيد التطوير حالياً. 🚧")
+        return MAIN_MENU # Stay in main menu
     elif data == 'menu_about':
         about_text = "بوت الكيمياء التعليمي\n"
-        about_text += "تم تطوير هذا البوت لمساعدتك في تعلم الكيمياء بطريقة تفاعلية.\n"
-        about_text += "الإصدار: 1.1 (متوافق مع python-telegram-bot v13.x)\n"
-        about_text += "المطور: فريق Manus (مثال)"
-        safe_edit_message_text(query,
-            text=about_text,
-            reply_markup=create_main_menu_keyboard(user_id)
-        )
-        return MAIN_MENU
+        about_text += "تم تطوير هذا البوت لمساعدتك في تعلم الكيمياء وإجراء الاختبارات.\n"
+        about_text += "الإصدار: 1.1 (مع قائمة المعلومات وقاعدة البيانات الأساسية)\n"
+        about_text += "للمساعدة، استخدم الأمر /help."
+        safe_edit_message_text(query, text=about_text, reply_markup=create_main_menu_keyboard(user_id))
+        return MAIN_MENU # Stay in main menu
     elif data == 'menu_admin':
         if is_admin(user_id):
             safe_edit_message_text(query,
-                text="أهلاً بك في قائمة الإدارة. اختر أحد الخيارات:",
+                text="قائمة الإدارة:",
                 reply_markup=create_admin_menu_keyboard()
             )
             return ADMIN_MENU
         else:
-            safe_edit_message_text(query,
-                text="عذراً، ليس لديك صلاحية الوصول لهذه القائمة.",
-                reply_markup=create_main_menu_keyboard(user_id)
-            )
-            return MAIN_MENU
+            query.answer("ليس لديك صلاحيات للوصول لهذه القائمة.", show_alert=True)
+            return MAIN_MENU # Stay in main menu
     else:
-        # Fallback for unknown main menu options
-        safe_edit_message_text(query,
-            text="خيار غير معروف. العودة للقائمة الرئيسية.",
-            reply_markup=create_main_menu_keyboard(user_id)
-        )
+        # Handle unexpected callback data in main menu
+        logger.warning(f"Unexpected callback data '{data}' received in MAIN_MENU state.")
+        safe_edit_message_text(query, text="حدث خطأ غير متوقع. العودة للقائمة الرئيسية.", reply_markup=create_main_menu_keyboard(user_id))
         return MAIN_MENU
 
 def quiz_menu_callback(update: Update, context: CallbackContext) -> int:
@@ -419,15 +412,19 @@ def quiz_menu_callback(update: Update, context: CallbackContext) -> int:
 
     logger.info(f"User {user_id} chose {data} from quiz menu.")
 
-    if data == 'quiz_random_prompt':
+    if data == 'main_menu':
+        safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
+        return MAIN_MENU
+    elif data == 'quiz_random_prompt':
+        # Ask for duration for random quiz
         safe_edit_message_text(query,
             text="اختر مدة الاختبار العشوائي:",
             reply_markup=create_quiz_duration_keyboard()
         )
         context.user_data['quiz_type'] = 'random'
         return SELECTING_QUIZ_DURATION
-
     elif data == 'quiz_by_grade_prompt':
+        # Show grade levels to choose from
         keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
         if keyboard:
             safe_edit_message_text(query,
@@ -436,58 +433,40 @@ def quiz_menu_callback(update: Update, context: CallbackContext) -> int:
             )
             return SELECT_GRADE_LEVEL_FOR_QUIZ
         else:
-            safe_edit_message_text(query,
-                text="عذراً، لا توجد مراحل دراسية متاحة حالياً.",
-                reply_markup=create_quiz_menu_keyboard()
-            )
-            return QUIZ_MENU
-
+            safe_edit_message_text(query, text="لم يتم إضافة أي مراحل دراسية بعد. يرجى التواصل مع المشرف.", reply_markup=create_quiz_menu_keyboard())
+            return QUIZ_MENU # Stay in quiz menu
     elif data == 'quiz_by_chapter_prompt':
-        # First, ask for grade level
-        keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
-        if keyboard:
-            safe_edit_message_text(query,
-                text="أولاً، اختر المرحلة الدراسية:",
-                reply_markup=keyboard
-            )
-            context.user_data['quiz_selection_mode'] = 'chapter' # Indicate we want chapters next
-            return SELECT_GRADE_LEVEL_FOR_QUIZ # Reuse grade selection state
-        else:
-            safe_edit_message_text(query,
-                text="عذراً، لا توجد مراحل دراسية متاحة حالياً.",
-                reply_markup=create_quiz_menu_keyboard()
-            )
-            return QUIZ_MENU
-
+         # First, ask for grade level, then chapter
+         keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
+         if keyboard:
+             safe_edit_message_text(query,
+                 text="أولاً، اختر المرحلة الدراسية التي ينتمي إليها الفصل:",
+                 reply_markup=keyboard
+             )
+             context.user_data['quiz_selection_mode'] = 'chapter' # Remember why we are selecting grade
+             return SELECT_GRADE_LEVEL_FOR_QUIZ # Go to grade selection first
+         else:
+             safe_edit_message_text(query, text="لم يتم إضافة أي مراحل دراسية بعد.", reply_markup=create_quiz_menu_keyboard())
+             return QUIZ_MENU
     elif data == 'quiz_by_lesson_prompt':
-        # First, ask for grade level
-        keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
-        if keyboard:
-            safe_edit_message_text(query,
-                text="أولاً، اختر المرحلة الدراسية:",
-                reply_markup=keyboard
-            )
-            context.user_data['quiz_selection_mode'] = 'lesson' # Indicate we want lessons next
-            return SELECT_GRADE_LEVEL_FOR_QUIZ # Reuse grade selection state
-        else:
-            safe_edit_message_text(query,
-                text="عذراً، لا توجد مراحل دراسية متاحة حالياً.",
-                reply_markup=create_quiz_menu_keyboard()
-            )
-            return QUIZ_MENU
-
-    elif data == 'main_menu':
-        safe_edit_message_text(query,
-            text="القائمة الرئيسية:",
-            reply_markup=create_main_menu_keyboard(user_id)
-        )
-        return MAIN_MENU
+         # First, ask for grade level, then chapter, then lesson
+         keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
+         if keyboard:
+             safe_edit_message_text(query,
+                 text="أولاً، اختر المرحلة الدراسية التي ينتمي إليها الدرس:",
+                 reply_markup=keyboard
+             )
+             context.user_data['quiz_selection_mode'] = 'lesson' # Remember why we are selecting grade
+             return SELECT_GRADE_LEVEL_FOR_QUIZ # Go to grade selection first
+         else:
+             safe_edit_message_text(query, text="لم يتم إضافة أي مراحل دراسية بعد.", reply_markup=create_quiz_menu_keyboard())
+             return QUIZ_MENU
+    # elif data == 'quiz_review_prompt':
+    #     safe_edit_message_text(query, text="ميزة مراجعة الأخطاء قيد التطوير. 🚧", reply_markup=create_quiz_menu_keyboard())
+    #     return QUIZ_MENU
     else:
-        # Fallback for unknown quiz menu options
-        safe_edit_message_text(query,
-            text="خيار غير معروف. العودة لقائمة الاختبارات.",
-            reply_markup=create_quiz_menu_keyboard()
-        )
+        logger.warning(f"Unexpected callback data '{data}' received in QUIZ_MENU state.")
+        safe_edit_message_text(query, text="خيار غير معروف. العودة لقائمة الاختبارات.", reply_markup=create_quiz_menu_keyboard())
         return QUIZ_MENU
 
 def select_quiz_duration_callback(update: Update, context: CallbackContext) -> int:
@@ -497,56 +476,53 @@ def select_quiz_duration_callback(update: Update, context: CallbackContext) -> i
     user_id = query.from_user.id
     data = query.data
 
+    logger.info(f"User {user_id} chose duration {data}.")
+
     if data.startswith('duration_'):
         duration_key = data.split('_')[1]
-        duration_seconds = QUIZ_DURATIONS.get(duration_key)
-        if duration_seconds:
-            context.user_data['quiz_duration'] = duration_seconds
-            quiz_type = context.user_data.get('quiz_type', 'random') # Default to random if not set
-            logger.info(f"User {user_id} selected duration {duration_key} ({duration_seconds}s) for {quiz_type} quiz.")
+        if duration_key in QUIZ_DURATIONS:
+            context.user_data['quiz_duration'] = QUIZ_DURATIONS[duration_key]
+            quiz_type = context.user_data.get('quiz_type')
+            quiz_filter_id = context.user_data.get('quiz_filter_id') # Grade, Chapter, Lesson ID or 'all'
 
-            # Start the quiz based on type
-            if quiz_type == 'random':
-                return start_quiz(update, context, quiz_type='random')
-            elif quiz_type == 'grade':
-                grade_id = context.user_data.get('selected_grade_id')
-                return start_quiz(update, context, quiz_type='grade', grade_level_id=grade_id)
-            elif quiz_type == 'chapter':
-                chapter_id = context.user_data.get('selected_chapter_id')
-                return start_quiz(update, context, quiz_type='chapter', chapter_id=chapter_id)
-            elif quiz_type == 'lesson':
-                lesson_id = context.user_data.get('selected_lesson_id')
-                return start_quiz(update, context, quiz_type='lesson', lesson_id=lesson_id)
-            else:
-                safe_edit_message_text(query, text="حدث خطأ غير متوقع عند بدء الاختبار.")
-                return cancel(update, context) # Go back to main menu on error
+            # Start the quiz immediately after duration selection
+            return start_quiz(update, context, quiz_type, quiz_filter_id)
         else:
+            logger.warning(f"Invalid duration key '{duration_key}' received.")
             safe_edit_message_text(query, text="مدة غير صالحة. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_duration_keyboard())
             return SELECTING_QUIZ_DURATION
-    elif data == 'menu_quiz': # Back button
+    elif data == 'menu_quiz':
+        # Go back to quiz menu
         safe_edit_message_text(query, text="اختر نوع الاختبار:", reply_markup=create_quiz_menu_keyboard())
+        # Clear potentially set quiz type/filter if user goes back
+        context.user_data.pop('quiz_type', None)
+        context.user_data.pop('quiz_filter_id', None)
         return QUIZ_MENU
     else:
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار مدة.", reply_markup=create_quiz_duration_keyboard())
+        logger.warning(f"Unexpected callback data '{data}' received in SELECTING_QUIZ_DURATION state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_quiz_duration_keyboard())
         return SELECTING_QUIZ_DURATION
 
-def select_grade_level_callback(update: Update, context: CallbackContext) -> int:
-    """Handles grade level selection for quizzes or structure navigation."""
+def select_grade_level_for_quiz_callback(update: Update, context: CallbackContext) -> int:
+    """Handles grade level selection for quizzes or further filtering."""
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
     data = query.data
 
-    quiz_selection_mode = context.user_data.get('quiz_selection_mode') # 'chapter' or 'lesson' or None
+    logger.info(f"User {user_id} selected grade level option: {data}")
+
+    selection_mode = context.user_data.get('quiz_selection_mode') # 'chapter' or 'lesson'
 
     if data.startswith('grade_quiz_'):
-        grade_info = data.split('_')[2]
-        if grade_info == 'all':
-            # Handle general quiz across all grades
+        grade_id_str = data.split('_')[-1]
+
+        if grade_id_str == 'all':
+            # General comprehensive test across all grades
             context.user_data['quiz_type'] = 'grade'
-            context.user_data['selected_grade_id'] = 'all' # Special marker
-            logger.info(f"User {user_id} selected general quiz across all grades.")
-            # Now ask for duration
+            context.user_data['quiz_filter_id'] = 'all'
+            context.user_data['selected_grade_name'] = 'كل المراحل (اختبار تحصيلي)'
+            # Ask for duration
             safe_edit_message_text(query,
                 text="اختر مدة الاختبار التحصيلي العام:",
                 reply_markup=create_quiz_duration_keyboard()
@@ -554,64 +530,64 @@ def select_grade_level_callback(update: Update, context: CallbackContext) -> int
             return SELECTING_QUIZ_DURATION
         else:
             try:
-                grade_id = int(grade_info)
-                context.user_data['selected_grade_id'] = grade_id
-                logger.info(f"User {user_id} selected grade {grade_id} for quiz (mode: {quiz_selection_mode}).")
+                grade_id = int(grade_id_str)
+                grade_name = QUIZ_DB.get_grade_level_name(grade_id) # Fetch name for context
+                if not grade_name:
+                     raise ValueError("Grade ID not found")
 
-                if quiz_selection_mode == 'chapter':
-                    # User wants quiz by chapter, show chapters for this grade
+                context.user_data['selected_grade_id'] = grade_id
+                context.user_data['selected_grade_name'] = grade_name
+
+                if selection_mode == 'chapter':
+                    # User wants to select a chapter within this grade
                     keyboard = create_chapters_keyboard(grade_id, for_quiz=True, context=context)
                     if keyboard:
                         safe_edit_message_text(query,
-                            text="الآن، اختر الفصل للاختبار:",
+                            text=f"اختر الفصل للاختبار ضمن '{grade_name}':",
                             reply_markup=keyboard
                         )
                         return SELECT_CHAPTER_FOR_QUIZ
                     else:
-                        safe_edit_message_text(query,
-                            text="لا توجد فصول متاحة لهذه المرحلة. العودة لقائمة الاختبارات.",
-                            reply_markup=create_quiz_menu_keyboard()
-                        )
+                        safe_edit_message_text(query, text=f"لا توجد فصول متاحة للمرحلة '{grade_name}'.", reply_markup=create_quiz_menu_keyboard())
                         return QUIZ_MENU
-                elif quiz_selection_mode == 'lesson':
-                    # User wants quiz by lesson, first show chapters for this grade
-                    context.user_data['selected_grade_id_for_lesson_quiz'] = grade_id # Store specifically for lesson flow
+                elif selection_mode == 'lesson':
+                    # User wants to select a lesson, need chapter first
+                    # Store grade_id specifically for lesson selection flow
+                    context.user_data['selected_grade_id_for_lesson_quiz'] = grade_id
                     keyboard = create_chapters_keyboard(grade_id, for_lesson=True, context=context)
                     if keyboard:
                         safe_edit_message_text(query,
-                            text="الآن، اختر الفصل الذي يحتوي على الدرس:",
+                            text=f"اختر الفصل الذي ينتمي إليه الدرس ضمن '{grade_name}':",
                             reply_markup=keyboard
                         )
                         return SELECT_CHAPTER_FOR_LESSON # Go to chapter selection for lesson
                     else:
-                        safe_edit_message_text(query,
-                            text="لا توجد فصول متاحة لهذه المرحلة. العودة لقائمة الاختبارات.",
-                            reply_markup=create_quiz_menu_keyboard()
-                        )
+                        safe_edit_message_text(query, text=f"لا توجد فصول متاحة للمرحلة '{grade_name}'.", reply_markup=create_quiz_menu_keyboard())
                         return QUIZ_MENU
                 else:
-                    # Default: Quiz for the entire grade level
+                    # Default: Quiz by grade level, ask for duration
                     context.user_data['quiz_type'] = 'grade'
-                    # Now ask for duration
+                    context.user_data['quiz_filter_id'] = grade_id
                     safe_edit_message_text(query,
-                        text=f"اختر مدة الاختبار للمرحلة المحددة:",
+                        text=f"اختر مدة الاختبار للمرحلة '{grade_name}':",
                         reply_markup=create_quiz_duration_keyboard()
                     )
                     return SELECTING_QUIZ_DURATION
-            except ValueError:
-                logger.warning(f"Invalid grade ID format in callback: {data}")
-                safe_edit_message_text(query, text="حدث خطأ. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_menu_keyboard())
+
+            except (ValueError, TypeError) as e:
+                logger.error(f"Invalid grade ID extracted from callback data '{data}': {e}")
+                safe_edit_message_text(query, text="حدث خطأ في تحديد المرحلة. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_menu_keyboard())
                 return QUIZ_MENU
 
-    elif data == 'menu_quiz': # Back button
+    elif data == 'menu_quiz':
+        # Go back to quiz menu
         safe_edit_message_text(query, text="اختر نوع الاختبار:", reply_markup=create_quiz_menu_keyboard())
-        # Clear selection mode if going back
-        if 'quiz_selection_mode' in context.user_data:
-            del context.user_data['quiz_selection_mode']
+        context.user_data.pop('quiz_selection_mode', None)
         return QUIZ_MENU
     else:
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار مرحلة.", reply_markup=create_grade_levels_keyboard(for_quiz=True, context=context))
-        return SELECT_GRADE_LEVEL_FOR_QUIZ
+        logger.warning(f"Unexpected callback data '{data}' received in SELECT_GRADE_LEVEL_FOR_QUIZ state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_quiz_menu_keyboard())
+        return QUIZ_MENU
 
 def select_chapter_for_quiz_callback(update: Update, context: CallbackContext) -> int:
     """Handles chapter selection specifically for starting a chapter quiz."""
@@ -620,44 +596,58 @@ def select_chapter_for_quiz_callback(update: Update, context: CallbackContext) -
     user_id = query.from_user.id
     data = query.data
 
+    logger.info(f"User {user_id} selected chapter for quiz: {data}")
+
     if data.startswith('chapter_quiz_'):
         try:
-            chapter_id = int(data.split('_')[2])
-            context.user_data['selected_chapter_id'] = chapter_id
-            context.user_data['quiz_type'] = 'chapter'
-            logger.info(f"User {user_id} selected chapter {chapter_id} for quiz.")
+            chapter_id = int(data.split('_')[-1])
+            chapter_name = QUIZ_DB.get_chapter_name(chapter_id)
+            if not chapter_name:
+                raise ValueError("Chapter ID not found")
 
-            # Now ask for duration
+            context.user_data['quiz_type'] = 'chapter'
+            context.user_data['quiz_filter_id'] = chapter_id
+            context.user_data['selected_chapter_name'] = chapter_name
+            grade_name = context.user_data.get('selected_grade_name', 'المرحلة المحددة')
+
+            # Ask for duration
             safe_edit_message_text(query,
-                text=f"اختر مدة الاختبار للفصل المحدد:",
+                text=f"اختر مدة الاختبار للفصل '{chapter_name}' (ضمن '{grade_name}'):",
                 reply_markup=create_quiz_duration_keyboard()
             )
             return SELECTING_QUIZ_DURATION
-        except (ValueError, IndexError):
-            logger.warning(f"Invalid chapter ID format in callback: {data}")
-            safe_edit_message_text(query, text="حدث خطأ. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_menu_keyboard())
-            return QUIZ_MENU
 
-    elif data == 'quiz_by_grade_prompt': # Back button (goes back to grade selection)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid chapter ID extracted from callback data '{data}': {e}")
+            # Go back to grade selection as chapter selection failed
+            keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
+            if keyboard:
+                 safe_edit_message_text(query,
+                     text="حدث خطأ في تحديد الفصل. اختر المرحلة الدراسية مرة أخرى:",
+                     reply_markup=keyboard
+                 )
+                 return SELECT_GRADE_LEVEL_FOR_QUIZ
+            else:
+                 safe_edit_message_text(query, text="حدث خطأ ولم يتم العثور على مراحل.", reply_markup=create_quiz_menu_keyboard())
+                 return QUIZ_MENU
+
+    elif data == 'quiz_by_grade_prompt': # Back button goes to grade selection
         keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
         if keyboard:
             safe_edit_message_text(query,
                 text="اختر المرحلة الدراسية للاختبار:",
                 reply_markup=keyboard
             )
-            # Keep quiz_selection_mode as 'chapter'
+            # Clear selection mode as we are going back to grade selection
+            context.user_data.pop('quiz_selection_mode', None)
             return SELECT_GRADE_LEVEL_FOR_QUIZ
         else:
-            safe_edit_message_text(query,
-                text="عذراً، لا توجد مراحل دراسية متاحة حالياً.",
-                reply_markup=create_quiz_menu_keyboard()
-            )
+            safe_edit_message_text(query, text="لم يتم إضافة أي مراحل دراسية بعد.", reply_markup=create_quiz_menu_keyboard())
             return QUIZ_MENU
     else:
-        grade_id = context.user_data.get('selected_grade_id')
-        keyboard = create_chapters_keyboard(grade_id, for_quiz=True, context=context) if grade_id else None
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار فصل.", reply_markup=keyboard)
-        return SELECT_CHAPTER_FOR_QUIZ
+        logger.warning(f"Unexpected callback data '{data}' received in SELECT_CHAPTER_FOR_QUIZ state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_quiz_menu_keyboard())
+        return QUIZ_MENU
 
 def select_chapter_for_lesson_callback(update: Update, context: CallbackContext) -> int:
     """Handles chapter selection when the goal is to select a lesson."""
@@ -666,718 +656,126 @@ def select_chapter_for_lesson_callback(update: Update, context: CallbackContext)
     user_id = query.from_user.id
     data = query.data
 
-    if data.startswith('lesson_chapter_'):
+    logger.info(f"User {user_id} selected chapter for lesson selection: {data}")
+
+    if data.startswith('lesson_chapter_'): # Note the prefix difference
         try:
-            chapter_id = int(data.split('_')[2])
-            context.user_data['selected_chapter_id_for_lesson'] = chapter_id # Store chapter for lesson context
-            logger.info(f"User {user_id} selected chapter {chapter_id} to find a lesson.")
+            chapter_id = int(data.split('_')[-1])
+            chapter_name = QUIZ_DB.get_chapter_name(chapter_id)
+            if not chapter_name:
+                raise ValueError("Chapter ID not found")
+
+            context.user_data['selected_chapter_id_for_lesson_quiz'] = chapter_id
+            context.user_data['selected_chapter_name'] = chapter_name # Store for context
+            grade_name = context.user_data.get('selected_grade_name', 'المرحلة المحددة')
 
             # Now show lessons for this chapter
             keyboard = create_lessons_keyboard(chapter_id, for_quiz=True, context=context)
             if keyboard:
                 safe_edit_message_text(query,
-                    text="الآن، اختر الدرس للاختبار:",
+                    text=f"اختر الدرس للاختبار ضمن الفصل '{chapter_name}' (المرحلة '{grade_name}'):",
                     reply_markup=keyboard
                 )
                 return SELECT_LESSON_FOR_QUIZ
             else:
-                safe_edit_message_text(query,
-                    text="لا توجد دروس متاحة لهذا الفصل. العودة لقائمة الاختبارات.",
-                    reply_markup=create_quiz_menu_keyboard()
-                )
-                # Clear selection mode if going back
-                if 'quiz_selection_mode' in context.user_data:
-                    del context.user_data['quiz_selection_mode']
+                safe_edit_message_text(query, text=f"لا توجد دروس متاحة للفصل '{chapter_name}'.", reply_markup=create_quiz_menu_keyboard())
                 return QUIZ_MENU
-        except (ValueError, IndexError):
-            logger.warning(f"Invalid chapter ID format in callback: {data}")
-            safe_edit_message_text(query, text="حدث خطأ. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_menu_keyboard())
-            return QUIZ_MENU
 
-    elif data == 'quiz_by_grade_prompt': # Back button (goes back to grade selection)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid chapter ID extracted from callback data '{data}': {e}")
+            # Go back to grade selection
+            keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
+            if keyboard:
+                 safe_edit_message_text(query,
+                     text="حدث خطأ في تحديد الفصل. اختر المرحلة الدراسية مرة أخرى:",
+                     reply_markup=keyboard
+                 )
+                 return SELECT_GRADE_LEVEL_FOR_QUIZ
+            else:
+                 safe_edit_message_text(query, text="حدث خطأ ولم يتم العثور على مراحل.", reply_markup=create_quiz_menu_keyboard())
+                 return QUIZ_MENU
+
+    elif data == 'quiz_by_grade_prompt': # Back button goes to grade selection
         keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
         if keyboard:
             safe_edit_message_text(query,
-                text="اختر المرحلة الدراسية:",
+                text="اختر المرحلة الدراسية التي ينتمي إليها الدرس:",
                 reply_markup=keyboard
             )
-            # Keep quiz_selection_mode as 'lesson'
+            # Keep selection_mode='lesson'
             return SELECT_GRADE_LEVEL_FOR_QUIZ
         else:
-            safe_edit_message_text(query,
-                text="عذراً، لا توجد مراحل دراسية متاحة حالياً.",
-                reply_markup=create_quiz_menu_keyboard()
-            )
+            safe_edit_message_text(query, text="لم يتم إضافة أي مراحل دراسية بعد.", reply_markup=create_quiz_menu_keyboard())
             return QUIZ_MENU
     else:
-        grade_id = context.user_data.get('selected_grade_id_for_lesson_quiz')
-        keyboard = create_chapters_keyboard(grade_id, for_lesson=True, context=context) if grade_id else None
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار فصل.", reply_markup=keyboard)
-        return SELECT_CHAPTER_FOR_LESSON
+        logger.warning(f"Unexpected callback data '{data}' received in SELECT_CHAPTER_FOR_LESSON state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_quiz_menu_keyboard())
+        return QUIZ_MENU
 
 def select_lesson_for_quiz_callback(update: Update, context: CallbackContext) -> int:
-    """Handles lesson selection specifically for starting a lesson quiz."""
+    """Handles lesson selection for starting a lesson quiz."""
     query = update.callback_query
     query.answer()
     user_id = query.from_user.id
     data = query.data
+
+    logger.info(f"User {user_id} selected lesson for quiz: {data}")
 
     if data.startswith('lesson_quiz_'):
         try:
-            lesson_id = int(data.split('_')[2])
-            context.user_data['selected_lesson_id'] = lesson_id
-            context.user_data['quiz_type'] = 'lesson'
-            logger.info(f"User {user_id} selected lesson {lesson_id} for quiz.")
+            lesson_id = int(data.split('_')[-1])
+            lesson_name = QUIZ_DB.get_lesson_name(lesson_id)
+            if not lesson_name:
+                raise ValueError("Lesson ID not found")
 
-            # Now ask for duration
+            context.user_data['quiz_type'] = 'lesson'
+            context.user_data['quiz_filter_id'] = lesson_id
+            context.user_data['selected_lesson_name'] = lesson_name
+            chapter_name = context.user_data.get('selected_chapter_name', 'الفصل المحدد')
+            grade_name = context.user_data.get('selected_grade_name', 'المرحلة المحددة')
+
+            # Ask for duration
             safe_edit_message_text(query,
-                text=f"اختر مدة الاختبار للدرس المحدد:",
+                text=f"اختر مدة الاختبار للدرس '{lesson_name}' (ضمن '{chapter_name}' - '{grade_name}'):",
                 reply_markup=create_quiz_duration_keyboard()
             )
             return SELECTING_QUIZ_DURATION
-        except (ValueError, IndexError):
-            logger.warning(f"Invalid lesson ID format in callback: {data}")
-            safe_edit_message_text(query, text="حدث خطأ. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_menu_keyboard())
+
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid lesson ID extracted from callback data '{data}': {e}")
+            # Go back to chapter selection for the lesson
+            grade_id = context.user_data.get('selected_grade_id_for_lesson_quiz')
+            if grade_id:
+                keyboard = create_chapters_keyboard(grade_id, for_lesson=True, context=context)
+                if keyboard:
+                    safe_edit_message_text(query,
+                        text="حدث خطأ في تحديد الدرس. اختر الفصل مرة أخرى:",
+                        reply_markup=keyboard
+                    )
+                    return SELECT_CHAPTER_FOR_LESSON
+            # Fallback to quiz menu if going back fails
+            safe_edit_message_text(query, text="حدث خطأ. العودة لقائمة الاختبارات.", reply_markup=create_quiz_menu_keyboard())
             return QUIZ_MENU
 
-    # Back button logic needs refinement - go back to chapter selection for the correct grade
-    elif data.startswith('grade_quiz_'): # Back button pressed, data contains grade info
-         try:
-            grade_id = int(data.split('_')[2])
-            keyboard = create_chapters_keyboard(grade_id, for_lesson=True, context=context)
-            if keyboard:
-                safe_edit_message_text(query,
-                    text="اختر الفصل الذي يحتوي على الدرس:",
-                    reply_markup=keyboard
-                )
-                return SELECT_CHAPTER_FOR_LESSON
-            else:
-                # Fallback if chapters fail to load
-                safe_edit_message_text(query, text="لا توجد فصول. العودة لقائمة الاختبارات.", reply_markup=create_quiz_menu_keyboard())
-                return QUIZ_MENU
-         except (ValueError, IndexError):
-             logger.warning(f"Invalid grade ID in back callback: {data}")
-             safe_edit_message_text(query, text="خطأ في الرجوع. العودة لقائمة الاختبارات.", reply_markup=create_quiz_menu_keyboard())
-             return QUIZ_MENU
-    elif data == 'quiz_by_lesson_prompt': # Fallback back button if grade_id wasn't found
-         # This ideally shouldn't happen if context is managed well
-         keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
-         if keyboard:
-             safe_edit_message_text(query,
-                 text="اختر المرحلة الدراسية:",
-                 reply_markup=keyboard
-             )
-             return SELECT_GRADE_LEVEL_FOR_QUIZ
-         else:
-             safe_edit_message_text(query, text="لا توجد مراحل. العودة لقائمة الاختبارات.", reply_markup=create_quiz_menu_keyboard())
-             return QUIZ_MENU
-
-    else:
-        chapter_id = context.user_data.get('selected_chapter_id_for_lesson')
-        keyboard = create_lessons_keyboard(chapter_id, for_quiz=True, context=context) if chapter_id else None
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار درس.", reply_markup=keyboard)
-        return SELECT_LESSON_FOR_QUIZ
-
-# --- Quiz Logic ---
-
-def start_quiz(update: Update, context: CallbackContext, quiz_type='random', grade_level_id=None, chapter_id=None, lesson_id=None) -> int:
-    """Starts a quiz based on selected criteria."""
-    query = update.callback_query # Can be None if called directly after duration selection
-    user_id = context.user_data.get("user_id")
-    duration = context.user_data.get('quiz_duration', QUIZ_DURATIONS['medium']) # Default duration
-
-    if not user_id:
-        # Try to get user_id from update if context is missing it
-        if update.effective_user:
-            user_id = update.effective_user.id
-            context.user_data["user_id"] = user_id
-        else:
-            logger.error("Cannot start quiz: User ID not found.")
-            if query: query.message.reply_text("حدث خطأ: لم يتم العثور على معرف المستخدم.")
-            return ConversationHandler.END
-
-    logger.info(f"Starting quiz for user {user_id}. Type: {quiz_type}, Duration: {duration}s, Grade: {grade_level_id}, Chapter: {chapter_id}, Lesson: {lesson_id}")
-
-    # Fetch questions based on criteria
-    questions = []
-    if quiz_type == 'random':
-        questions = QUIZ_DB.get_random_questions(DEFAULT_QUIZ_QUESTIONS)
-    elif quiz_type == 'grade':
-        if grade_level_id == 'all': # General quiz
-             questions = QUIZ_DB.get_questions_by_criteria(limit=DEFAULT_QUIZ_QUESTIONS)
-        else:
-             questions = QUIZ_DB.get_questions_by_criteria(grade_level_id=grade_level_id, limit=DEFAULT_QUIZ_QUESTIONS)
-    elif quiz_type == 'chapter':
-        questions = QUIZ_DB.get_questions_by_criteria(chapter_id=chapter_id, limit=DEFAULT_QUIZ_QUESTIONS)
-    elif quiz_type == 'lesson':
-        questions = QUIZ_DB.get_questions_by_criteria(lesson_id=lesson_id, limit=DEFAULT_QUIZ_QUESTIONS)
-
-    if not questions:
-        logger.warning(f"No questions found for quiz criteria: {quiz_type}, G:{grade_level_id}, C:{chapter_id}, L:{lesson_id}")
-        message_text = "عذراً، لم يتم العثور على أسئلة تطابق اختيارك. يرجى المحاولة مرة أخرى أو اختيار معايير مختلفة."
-        if query:
-            safe_edit_message_text(query, text=message_text, reply_markup=create_quiz_menu_keyboard())
-        else:
-            # If called without a query (e.g., after duration), send a new message
-            context.bot.send_message(chat_id=user_id, text=message_text, reply_markup=create_quiz_menu_keyboard())
-        return QUIZ_MENU
-
-    # Shuffle questions
-    random.shuffle(questions)
-
-    # Store quiz state in user_data
-    context.user_data['quiz_questions'] = questions
-    context.user_data['current_question_index'] = 0
-    context.user_data['quiz_score'] = 0
-    context.user_data['quiz_answers'] = [] # Store user answers (question_id, selected_option_index, is_correct)
-    context.user_data['quiz_start_time'] = datetime.now()
-    context.user_data['quiz_end_time'] = datetime.now() + timedelta(seconds=duration)
-    context.user_data['quiz_active'] = True
-
-    # Start the quiz timer
-    job_name = f"quiz_timer_{user_id}"
-    # Remove any existing timer for this user first
-    current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    if current_jobs:
-        for job in current_jobs:
-            job.schedule_removal()
-    context.job_queue.run_once(quiz_timeout, duration, context={'user_id': user_id, 'chat_id': query.message.chat_id if query else user_id}, name=job_name)
-
-    logger.info(f"Quiz timer set for user {user_id} for {duration} seconds.")
-
-    # Send the first question
-    if query:
-        # Edit the message that triggered the quiz start
-        send_question(update, context, query=query)
-    else:
-        # Send a new message if no query (e.g., after duration selection)
-        send_question(update, context)
-
-    return RUNNING_QUIZ
-
-def send_question(update: Update, context: CallbackContext, query=None):
-    """Sends the current quiz question to the user."""
-    user_id = context.user_data.get("user_id")
-    if not user_id:
-        logger.error("Cannot send question: User ID not found in context.")
-        # Attempt to recover user_id if possible
-        if update and update.effective_user:
-            user_id = update.effective_user.id
-            context.user_data["user_id"] = user_id
-        else:
-            # Cannot proceed without user_id
-            if query: query.message.reply_text("خطأ: لم يتم العثور على المستخدم.")
-            return cancel(update, context) if update else ConversationHandler.END
-
-    if not context.user_data.get('quiz_active', False):
-        logger.info(f"Attempted to send question to user {user_id}, but quiz is not active.")
-        # Quiz might have timed out or ended
-        return RUNNING_QUIZ # Stay in state, timeout/end logic handles transition
-
-    questions = context.user_data.get('quiz_questions', [])
-    current_index = context.user_data.get('current_question_index', 0)
-    total_questions = len(questions)
-
-    if current_index >= total_questions:
-        # Should be handled by answer/skip logic, but as a fallback
-        logger.info(f"Quiz finished for user {user_id}, but send_question called.")
-        return end_quiz(update, context)
-
-    current_question_data = questions[current_index]
-    question_id = current_question_data['id']
-    question_text = current_question_data['question_text']
-    options = current_question_data['options'] # List of strings
-    image_path = current_question_data.get('image_path') # Optional image path
-
-    keyboard = create_quiz_question_keyboard(options, question_id)
-
-    # Calculate remaining time
-    end_time = context.user_data.get('quiz_end_time')
-    remaining_time_str = ""
-    if end_time:
-        remaining_delta = end_time - datetime.now()
-        if remaining_delta.total_seconds() > 0:
-            remaining_minutes = int(remaining_delta.total_seconds() // 60)
-            remaining_seconds = int(remaining_delta.total_seconds() % 60)
-            remaining_time_str = f"⏳ الوقت المتبقي: {remaining_minutes:02d}:{remaining_seconds:02d}\n"
-        else:
-            # Time might have run out just now
-            logger.info(f"Time ran out for user {user_id} just before sending question {current_index + 1}.")
-            # The timer job should handle the timeout
-            return RUNNING_QUIZ
-
-    # Store the message ID of the question to edit it later with feedback
-    sent_message = None
-
-    # --- Corrected Code Block Start --- #
-    # Send the question with image if available
-    if image_path:
-        try:
-            # Send image first
-            with open(image_path, 'rb') as img:
-                context.bot.send_photo(chat_id=user_id, photo=img)
-            # Then send the text and keyboard
-            text = f"{remaining_time_str}*السؤال {current_index + 1} من {total_questions}:*\n\n{question_text}"
-            sent_message = context.bot.send_message(
-                chat_id=user_id,
-                text=text,
-                reply_markup=keyboard,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except FileNotFoundError:
-            logger.error(f"Image file not found: {image_path} for question {question_id}")
-            # Fallback to text only
-            text = f"{remaining_time_str}*السؤال {current_index + 1} من {total_questions}:*\n\n{question_text}\n\n(تعذر تحميل الصورة المصاحبة)"
-            sent_message = context.bot.send_message(
-                chat_id=user_id,
-                text=text,
-                reply_markup=keyboard,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except Exception as e:
-            logger.error(f"Error sending question with image {image_path}: {e}")
-            # General fallback to text only
-            text = f"{remaining_time_str}*السؤال {current_index + 1} من {total_questions}:*\n\n{question_text}"
-            sent_message = context.bot.send_message(
-                chat_id=user_id,
-                text=text,
-                reply_markup=keyboard,
-                parse_mode=ParseMode.MARKDOWN
-            )
-    else:
-        # Send text only
-        text = f"{remaining_time_str}*السؤال {current_index + 1} من {total_questions}:*\n\n{question_text}"
-        # Use query.edit_message_text if available, otherwise send new message
-        if query:
-             try:
-                 sent_message = query.edit_message_text(
-                     text=text,
-                     reply_markup=keyboard,
-                     parse_mode=ParseMode.MARKDOWN
+    elif data == 'quiz_by_lesson_prompt': # Back button should go back to chapter selection for lesson
+         grade_id = context.user_data.get('selected_grade_id_for_lesson_quiz')
+         if grade_id:
+             keyboard = create_chapters_keyboard(grade_id, for_lesson=True, context=context)
+             if keyboard:
+                 grade_name = context.user_data.get('selected_grade_name', 'المرحلة المحددة')
+                 safe_edit_message_text(query,
+                     text=f"اختر الفصل الذي ينتمي إليه الدرس ضمن '{grade_name}':",
+                     reply_markup=keyboard
                  )
-             except BadRequest as e:
-                 if "Message is not modified" in str(e):
-                     logger.info("Message not modified, sending question anyway.")
-                     # If editing fails (e.g., same content), send as new message
-                     sent_message = context.bot.send_message(
-                         chat_id=user_id,
-                         text=text,
-                         reply_markup=keyboard,
-                         parse_mode=ParseMode.MARKDOWN
-                     )
-                 else:
-                     logger.error(f"Error editing message to send question: {e}")
-                     # Fallback to sending new message on other errors
-                     sent_message = context.bot.send_message(
-                         chat_id=user_id,
-                         text=text,
-                         reply_markup=keyboard,
-                         parse_mode=ParseMode.MARKDOWN
-                     )
-        else:
-             sent_message = context.bot.send_message(
-                 chat_id=user_id,
-                 text=text,
-                 reply_markup=keyboard,
-                 parse_mode=ParseMode.MARKDOWN
-             )
-    # --- Corrected Code Block End --- #
-
-    if sent_message:
-        context.user_data['last_question_message_id'] = sent_message.message_id
-        context.user_data['last_question_chat_id'] = sent_message.chat_id
-
-def handle_answer(update: Update, context: CallbackContext) -> int:
-    """Handles user's answer selection during a quiz."""
-    query = update.callback_query
-    query.answer()
-    user_id = query.from_user.id
-    data = query.data
-
-    if not context.user_data.get('quiz_active', False):
-        logger.info(f"User {user_id} answered, but quiz is not active.")
-        safe_edit_message_text(query, text="انتهى وقت الاختبار أو تم إلغاؤه.")
-        # Attempt to show results if they exist
-        if 'quiz_score' in context.user_data:
-            return show_results(update, context, query=query)
-        else:
-            return cancel(update, context)
-
-    try:
-        _, question_id_str, selected_option_index_str = data.split('_')
-        question_id = int(question_id_str)
-        selected_option_index = int(selected_option_index_str)
-    except (ValueError, IndexError):
-        logger.error(f"Invalid answer callback data format: {data}")
-        safe_edit_message_text(query, text="حدث خطأ في معالجة إجابتك. يرجى المحاولة مرة أخرى.")
-        return RUNNING_QUIZ
-
-    questions = context.user_data.get('quiz_questions', [])
-    current_index = context.user_data.get('current_question_index', 0)
-
-    # Basic check: is the answered question the current one?
-    if current_index >= len(questions) or questions[current_index]['id'] != question_id:
-        logger.warning(f"User {user_id} answered question {question_id}, but current is {questions[current_index]['id'] if current_index < len(questions) else 'None'}. Ignoring.")
-        # Maybe they clicked an old button? Just ignore.
-        return RUNNING_QUIZ
-
-    current_question_data = questions[current_index]
-    correct_option_index = current_question_data['correct_option_index']
-    options = current_question_data['options']
-
-    is_correct = (selected_option_index == correct_option_index)
-
-    # Update score and record answer
-    if is_correct:
-        context.user_data['quiz_score'] = context.user_data.get('quiz_score', 0) + 1
-        feedback_text = "✅ إجابة صحيحة!"
+                 return SELECT_CHAPTER_FOR_LESSON
+         # Fallback if going back fails
+         safe_edit_message_text(query, text="اختر نوع الاختبار:", reply_markup=create_quiz_menu_keyboard())
+         return QUIZ_MENU
     else:
-        correct_option_text = options[correct_option_index]
-        feedback_text = f"❌ إجابة خاطئة.\nالإجابة الصحيحة: {correct_option_text}"
-
-    context.user_data.setdefault('quiz_answers', []).append({
-        'question_id': question_id,
-        'selected_option_index': selected_option_index,
-        'correct_option_index': correct_option_index,
-        'is_correct': is_correct
-    })
-
-    # Edit the original question message to show feedback (remove keyboard)
-    original_message_id = context.user_data.get('last_question_message_id')
-    original_chat_id = context.user_data.get('last_question_chat_id')
-    original_message_text = query.message.text # Get the text of the message the button was attached to
-
-    if original_message_id and original_chat_id:
-        # Combine original question text (without time) and feedback
-        # Find the start of the actual question text after the time string if it exists
-        question_start_index = original_message_text.find("*السؤال")
-        if question_start_index != -1:
-            original_question_part = original_message_text[question_start_index:]
-        else:
-            original_question_part = original_message_text # Fallback
-
-        new_text = f"{original_question_part}\n\n{feedback_text}"
-
-        try:
-            context.bot.edit_message_text(
-                chat_id=original_chat_id,
-                message_id=original_message_id,
-                text=new_text,
-                reply_markup=None, # Remove keyboard
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except BadRequest as e:
-            if "Message is not modified" in str(e):
-                logger.info(f"Feedback message for question {question_id} not modified.")
-                # If not modified, maybe just log, no need to send new message here.
-            else:
-                logger.error(f"Error editing message to show feedback for question {question_id}: {e}")
-                # Fallback: Send feedback as a new message if editing fails
-                context.bot.send_message(chat_id=original_chat_id, text=feedback_text)
-        except Exception as e:
-             logger.error(f"Unexpected error editing message for feedback: {e}")
-             context.bot.send_message(chat_id=original_chat_id, text=feedback_text)
-    else:
-        # Fallback if original message details are missing
-        query.message.reply_text(feedback_text)
-
-    # Move to the next question or end quiz
-    context.user_data['current_question_index'] = current_index + 1
-
-    if context.user_data['current_question_index'] < len(questions):
-        # Schedule the next question after a short delay
-        job_name = f"feedback_timer_{user_id}"
-        context.job_queue.run_once(send_next_question_job, FEEDBACK_DELAY, context={'user_id': user_id, 'chat_id': original_chat_id}, name=job_name)
-    else:
-        # Schedule ending the quiz after feedback delay
-        job_name = f"feedback_timer_{user_id}"
-        context.job_queue.run_once(end_quiz_job, FEEDBACK_DELAY, context={'user_id': user_id, 'chat_id': original_chat_id}, name=job_name)
-
-    return RUNNING_QUIZ
-
-def skip_question(update: Update, context: CallbackContext) -> int:
-    """Handles skipping the current question."""
-    query = update.callback_query
-    query.answer()
-    user_id = query.from_user.id
-    data = query.data
-
-    if not context.user_data.get('quiz_active', False):
-        logger.info(f"User {user_id} tried to skip, but quiz is not active.")
-        safe_edit_message_text(query, text="انتهى وقت الاختبار أو تم إلغاؤه.")
-        return cancel(update, context)
-
-    try:
-        _, question_id_str = data.split('_')
-        question_id = int(question_id_str)
-    except (ValueError, IndexError):
-        logger.error(f"Invalid skip callback data format: {data}")
-        safe_edit_message_text(query, text="حدث خطأ في معالجة التخطي.")
-        return RUNNING_QUIZ
-
-    questions = context.user_data.get('quiz_questions', [])
-    current_index = context.user_data.get('current_question_index', 0)
-
-    # Basic check: is the skipped question the current one?
-    if current_index >= len(questions) or questions[current_index]['id'] != question_id:
-        logger.warning(f"User {user_id} skipped question {question_id}, but current is {questions[current_index]['id'] if current_index < len(questions) else 'None'}. Ignoring.")
-        return RUNNING_QUIZ
-
-    current_question_data = questions[current_index]
-    correct_option_index = current_question_data['correct_option_index']
-    options = current_question_data['options']
-
-    # Record skipped answer
-    context.user_data.setdefault('quiz_answers', []).append({
-        'question_id': question_id,
-        'selected_option_index': None, # Mark as skipped
-        'correct_option_index': correct_option_index,
-        'is_correct': False
-    })
-
-    # Provide feedback for skipped question
-    correct_option_text = options[correct_option_index]
-    feedback_text = f"تم تخطي السؤال.\nالإجابة الصحيحة: {correct_option_text}"
-
-    # Edit the original question message
-    original_message_id = context.user_data.get('last_question_message_id')
-    original_chat_id = context.user_data.get('last_question_chat_id')
-    original_message_text = query.message.text
-
-    if original_message_id and original_chat_id:
-        question_start_index = original_message_text.find("*السؤال")
-        original_question_part = original_message_text[question_start_index:] if question_start_index != -1 else original_message_text
-        new_text = f"{original_question_part}\n\n{feedback_text}"
-        try:
-            context.bot.edit_message_text(
-                chat_id=original_chat_id,
-                message_id=original_message_id,
-                text=new_text,
-                reply_markup=None,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except BadRequest as e:
-            if "Message is not modified" in str(e):
-                logger.info(f"Skip feedback message for question {question_id} not modified.")
-            else:
-                logger.error(f"Error editing message for skip feedback: {e}")
-                context.bot.send_message(chat_id=original_chat_id, text=feedback_text)
-        except Exception as e:
-             logger.error(f"Unexpected error editing message for skip feedback: {e}")
-             context.bot.send_message(chat_id=original_chat_id, text=feedback_text)
-    else:
-        query.message.reply_text(feedback_text)
-
-    # Move to the next question or end quiz
-    context.user_data['current_question_index'] = current_index + 1
-
-    if context.user_data['current_question_index'] < len(questions):
-        job_name = f"feedback_timer_{user_id}"
-        context.job_queue.run_once(send_next_question_job, FEEDBACK_DELAY, context={'user_id': user_id, 'chat_id': original_chat_id}, name=job_name)
-    else:
-        job_name = f"feedback_timer_{user_id}"
-        context.job_queue.run_once(end_quiz_job, FEEDBACK_DELAY, context={'user_id': user_id, 'chat_id': original_chat_id}, name=job_name)
-
-    return RUNNING_QUIZ
-
-def send_next_question_job(context: CallbackContext):
-    """Job to send the next question after feedback delay."""
-    user_id = context.job.context['user_id']
-    chat_id = context.job.context['chat_id']
-    # We need to pass an Update object, but we don't have one here.
-    # Let's create a dummy Update-like structure or modify send_question.
-    # Modifying send_question to not require Update/query might be cleaner.
-
-    # Let's try calling send_question without Update/query
-    # We need to ensure user_data is accessible via context.dispatcher.user_data[user_id]
-    bot_user_data = context.dispatcher.user_data.get(user_id, {})
-    if not bot_user_data:
-         logger.warning(f"User data not found for user {user_id} in send_next_question_job")
-         return
-
-    # Create a temporary context object with the correct user_data
-    temp_context = CallbackContext(context.dispatcher)
-    temp_context._user_data = bot_user_data
-    temp_context._chat_data = context.dispatcher.chat_data.get(chat_id, {})
-    temp_context._bot_data = context.dispatcher.bot_data
-
-    # Ensure user_id is set in the temp context's user_data
-    temp_context.user_data['user_id'] = user_id
-
-    logger.info(f"Job: Sending next question to user {user_id}")
-    send_question(None, temp_context) # Pass None for update
-
-def end_quiz_job(context: CallbackContext):
-    """Job to end the quiz after feedback delay for the last question."""
-    user_id = context.job.context['user_id']
-    chat_id = context.job.context['chat_id']
-
-    bot_user_data = context.dispatcher.user_data.get(user_id, {})
-    if not bot_user_data:
-         logger.warning(f"User data not found for user {user_id} in end_quiz_job")
-         return
-
-    temp_context = CallbackContext(context.dispatcher)
-    temp_context._user_data = bot_user_data
-    temp_context._chat_data = context.dispatcher.chat_data.get(chat_id, {})
-    temp_context._bot_data = context.dispatcher.bot_data
-    temp_context.user_data['user_id'] = user_id # Ensure user_id is present
-
-    logger.info(f"Job: Ending quiz for user {user_id}")
-    end_quiz(None, temp_context) # Pass None for update
-
-def quiz_timeout(context: CallbackContext):
-    """Handles the quiz timeout."""
-    user_id = context.job.context['user_id']
-    chat_id = context.job.context['chat_id']
-    logger.info(f"Quiz timed out for user {user_id}.")
-
-    # Access user_data associated with the specific user
-    user_data = context.dispatcher.user_data.get(user_id)
-
-    if user_data and user_data.get('quiz_active', False):
-        user_data['quiz_active'] = False # Mark quiz as inactive
-
-        # Create a temporary context for this user
-        temp_context = CallbackContext(context.dispatcher)
-        temp_context._user_data = user_data
-        temp_context._chat_data = context.dispatcher.chat_data.get(chat_id, {})
-        temp_context._bot_data = context.dispatcher.bot_data
-        temp_context.user_data['user_id'] = user_id # Ensure user_id is present
-
-        context.bot.send_message(chat_id=chat_id, text="⏰ انتهى وقت الاختبار!")
-        # Use the temporary context to call end_quiz
-        end_quiz(None, temp_context) # Pass None for update
-    else:
-        logger.info(f"Quiz timeout job ran for user {user_id}, but quiz was already inactive or user_data missing.")
-
-def end_quiz(update: Update, context: CallbackContext) -> int:
-    """Ends the current quiz and shows the results."""
-    user_id = context.user_data.get("user_id")
-    if not user_id:
-        logger.error("Cannot end quiz: User ID not found in context.")
-        if update and update.effective_message:
-             update.effective_message.reply_text("خطأ: لم يتم العثور على المستخدم.")
-        return ConversationHandler.END # Or MAIN_MENU?
-
-    logger.info(f"Ending quiz for user {user_id}.")
-
-    # Ensure quiz is marked inactive
-    context.user_data['quiz_active'] = False
-
-    # Remove timer job if it exists (might be called before timeout)
-    job_name = f"quiz_timer_{user_id}"
-    current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    if current_jobs:
-        for job in current_jobs:
-            job.schedule_removal()
-        logger.info(f"Removed quiz timer job for user {user_id} during end_quiz.")
-
-    # Remove feedback timer job if it exists
-    feedback_job_name = f"feedback_timer_{user_id}"
-    feedback_jobs = context.job_queue.get_jobs_by_name(feedback_job_name)
-    if feedback_jobs:
-        for job in feedback_jobs:
-            job.schedule_removal()
-        logger.info(f"Removed feedback timer job for user {user_id} during end_quiz.")
-
-    # Show results
-    return show_results(update, context)
-
-def show_results(update: Update, context: CallbackContext, query=None) -> int:
-    """Displays the quiz results to the user."""
-    user_id = context.user_data.get("user_id")
-    if not user_id:
-        logger.error("Cannot show results: User ID not found.")
-        # Handle error appropriately
-        if query: query.message.reply_text("خطأ في عرض النتائج.")
-        elif update: update.effective_message.reply_text("خطأ في عرض النتائج.")
-        return MAIN_MENU
-
-    score = context.user_data.get('quiz_score', 0)
-    questions = context.user_data.get('quiz_questions', [])
-    total_questions = len(questions)
-    quiz_answers = context.user_data.get('quiz_answers', [])
-
-    if total_questions == 0:
-        result_text = "لم يتم العثور على أسئلة لهذا الاختبار."
-        keyboard = create_main_menu_keyboard(user_id)
-    else:
-        percentage = round((score / total_questions) * 100) if total_questions > 0 else 0
-        result_text = f"🎉 انتهى الاختبار! 🎉\n\n"
-        result_text += f"نتيجتك: {score} من {total_questions} ({percentage}%)\n"
-
-        # Simple performance feedback
-        if percentage == 100:
-            result_text += "🥳 ممتاز! درجة كاملة!"
-        elif percentage >= 80:
-            result_text += "👍 جيد جداً!"
-        elif percentage >= 60:
-            result_text += "🙂 جيد."
-        elif percentage >= 40:
-            result_text += "🤔 تحتاج إلى المزيد من المراجعة."
-        else:
-            result_text += "😔 حاول مرة أخرى!"
-
-        # Store results in the database
-        quiz_id = QUIZ_DB.save_quiz_result(user_id, score, total_questions, percentage, context.user_data.get('quiz_type'), context.user_data.get('selected_grade_id'), context.user_data.get('selected_chapter_id'), context.user_data.get('selected_lesson_id'))
-        if quiz_id:
-            logger.info(f"Saved quiz result {quiz_id} for user {user_id}.")
-            # Save individual answers
-            for answer in quiz_answers:
-                QUIZ_DB.save_quiz_answer(quiz_id, answer['question_id'], answer['selected_option_index'], answer['is_correct'])
-            keyboard = create_results_menu_keyboard(quiz_id)
-        else:
-            logger.error(f"Failed to save quiz result for user {user_id}.")
-            keyboard = create_main_menu_keyboard(user_id) # Fallback keyboard
-
-    # Send results
-    if query:
-        # If called from a callback (like timeout or answer handler)
-        safe_edit_message_text(query, text=result_text, reply_markup=keyboard)
-    elif update and update.effective_message:
-        # If called directly (e.g., end_quiz after last question)
-        update.effective_message.reply_text(text=result_text, reply_markup=keyboard)
-    else:
-        # If called from a job (timeout, end_quiz_job)
-        context.bot.send_message(chat_id=user_id, text=result_text, reply_markup=keyboard)
-
-    # Clean up quiz-specific data, but keep user_id
-    keys_to_clear = [k for k in context.user_data if k not in ['user_id']]
-    for key in keys_to_clear:
-        try:
-            del context.user_data[key]
-        except KeyError:
-            pass # Key might have already been deleted
-
-    return VIEWING_RESULTS # Stay in results view or transition back?
-    # Let's transition back to main menu after showing results
-    # return MAIN_MENU
-
-def results_menu_callback(update: Update, context: CallbackContext) -> int:
-    """Handles button presses on the results screen."""
-    query = update.callback_query
-    query.answer()
-    user_id = query.from_user.id
-    data = query.data
-
-    if data == 'menu_quiz':
-        safe_edit_message_text(query, text="اختر نوع الاختبار:", reply_markup=create_quiz_menu_keyboard())
+        logger.warning(f"Unexpected callback data '{data}' received in SELECT_LESSON_FOR_QUIZ state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_quiz_menu_keyboard())
         return QUIZ_MENU
-    elif data == 'main_menu':
-        safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
-        return MAIN_MENU
-    # Add review logic here if implemented
-    # elif data.startswith('review_'):
-    #     quiz_id = int(data.split('_')[1])
-    #     # ... implement review logic ...
-    #     safe_edit_message_text(query, text="مراجعة الأخطاء قيد التطوير.")
-    #     return VIEWING_RESULTS
-    else:
-        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_main_menu_keyboard(user_id))
-        return MAIN_MENU
 
-# --- Admin Handlers ---
 
 def admin_menu_callback(update: Update, context: CallbackContext) -> int:
     """Handles admin menu button presses."""
@@ -1387,654 +785,1348 @@ def admin_menu_callback(update: Update, context: CallbackContext) -> int:
     data = query.data
 
     if not is_admin(user_id):
-        safe_edit_message_text(query, text=" وصول غير مصرح به.", reply_markup=create_main_menu_keyboard(user_id))
+        query.answer("ليس لديك صلاحيات.", show_alert=True)
+        # Attempt to return to main menu gracefully
+        try:
+            safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
+        except BadRequest:
+            logger.warning(f"Failed to edit message for non-admin {user_id} in admin_menu_callback.")
         return MAIN_MENU
 
     logger.info(f"Admin {user_id} chose {data} from admin menu.")
 
-    if data == 'admin_add_question':
-        safe_edit_message_text(query, text="📝 يرجى إرسال نص السؤال الجديد:")
-        return ADDING_QUESTION
-    elif data == 'admin_delete_question':
-        safe_edit_message_text(query, text="🗑️ يرجى إرسال ID السؤال الذي تريد حذفه:")
-        return DELETING_QUESTION
-    elif data == 'admin_show_question':
-        safe_edit_message_text(query, text="👁️ يرجى إرسال ID السؤال الذي تريد عرضه:")
-        return SHOWING_QUESTION
-    elif data == 'admin_manage_structure':
-         safe_edit_message_text(query, text="🏗️ اختر ما تريد إدارته:", reply_markup=create_structure_admin_menu_keyboard())
-         return ADMIN_MANAGE_STRUCTURE
-    elif data == 'main_menu':
+    if data == 'main_menu':
         safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
         return MAIN_MENU
+    elif data == 'admin_add_question':
+        # Start the process of adding a question
+        # 1. Ask for the grade level
+        keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية للسؤال الجديد:", reply_markup=keyboard)
+            context.user_data['admin_flow'] = 'add_question'
+            return ADMIN_MANAGE_GRADES # Reuse grade selection state
+        else:
+            safe_edit_message_text(query, text="يجب إضافة مرحلة دراسية أولاً.", reply_markup=create_admin_menu_keyboard())
+            return ADMIN_MENU
+    elif data == 'admin_delete_question':
+        safe_edit_message_text(query, text="ميزة حذف الأسئلة قيد التطوير. 🚧", reply_markup=create_admin_menu_keyboard())
+        return ADMIN_MENU
+    elif data == 'admin_show_question':
+        safe_edit_message_text(query, text="ميزة عرض الأسئلة قيد التطوير. 🚧", reply_markup=create_admin_menu_keyboard())
+        return ADMIN_MENU
+    elif data == 'admin_manage_structure':
+        safe_edit_message_text(query, text="إدارة الهيكل الدراسي (المراحل، الفصول، الدروس):", reply_markup=create_structure_admin_menu_keyboard())
+        return ADMIN_MANAGE_STRUCTURE
     else:
-        safe_edit_message_text(query, text="خيار إدارة غير معروف.", reply_markup=create_admin_menu_keyboard())
+        logger.warning(f"Unexpected callback data '{data}' received in ADMIN_MENU state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_admin_menu_keyboard())
         return ADMIN_MENU
 
-# --- Add Question Flow ---
+def admin_manage_structure_callback(update: Update, context: CallbackContext) -> int:
+    """Handles structure management menu button presses."""
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    data = query.data
 
-def add_question_text(update: Update, context: CallbackContext) -> int:
-    """Receives the question text from the admin."""
+    if not is_admin(user_id):
+        query.answer("ليس لديك صلاحيات.", show_alert=True)
+        try:
+            safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
+        except BadRequest:
+            pass # Ignore if message already gone
+        return MAIN_MENU
+
+    logger.info(f"Admin {user_id} chose {data} from structure management menu.")
+
+    if data == 'menu_admin':
+        safe_edit_message_text(query, text="قائمة الإدارة:", reply_markup=create_admin_menu_keyboard())
+        return ADMIN_MENU
+    elif data == 'admin_manage_grades':
+        # Show existing grades + Add button
+        grades = QUIZ_DB.get_all_grade_levels()
+        text = "المراحل الدراسية الحالية:\n"
+        if grades:
+            text += "\n".join([f"- {name} (ID: {gid})" for gid, name in grades])
+        else:
+            text += "لا توجد مراحل دراسية حالياً.\n"
+        text += "\nاختر مرحلة للتعديل أو اضغط لإضافة مرحلة جديدة."
+
+        keyboard_list = []
+        if grades:
+            for grade_id, grade_name in grades:
+                 # For now, just viewing, no edit action defined yet
+                 # keyboard_list.append([InlineKeyboardButton(f"✏️ {grade_name}", callback_data=f"admin_edit_grade_{grade_id}")])
+                 keyboard_list.append([InlineKeyboardButton(grade_name, callback_data=f"admin_view_grade_{grade_id}")]) # Placeholder view
+        keyboard_list.append([InlineKeyboardButton("➕ إضافة مرحلة جديدة", callback_data="admin_add_grade_prompt")])
+        keyboard_list.append([InlineKeyboardButton("🔙 رجوع", callback_data="admin_manage_structure")])
+        reply_markup = InlineKeyboardMarkup(keyboard_list)
+
+        safe_edit_message_text(query, text=text, reply_markup=reply_markup)
+        return ADMIN_MANAGE_GRADES
+
+    elif data == 'admin_manage_chapters':
+        # Need to select grade first
+        keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية لعرض/إدارة فصولها:", reply_markup=keyboard)
+            context.user_data['admin_flow'] = 'manage_chapters'
+            return ADMIN_MANAGE_GRADES # Reuse grade selection state
+        else:
+            safe_edit_message_text(query, text="يجب إضافة مرحلة دراسية أولاً.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+
+    elif data == 'admin_manage_lessons':
+        # Need to select grade first, then chapter
+        keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية لعرض/إدارة دروسها:", reply_markup=keyboard)
+            context.user_data['admin_flow'] = 'manage_lessons_select_grade'
+            return ADMIN_MANAGE_GRADES # Reuse grade selection state
+        else:
+            safe_edit_message_text(query, text="يجب إضافة مرحلة دراسية أولاً.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+    else:
+        logger.warning(f"Unexpected callback data '{data}' received in ADMIN_MANAGE_STRUCTURE state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_structure_admin_menu_keyboard())
+        return ADMIN_MANAGE_STRUCTURE
+
+def admin_manage_grades_callback(update: Update, context: CallbackContext) -> int:
+    """Handles grade management actions (add prompt, selection for next step)."""
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    data = query.data
+    admin_flow = context.user_data.get('admin_flow')
+
+    if not is_admin(user_id):
+        query.answer("ليس لديك صلاحيات.", show_alert=True)
+        return MAIN_MENU
+
+    logger.info(f"Admin {user_id} in grade management: chose {data}, flow: {admin_flow}")
+
+    if data == 'admin_add_grade_prompt':
+        # Ask for the name of the new grade level
+        query.message.reply_text("أرسل اسم المرحلة الدراسية الجديدة (مثال: الصف الأول الثانوي). للإلغاء أرسل /cancel.")
+        return ADDING_GRADE_LEVEL
+
+    elif data.startswith('admin_grade_'): # Selecting a grade for chapter/lesson management or adding question
+        try:
+            grade_id = int(data.split('_')[-1])
+            grade_name = QUIZ_DB.get_grade_level_name(grade_id)
+            if not grade_name:
+                 raise ValueError("Grade ID not found")
+
+            context.user_data['selected_admin_grade_id'] = grade_id
+            context.user_data['selected_admin_grade_name'] = grade_name
+
+            if admin_flow == 'manage_chapters':
+                # Show chapters for this grade + Add button
+                chapters = QUIZ_DB.get_chapters_by_grade(grade_id)
+                text = f"الفصول الدراسية للمرحلة '{grade_name}':\n"
+                if chapters:
+                    text += "\n".join([f"- {name} (ID: {cid})" for cid, name in chapters])
+                else:
+                    text += "لا توجد فصول حالياً.\n"
+                text += "\nاختر فصلاً للتعديل أو اضغط لإضافة فصل جديد."
+
+                keyboard_list = []
+                if chapters:
+                    for chapter_id, chapter_name in chapters:
+                        # keyboard_list.append([InlineKeyboardButton(f"✏️ {chapter_name}", callback_data=f"admin_edit_chapter_{chapter_id}")])
+                        keyboard_list.append([InlineKeyboardButton(chapter_name, callback_data=f"admin_view_chapter_{chapter_id}")]) # Placeholder
+                keyboard_list.append([InlineKeyboardButton("➕ إضافة فصل جديد", callback_data="admin_add_chapter_prompt")])
+                keyboard_list.append([InlineKeyboardButton("🔙 رجوع للمراحل", callback_data="admin_manage_grades")]) # Go back to grade list
+                reply_markup = InlineKeyboardMarkup(keyboard_list)
+
+                safe_edit_message_text(query, text=text, reply_markup=reply_markup)
+                return ADMIN_MANAGE_CHAPTERS
+
+            elif admin_flow == 'manage_lessons_select_grade':
+                # Now need to select chapter for this grade
+                keyboard = create_chapters_keyboard(grade_id, for_quiz=False, context=context)
+                if keyboard:
+                    safe_edit_message_text(query, text=f"اختر الفصل ضمن '{grade_name}' لعرض/إدارة دروسه:", reply_markup=keyboard)
+                    context.user_data['admin_flow'] = 'manage_lessons_select_chapter'
+                    return ADMIN_MANAGE_CHAPTERS # Reuse chapter selection state
+                else:
+                    safe_edit_message_text(query, text=f"لا توجد فصول للمرحلة '{grade_name}'. أضف فصلاً أولاً.", reply_markup=create_structure_admin_menu_keyboard())
+                    return ADMIN_MANAGE_STRUCTURE
+
+            elif admin_flow == 'add_question':
+                 # Grade selected for new question, now ask for chapter
+                 keyboard = create_chapters_keyboard(grade_id, for_quiz=False, context=context)
+                 if keyboard:
+                     safe_edit_message_text(query, text=f"اختر الفصل الذي ينتمي إليه السؤال الجديد (ضمن '{grade_name}'):", reply_markup=keyboard)
+                     context.user_data['admin_flow'] = 'add_question_select_chapter'
+                     return ADMIN_MANAGE_CHAPTERS # Reuse chapter selection state
+                 else:
+                     safe_edit_message_text(query, text=f"لا توجد فصول للمرحلة '{grade_name}'. أضف فصلاً أولاً.", reply_markup=create_admin_menu_keyboard())
+                     return ADMIN_MENU
+            else:
+                 # Default action if just viewing grades
+                 safe_edit_message_text(query, text=f"تم اختيار المرحلة: {grade_name}. (لا يوجد إجراء محدد حالياً)", reply_markup=create_structure_admin_menu_keyboard())
+                 return ADMIN_MANAGE_STRUCTURE
+
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid grade ID from callback '{data}' in admin flow: {e}")
+            safe_edit_message_text(query, text="خطأ في تحديد المرحلة.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+
+    elif data == 'admin_manage_structure': # Back button
+        safe_edit_message_text(query, text="إدارة الهيكل الدراسي:", reply_markup=create_structure_admin_menu_keyboard())
+        context.user_data.pop('admin_flow', None)
+        return ADMIN_MANAGE_STRUCTURE
+    elif data.startswith('admin_view_grade_'): # Placeholder for viewing/editing grade
+         grade_id = int(data.split('_')[-1])
+         grade_name = QUIZ_DB.get_grade_level_name(grade_id)
+         safe_edit_message_text(query, text=f"المرحلة المحددة: {grade_name} (ID: {grade_id}).\n(ميزات التعديل والحذف قيد التطوير).", reply_markup=create_structure_admin_menu_keyboard())
+         return ADMIN_MANAGE_STRUCTURE # Go back for now
+    else:
+        logger.warning(f"Unexpected callback data '{data}' received in ADMIN_MANAGE_GRADES state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_structure_admin_menu_keyboard())
+        return ADMIN_MANAGE_STRUCTURE
+
+def admin_manage_chapters_callback(update: Update, context: CallbackContext) -> int:
+    """Handles chapter management actions (add prompt, selection for next step)."""
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    data = query.data
+    admin_flow = context.user_data.get('admin_flow')
+    grade_id = context.user_data.get('selected_admin_grade_id')
+    grade_name = context.user_data.get('selected_admin_grade_name', 'المرحلة المحددة')
+
+    if not is_admin(user_id) or not grade_id:
+        query.answer("خطأ: الصلاحيات أو المرحلة غير محددة.", show_alert=True)
+        return MAIN_MENU
+
+    logger.info(f"Admin {user_id} in chapter management (Grade: {grade_id}): chose {data}, flow: {admin_flow}")
+
+    if data == 'admin_add_chapter_prompt':
+        # Ask for the name of the new chapter
+        query.message.reply_text(f"أرسل اسم الفصل الجديد للمرحلة '{grade_name}'. للإلغاء أرسل /cancel.")
+        return ADDING_CHAPTER
+
+    elif data.startswith('admin_chapter_'): # Selecting a chapter
+        try:
+            chapter_id = int(data.split('_')[-1])
+            chapter_name = QUIZ_DB.get_chapter_name(chapter_id)
+            if not chapter_name:
+                 raise ValueError("Chapter ID not found")
+
+            context.user_data['selected_admin_chapter_id'] = chapter_id
+            context.user_data['selected_admin_chapter_name'] = chapter_name
+
+            if admin_flow == 'manage_lessons_select_chapter':
+                # Show lessons for this chapter + Add button
+                lessons = QUIZ_DB.get_lessons_by_chapter(chapter_id)
+                text = f"الدروس للفصل '{chapter_name}' (المرحلة '{grade_name}'):\n"
+                if lessons:
+                    text += "\n".join([f"- {name} (ID: {lid})" for lid, name in lessons])
+                else:
+                    text += "لا توجد دروس حالياً.\n"
+                text += "\nاختر درساً للتعديل أو اضغط لإضافة درس جديد."
+
+                keyboard_list = []
+                if lessons:
+                    for lesson_id, lesson_name in lessons:
+                        # keyboard_list.append([InlineKeyboardButton(f"✏️ {lesson_name}", callback_data=f"admin_edit_lesson_{lesson_id}")])
+                        keyboard_list.append([InlineKeyboardButton(lesson_name, callback_data=f"admin_view_lesson_{lesson_id}")]) # Placeholder
+                keyboard_list.append([InlineKeyboardButton("➕ إضافة درس جديد", callback_data="admin_add_lesson_prompt")])
+                # Go back to chapter list for the current grade
+                keyboard_list.append([InlineKeyboardButton("🔙 رجوع للفصول", callback_data=f"admin_grade_{grade_id}")])
+                reply_markup = InlineKeyboardMarkup(keyboard_list)
+
+                safe_edit_message_text(query, text=text, reply_markup=reply_markup)
+                context.user_data['admin_flow'] = 'manage_lessons' # Update flow status
+                return ADMIN_MANAGE_LESSONS
+
+            elif admin_flow == 'add_question_select_chapter':
+                 # Chapter selected for new question, now ask for lesson (optional)
+                 # For simplicity, let's assume questions are tied to chapters for now.
+                 # Ask for the question text directly.
+                 query.message.reply_text(f"تم اختيار الفصل '{chapter_name}'.\nالآن أرسل نص السؤال الجديد. للإلغاء أرسل /cancel.")
+                 context.user_data['new_question'] = {'chapter_id': chapter_id}
+                 return ADDING_QUESTION
+            else:
+                 # Default action if just viewing chapters
+                 safe_edit_message_text(query, text=f"تم اختيار الفصل: {chapter_name}. (لا يوجد إجراء محدد حالياً)", reply_markup=create_structure_admin_menu_keyboard())
+                 return ADMIN_MANAGE_STRUCTURE
+
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid chapter ID from callback '{data}' in admin flow: {e}")
+            safe_edit_message_text(query, text="خطأ في تحديد الفصل.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+
+    elif data == 'admin_manage_grades': # Back button from chapter list
+        # Go back to grade list
+        keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية لعرض/إدارة فصولها:", reply_markup=keyboard)
+            # Reset flow to indicate we are back at grade selection for chapters
+            context.user_data['admin_flow'] = 'manage_chapters'
+            return ADMIN_MANAGE_GRADES
+        else:
+            safe_edit_message_text(query, text="لم يتم العثور على مراحل.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+    elif data.startswith('admin_view_chapter_'): # Placeholder for viewing/editing chapter
+         chapter_id = int(data.split('_')[-1])
+         chapter_name = QUIZ_DB.get_chapter_name(chapter_id)
+         safe_edit_message_text(query, text=f"الفصل المحدد: {chapter_name} (ID: {chapter_id}).\n(ميزات التعديل والحذف قيد التطوير).", reply_markup=create_structure_admin_menu_keyboard())
+         return ADMIN_MANAGE_STRUCTURE # Go back for now
+    else:
+        logger.warning(f"Unexpected callback data '{data}' received in ADMIN_MANAGE_CHAPTERS state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_structure_admin_menu_keyboard())
+        return ADMIN_MANAGE_STRUCTURE
+
+def admin_manage_lessons_callback(update: Update, context: CallbackContext) -> int:
+    """Handles lesson management actions (add prompt, selection)."""
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    data = query.data
+    admin_flow = context.user_data.get('admin_flow')
+    chapter_id = context.user_data.get('selected_admin_chapter_id')
+    chapter_name = context.user_data.get('selected_admin_chapter_name', 'الفصل المحدد')
+    grade_id = context.user_data.get('selected_admin_grade_id') # Needed for back button
+
+    if not is_admin(user_id) or not chapter_id or not grade_id:
+        query.answer("خطأ: الصلاحيات أو الفصل/المرحلة غير محددة.", show_alert=True)
+        return MAIN_MENU
+
+    logger.info(f"Admin {user_id} in lesson management (Chapter: {chapter_id}): chose {data}, flow: {admin_flow}")
+
+    if data == 'admin_add_lesson_prompt':
+        # Ask for the name of the new lesson
+        query.message.reply_text(f"أرسل اسم الدرس الجديد للفصل '{chapter_name}'. للإلغاء أرسل /cancel.")
+        return ADDING_LESSON
+
+    elif data.startswith('admin_grade_'): # Back button goes back to chapter list for the grade
+        # We need to reconstruct the chapter list view for the parent grade
+        chapters = QUIZ_DB.get_chapters_by_grade(grade_id)
+        grade_name = context.user_data.get('selected_admin_grade_name', 'المرحلة المحددة')
+        text = f"الفصول الدراسية للمرحلة '{grade_name}':\n"
+        if chapters:
+            text += "\n".join([f"- {name} (ID: {cid})" for cid, name in chapters])
+        else:
+            text += "لا توجد فصول حالياً.\n"
+        text += "\nاختر فصلاً للتعديل أو اضغط لإضافة فصل جديد."
+        keyboard_list = []
+        if chapters:
+            for chap_id, chap_name in chapters:
+                 keyboard_list.append([InlineKeyboardButton(chap_name, callback_data=f"admin_chapter_{chap_id}")])
+        keyboard_list.append([InlineKeyboardButton("➕ إضافة فصل جديد", callback_data="admin_add_chapter_prompt")])
+        keyboard_list.append([InlineKeyboardButton("🔙 رجوع للمراحل", callback_data="admin_manage_grades")])
+        reply_markup = InlineKeyboardMarkup(keyboard_list)
+
+        safe_edit_message_text(query, text=text, reply_markup=reply_markup)
+        # Set flow back to indicate we are selecting chapter for lesson management
+        context.user_data['admin_flow'] = 'manage_lessons_select_chapter'
+        return ADMIN_MANAGE_CHAPTERS
+
+    elif data.startswith('admin_view_lesson_'): # Placeholder for viewing/editing lesson
+         lesson_id = int(data.split('_')[-1])
+         lesson_name = QUIZ_DB.get_lesson_name(lesson_id)
+         safe_edit_message_text(query, text=f"الدرس المحدد: {lesson_name} (ID: {lesson_id}).\n(ميزات التعديل والحذف قيد التطوير).", reply_markup=create_structure_admin_menu_keyboard())
+         return ADMIN_MANAGE_STRUCTURE # Go back for now
+    else:
+        logger.warning(f"Unexpected callback data '{data}' received in ADMIN_MANAGE_LESSONS state.")
+        safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_structure_admin_menu_keyboard())
+        return ADMIN_MANAGE_STRUCTURE
+
+# --- Quiz Logic Handlers ---
+
+def start_quiz(update: Update, context: CallbackContext, quiz_type: str, filter_id) -> int:
+    """Fetches questions, starts the quiz, and sets the timer."""
+    query = update.callback_query # Can be None if called directly
+    if query:
+        query.answer()
+        user_id = query.from_user.id
+    else:
+        # Called directly, e.g., from a command - need user_id from context
+        user_id = context.user_data.get("user_id")
+        if not user_id:
+             logger.error("Cannot start quiz: user_id not found in context.")
+             if update.message: # If called from command
+                  update.message.reply_text("حدث خطأ. لا يمكن بدء الاختبار.")
+             return ConversationHandler.END # Or MAIN_MENU
+
+    duration = context.user_data.get('quiz_duration', QUIZ_DURATIONS['medium']) # Default duration
+    num_questions = DEFAULT_QUIZ_QUESTIONS # Or make this configurable
+
+    logger.info(f"Starting quiz for user {user_id}. Type: {quiz_type}, Filter: {filter_id}, Duration: {duration}s, Questions: {num_questions}")
+
+    # Fetch questions based on type and filter
+    questions = QUIZ_DB.get_quiz_questions(quiz_type, filter_id, num_questions)
+
+    if not questions:
+        logger.warning(f"No questions found for quiz type '{quiz_type}' with filter '{filter_id}'.")
+        error_message = "عذراً، لم يتم العثور على أسئلة كافية لهذا النوع من الاختبار حالياً. 😥"
+        if query:
+            safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_menu_keyboard())
+        elif update.message:
+             update.message.reply_text(error_message, reply_markup=create_main_menu_keyboard(user_id))
+        return QUIZ_MENU # Go back to quiz selection
+
+    # Initialize quiz state in user_data
+    context.user_data['quiz_questions'] = questions
+    context.user_data['current_question_index'] = 0
+    context.user_data['user_answers'] = {}
+    context.user_data['quiz_start_time'] = datetime.now()
+    context.user_data['quiz_end_time'] = datetime.now() + timedelta(seconds=duration)
+    context.user_data['quiz_id'] = f"quiz_{user_id}_{int(datetime.now().timestamp())}" # Unique ID
+
+    # Remove any existing timers for this user
+    job_name = f"quiz_timer_{user_id}"
+    feedback_job_name = f"feedback_timer_{user_id}"
+    for job in context.job_queue.get_jobs_by_name(job_name):
+        job.schedule_removal()
+    for job in context.job_queue.get_jobs_by_name(feedback_job_name):
+        job.schedule_removal()
+
+    # Schedule the quiz end timer
+    context.job_queue.run_once(end_quiz_timed, duration, context={'user_id': user_id, 'chat_id': query.message.chat_id if query else update.message.chat_id}, name=job_name)
+
+    logger.info(f"Quiz {context.user_data['quiz_id']} started for user {user_id}. Timer set for {duration} seconds.")
+
+    # Send the first question
+    send_question(update, context)
+    return RUNNING_QUIZ
+
+def send_question(update: Update, context: CallbackContext):
+    """Sends the current quiz question to the user."""
+    query = update.callback_query # Might be None if called after text message or timer
+    user_id = context.user_data.get("user_id")
+    if not user_id:
+        logger.error("send_question: user_id not found in context.")
+        # Try to end gracefully if possible
+        if query:
+            safe_edit_message_text(query, "حدث خطأ فني. سيتم إنهاء الاختبار.")
+        # Cannot send message without chat_id if query is None
+        return end_quiz(update, context, reason="Error: User context lost")
+
+    current_index = context.user_data.get('current_question_index', 0)
+    questions = context.user_data.get('quiz_questions', [])
+    quiz_end_time = context.user_data.get('quiz_end_time')
+
+    if not questions or current_index >= len(questions):
+        logger.info(f"User {user_id} reached end of questions or no questions available.")
+        return end_quiz(update, context, reason="End of questions")
+
+    question_data = questions[current_index]
+    question_id = question_data['question_id']
+    question_text = question_data['question_text']
+    options = question_data['options'] # This should be a list of strings
+    image_url = question_data.get('image_url') # Optional image
+
+    # Ensure options are correctly formatted (list of strings)
+    if not isinstance(options, list) or not all(isinstance(opt, str) for opt in options):
+        logger.error(f"Invalid options format for question {question_id}: {options}")
+        # Skip this question and move to the next
+        context.user_data['current_question_index'] += 1
+        if query:
+             query.answer("خطأ في تنسيق السؤال، سيتم تخطيه.", show_alert=True)
+        # Try sending next question recursively
+        return send_question(update, context)
+
+    # Calculate remaining time
+    remaining_time = quiz_end_time - datetime.now()
+    remaining_seconds = max(0, int(remaining_time.total_seconds()))
+    time_str = f"{remaining_seconds // 60}:{remaining_seconds % 60:02d}"
+
+    # Format question message
+    message_text = f"⏳ الوقت المتبقي: {time_str}\n"
+    message_text += f"❓ السؤال {current_index + 1} من {len(questions)}:\n\n"
+    message_text += f"{question_text}"
+
+    keyboard = create_quiz_question_keyboard(options, question_id)
+
+    try:
+        # If called from a callback query, edit the existing message
+        if query:
+            # If there was an image previously, we might need to send a new message
+            # or handle image updates carefully. For simplicity, let's assume editing text is fine.
+            # If the previous message had an image and this one doesn't, or vice-versa,
+            # editing might fail or look weird. Sending a new message might be safer.
+            # Let's try editing first.
+            if image_url:
+                 # Editing message with media requires different handling, might be complex.
+                 # Send as new message if image is present.
+                 logger.info(f"Sending question {question_id} with image as new message.")
+                 query.message.reply_photo(
+                     photo=image_url,
+                     caption=message_text,
+                     reply_markup=keyboard,
+                     parse_mode=ParseMode.MARKDOWN # Or HTML if needed
+                 )
+                 # Try deleting the previous message (optional, might fail)
+                 try:
+                      query.message.delete()
+                 except TelegramError as del_err:
+                      logger.warning(f"Could not delete previous message {query.message.message_id}: {del_err}")
+            else:
+                 # Edit text message
+                 safe_edit_message_text(query, text=message_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+
+        # If called directly (e.g., first question, or after feedback delay)
+        else:
+            chat_id = update.effective_chat.id # Get chat_id from update
+            if image_url:
+                context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=image_url,
+                    caption=message_text,
+                    reply_markup=keyboard,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                context.bot.send_message(
+                    chat_id=chat_id,
+                    text=message_text,
+                    reply_markup=keyboard,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+    except BadRequest as e:
+        logger.error(f"Failed to send/edit question {question_id} for user {user_id}: {e}")
+        # Attempt to send a simple error message if possible
+        try:
+            context.bot.send_message(user_id, "حدث خطأ أثناء عرض السؤال. قد تحتاج لإعادة الاختبار.")
+        except Exception as send_e:
+             logger.error(f"Failed to send error message to user {user_id}: {send_e}")
+        return end_quiz(update, context, reason=f"Error sending question: {e}")
+    except Exception as e:
+        logger.exception(f"Unexpected error sending question {question_id} for user {user_id}: {e}")
+        return end_quiz(update, context, reason=f"Unexpected error: {e}")
+
+def handle_answer(update: Update, context: CallbackContext) -> int:
+    """Handles user's answer selection during a quiz."""
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    data = query.data
+
+    # Ensure quiz is still running
+    if 'quiz_questions' not in context.user_data or 'current_question_index' not in context.user_data:
+        logger.warning(f"User {user_id} answered, but no active quiz found in context.")
+        safe_edit_message_text(query, text="انتهى وقت الاختبار أو حدث خطأ.", reply_markup=create_main_menu_keyboard(user_id))
+        return MAIN_MENU
+
+    current_index = context.user_data['current_question_index']
+    questions = context.user_data['quiz_questions']
+    question_data = questions[current_index]
+    question_id = question_data['question_id']
+    correct_option_index = question_data['correct_option_index']
+    options = question_data['options']
+
+    # Parse callback data
+    try:
+        action, q_id, selected_index_str = data.split('_')
+        q_id = int(q_id)
+        selected_index = int(selected_index_str)
+
+        if action != 'answer' or q_id != question_id:
+            logger.warning(f"User {user_id} answered wrong question or invalid action. Expected answer_{question_id}, got {data}")
+            # Maybe the message is old, ignore the callback
+            query.answer("إجابة لسؤال قديم.")
+            return RUNNING_QUIZ # Stay in quiz state
+
+    except (ValueError, IndexError) as e:
+        logger.error(f"Invalid callback data format received: {data}. Error: {e}")
+        query.answer("خطأ في بيانات الإجابة.")
+        return RUNNING_QUIZ
+
+    # Record the answer
+    is_correct = (selected_index == correct_option_index)
+    context.user_data['user_answers'][question_id] = {
+        'selected_index': selected_index,
+        'correct_index': correct_option_index,
+        'is_correct': is_correct,
+        'timestamp': datetime.now()
+    }
+
+    logger.info(f"User {user_id} answered question {question_id}. Selected: {selected_index}, Correct: {correct_option_index}, Result: {'Correct' if is_correct else 'Incorrect'}")
+
+    # Provide immediate feedback
+    feedback_text = "✅ إجابة صحيحة!" if is_correct else f"❌ إجابة خاطئة.\nالصحيحة هي: {options[correct_option_index]}"
+
+    # Edit the message to show feedback (remove keyboard)
+    try:
+        # If the question had an image, editing caption might be better
+        if query.message.photo:
+             safe_edit_message_caption(query, caption=f"{query.message.caption}\n\n---\n{feedback_text}", parse_mode=ParseMode.MARKDOWN)
+        else:
+             safe_edit_message_text(query, text=f"{query.message.text}\n\n---\n{feedback_text}", parse_mode=ParseMode.MARKDOWN)
+    except BadRequest as e:
+        # Message might have been deleted or changed, log and continue
+        logger.warning(f"Failed to edit message for feedback (question {question_id}, user {user_id}): {e}")
+        # Send feedback as a new message if editing fails
+        try:
+             query.message.reply_text(feedback_text)
+        except Exception as reply_e:
+             logger.error(f"Failed to send feedback as reply: {reply_e}")
+
+    # Increment question index
+    context.user_data['current_question_index'] += 1
+
+    # Schedule the next question after a short delay
+    feedback_job_name = f"feedback_timer_{user_id}"
+    # Remove previous feedback timer if any
+    for job in context.job_queue.get_jobs_by_name(feedback_job_name):
+        job.schedule_removal()
+    # Schedule next question
+    context.job_queue.run_once(send_question_job, FEEDBACK_DELAY, context={'user_id': user_id, 'chat_id': query.message.chat_id}, name=feedback_job_name)
+
+    return RUNNING_QUIZ
+
+def handle_skip(update: Update, context: CallbackContext) -> int:
+    """Handles skipping a question during a quiz."""
+    query = update.callback_query
+    query.answer("تم تخطي السؤال.")
+    user_id = query.from_user.id
+    data = query.data
+
+    # Ensure quiz is still running
+    if 'quiz_questions' not in context.user_data or 'current_question_index' not in context.user_data:
+        logger.warning(f"User {user_id} skipped, but no active quiz found.")
+        safe_edit_message_text(query, text="انتهى وقت الاختبار أو حدث خطأ.", reply_markup=create_main_menu_keyboard(user_id))
+        return MAIN_MENU
+
+    current_index = context.user_data['current_question_index']
+    questions = context.user_data['quiz_questions']
+    question_data = questions[current_index]
+    question_id = question_data['question_id']
+
+    # Parse callback data
+    try:
+        action, q_id_str = data.split('_')
+        q_id = int(q_id_str)
+
+        if action != 'skip' or q_id != question_id:
+            logger.warning(f"User {user_id} skipped wrong question. Expected skip_{question_id}, got {data}")
+            return RUNNING_QUIZ # Ignore old callback
+
+    except (ValueError, IndexError) as e:
+        logger.error(f"Invalid skip callback data format: {data}. Error: {e}")
+        return RUNNING_QUIZ
+
+    logger.info(f"User {user_id} skipped question {question_id}.")
+
+    # Record skip (mark as incorrect or special status)
+    context.user_data['user_answers'][question_id] = {
+        'selected_index': None, # Indicate skipped
+        'correct_index': question_data['correct_option_index'],
+        'is_correct': False,
+        'skipped': True,
+        'timestamp': datetime.now()
+    }
+
+    # Increment question index
+    context.user_data['current_question_index'] += 1
+
+    # Send the next question immediately (no feedback delay for skips)
+    send_question(update, context)
+
+    return RUNNING_QUIZ
+
+def send_question_job(context: CallbackContext):
+    """Job callback function to send the next question."""
+    job_context = context.job.context
+    user_id = job_context['user_id']
+    chat_id = job_context['chat_id']
+    logger.info(f"Job: Sending next question for user {user_id} in chat {chat_id}.")
+
+    # We need to create a dummy Update object or pass necessary info differently
+    # For simplicity, let's assume send_question can work with just context
+    # (it needs user_id and chat_id, which we have)
+    # We create a minimal Update-like structure if needed by send_question
+    class MinimalUpdate:
+        class MinimalMessage:
+            chat_id = chat_id
+        effective_chat = MinimalMessage()
+        callback_query = None # Indicate it's not from a callback
+
+    send_question(MinimalUpdate(), context)
+
+def end_quiz_timed(context: CallbackContext):
+    """Job callback function to end the quiz when the timer runs out."""
+    job_context = context.job.context
+    user_id = job_context['user_id']
+    chat_id = job_context['chat_id']
+    logger.info(f"Quiz timer ended for user {user_id} in chat {chat_id}.")
+
+    # We need a way to send the message. Create a dummy Update.
+    class MinimalUpdate:
+        class MinimalUser:
+            id = user_id
+        class MinimalMessage:
+            chat_id = chat_id
+            from_user = MinimalUser()
+            # reply_text method needed if end_quiz uses it directly on update.message
+            def reply_text(self, text, reply_markup=None, parse_mode=None):
+                 context.bot.send_message(chat_id=self.chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+        effective_user = MinimalUser()
+        message = MinimalMessage()
+        callback_query = None # Not from a callback
+
+    # Send timeout message before calculating results
+    try:
+        context.bot.send_message(chat_id, "⏰ انتهى الوقت المخصص للاختبار!")
+    except Exception as e:
+        logger.error(f"Failed to send timeout message to user {user_id}: {e}")
+
+    end_quiz(MinimalUpdate(), context, reason="Time limit reached")
+
+def end_quiz(update: Update, context: CallbackContext, reason: str = "Quiz finished") -> int:
+    """Ends the quiz, calculates results, and shows them to the user."""
+    query = update.callback_query # Might be None
+    user_id = context.user_data.get("user_id")
+
+    if not user_id:
+        logger.error("end_quiz: user_id not found in context.")
+        # Try to inform user if possible
+        if query:
+            safe_edit_message_text(query, "حدث خطأ فني أثناء إنهاء الاختبار.")
+        elif update.message:
+             update.message.reply_text("حدث خطأ فني أثناء إنهاء الاختبار.")
+        return ConversationHandler.END # Or MAIN_MENU
+
+    logger.info(f"Ending quiz for user {user_id}. Reason: {reason}")
+
+    # Clean up any running timers
+    job_name = f"quiz_timer_{user_id}"
+    feedback_job_name = f"feedback_timer_{user_id}"
+    for job in context.job_queue.get_jobs_by_name(job_name):
+        job.schedule_removal()
+    for job in context.job_queue.get_jobs_by_name(feedback_job_name):
+        job.schedule_removal()
+
+    # Retrieve quiz data from context
+    questions = context.user_data.get('quiz_questions', [])
+    user_answers = context.user_data.get('user_answers', {})
+    quiz_id = context.user_data.get('quiz_id', 'unknown_quiz')
+    start_time = context.user_data.get('quiz_start_time')
+    end_time = datetime.now() # Mark actual end time
+
+    if not questions:
+        logger.warning(f"No questions found in context when ending quiz {quiz_id} for user {user_id}.")
+        message_text = "لم يتم العثور على بيانات الاختبار لإنهاءه."
+        reply_markup = create_main_menu_keyboard(user_id)
+        if query:
+            safe_edit_message_text(query, text=message_text, reply_markup=reply_markup)
+        elif update.message:
+             update.message.reply_text(text=message_text, reply_markup=reply_markup)
+        # Clear context and return
+        context.user_data.clear()
+        context.user_data["user_id"] = user_id # Keep user_id
+        return MAIN_MENU
+
+    # Calculate results
+    total_questions = len(questions)
+    correct_answers = 0
+    skipped_questions = 0
+    answered_questions = 0
+
+    for q_id, answer_info in user_answers.items():
+        answered_questions += 1
+        if answer_info.get('skipped'):
+            skipped_questions += 1
+        elif answer_info.get('is_correct'):
+            correct_answers += 1
+
+    # Score calculation
+    score = (correct_answers / total_questions) * 100 if total_questions > 0 else 0
+    incorrect_answers = answered_questions - correct_answers - skipped_questions
+    unanswered_questions = total_questions - answered_questions
+
+    # Time taken
+    time_taken_str = "غير متاح"
+    if start_time:
+        time_taken = end_time - start_time
+        total_seconds = int(time_taken.total_seconds())
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        time_taken_str = f"{minutes} دقيقة و {seconds} ثانية"
+
+    # Save results to database (implement this in QuizDatabase)
+    try:
+        QUIZ_DB.save_quiz_result(
+            quiz_id=quiz_id,
+            user_id=user_id,
+            score=score,
+            correct_count=correct_answers,
+            incorrect_count=incorrect_answers,
+            skipped_count=skipped_questions,
+            unanswered_count=unanswered_questions,
+            total_questions=total_questions,
+            start_time=start_time,
+            end_time=end_time,
+            quiz_type=context.user_data.get('quiz_type'),
+            filter_id=context.user_data.get('quiz_filter_id')
+            # Add details about grade/chapter/lesson if available
+        )
+        logger.info(f"Saved results for quiz {quiz_id} for user {user_id}.")
+    except Exception as e:
+        logger.error(f"Failed to save quiz results for user {user_id}, quiz {quiz_id}: {e}")
+        # Continue anyway, but log the error
+
+    # Prepare results message
+    results_text = f"🏁 **نتائج الاختبار** 🏁\n\n"
+    results_text += f"🔢 إجمالي الأسئلة: {total_questions}\n"
+    results_text += f"✅ الإجابات الصحيحة: {correct_answers}\n"
+    results_text += f"❌ الإجابات الخاطئة: {incorrect_answers}\n"
+    results_text += f"⏭️ الأسئلة المتخطاة: {skipped_questions}\n"
+    results_text += f"❓ الأسئلة غير المجابة: {unanswered_questions}\n"
+    results_text += f"⏱️ الوقت المستغرق: {time_taken_str}\n\n"
+    results_text += f"🎯 **النتيجة النهائية: {score:.1f}%**\n\n"
+
+    # Add performance message
+    if score >= 90:
+        results_text += "🎉 ممتاز! أداء رائع!"
+    elif score >= 75:
+        results_text += "👍 جيد جداً! استمر في التقدم!"
+    elif score >= 50:
+        results_text += "🙂 جيد. يمكنك التحسن أكثر بالمراجعة."
+    else:
+        results_text += "😕 تحتاج إلى المزيد من المراجعة. لا تيأس!"
+
+    keyboard = create_results_menu_keyboard(quiz_id)
+
+    # Send results
+    try:
+        if query:
+            # Edit the last message (which might be the feedback message)
+            safe_edit_message_text(query, text=results_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+        elif update.message:
+            # Send as a new message if ended by timer or command
+            update.message.reply_text(text=results_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+        else:
+             # Should not happen if user_id was found, but as fallback:
+             context.bot.send_message(user_id, text=results_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+
+    except BadRequest as e:
+        logger.warning(f"Failed to edit/send results message for quiz {quiz_id}, user {user_id}: {e}")
+        # Try sending as a new message if editing failed
+        if query:
+            try:
+                query.message.reply_text(text=results_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+            except Exception as send_e:
+                 logger.error(f"Failed to send results as reply: {send_e}")
+    except Exception as e:
+        logger.exception(f"Unexpected error sending quiz results for user {user_id}: {e}")
+
+    # Clear quiz-specific data from context, keep user_id
+    keys_to_clear = [k for k in context.user_data if k not in ["user_id"]]
+    for key in keys_to_clear:
+        try:
+            del context.user_data[key]
+        except KeyError:
+            pass # Already deleted
+
+    return VIEWING_RESULTS # New state for results screen
+
+def view_results_callback(update: Update, context: CallbackContext) -> int:
+    """Handles buttons on the results screen."""
+    query = update.callback_query
+    query.answer()
+    user_id = query.from_user.id
+    data = query.data
+
+    logger.info(f"User {user_id} chose {data} from results menu.")
+
+    if data == 'menu_quiz':
+        # Go back to quiz selection menu
+        safe_edit_message_text(query, text="اختر نوع الاختبار:", reply_markup=create_quiz_menu_keyboard())
+        return QUIZ_MENU
+    elif data == 'main_menu':
+        # Go back to main menu
+        safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
+        return MAIN_MENU
+    # elif data.startswith('review_'):
+    #     quiz_id = data.split('_')[1]
+    #     safe_edit_message_text(query, text=f"ميزة مراجعة أخطاء الاختبار {quiz_id} قيد التطوير. 🚧")
+    #     # Stay in results view for now, or return to main menu?
+    #     # Let's keep the results keyboard for now.
+    #     # return VIEWING_RESULTS
+    #     # Or go back to main menu:
+    #     # safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
+    #     # return MAIN_MENU
+    else:
+        logger.warning(f"Unexpected callback data '{data}' received in VIEWING_RESULTS state.")
+        # Default to main menu if something unexpected happens
+        safe_edit_message_text(query, text="القائمة الرئيسية:", reply_markup=create_main_menu_keyboard(user_id))
+        return MAIN_MENU
+
+# --- Admin Handlers for Adding Questions/Structure ---
+
+def add_grade_level(update: Update, context: CallbackContext) -> int:
+    """Receives and adds a new grade level name."""
     user_id = update.effective_user.id
     if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
+        update.message.reply_text("ليس لديك صلاحيات.")
+        return ConversationHandler.END
 
-    question_text = update.message.text
-    context.user_data['new_question'] = {'text': question_text, 'options': []}
-    logger.info(f"Admin {user_id} adding question: {question_text}")
-    update.message.reply_text("👍 تم استلام نص السؤال. الآن أرسل الخيار الأول (أ).")
+    grade_name = update.message.text.strip()
+    if not grade_name or len(grade_name) > 100: # Basic validation
+        update.message.reply_text("اسم المرحلة غير صالح أو طويل جداً. حاول مرة أخرى أو أرسل /cancel.")
+        return ADDING_GRADE_LEVEL
+
+    try:
+        grade_id = QUIZ_DB.add_grade_level(grade_name)
+        if grade_id:
+            logger.info(f"Admin {user_id} added new grade level: {grade_name} (ID: {grade_id})")
+            update.message.reply_text(f"تمت إضافة المرحلة الدراسية '{grade_name}' بنجاح.", reply_markup=create_structure_admin_menu_keyboard())
+            context.user_data.pop('admin_flow', None)
+            return ADMIN_MANAGE_STRUCTURE
+        else:
+            update.message.reply_text("لم تتم إضافة المرحلة. قد تكون موجودة بالفعل أو حدث خطأ.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+    except Exception as e:
+        logger.error(f"Error adding grade level '{grade_name}' by admin {user_id}: {e}")
+        update.message.reply_text("حدث خطأ أثناء إضافة المرحلة الدراسية.", reply_markup=create_admin_menu_keyboard())
+        return ADMIN_MENU
+
+def add_chapter(update: Update, context: CallbackContext) -> int:
+    """Receives and adds a new chapter name for the selected grade."""
+    user_id = update.effective_user.id
+    grade_id = context.user_data.get('selected_admin_grade_id')
+    grade_name = context.user_data.get('selected_admin_grade_name')
+
+    if not is_admin(user_id) or not grade_id:
+        update.message.reply_text("خطأ: الصلاحيات أو المرحلة غير محددة.")
+        return ConversationHandler.END
+
+    chapter_name = update.message.text.strip()
+    if not chapter_name or len(chapter_name) > 150:
+        update.message.reply_text("اسم الفصل غير صالح أو طويل جداً. حاول مرة أخرى أو أرسل /cancel.")
+        return ADDING_CHAPTER
+
+    try:
+        chapter_id = QUIZ_DB.add_chapter(grade_id, chapter_name)
+        if chapter_id:
+            logger.info(f"Admin {user_id} added new chapter '{chapter_name}' to grade {grade_id}")
+            update.message.reply_text(f"تمت إضافة الفصل '{chapter_name}' للمرحلة '{grade_name}' بنجاح.")
+            # Go back to the chapter list for that grade
+            chapters = QUIZ_DB.get_chapters_by_grade(grade_id)
+            text = f"الفصول الدراسية للمرحلة '{grade_name}':\n"
+            if chapters: text += "\n".join([f"- {name} (ID: {cid})" for cid, name in chapters])
+            else: text += "لا توجد فصول حالياً.\n"
+            text += "\nاختر فصلاً للتعديل أو اضغط لإضافة فصل جديد."
+            keyboard_list = []
+            if chapters: keyboard_list.extend([[InlineKeyboardButton(name, callback_data=f"admin_chapter_{cid}")] for cid, name in chapters])
+            keyboard_list.append([InlineKeyboardButton("➕ إضافة فصل جديد", callback_data="admin_add_chapter_prompt")])
+            keyboard_list.append([InlineKeyboardButton("🔙 رجوع للمراحل", callback_data="admin_manage_grades")])
+            reply_markup = InlineKeyboardMarkup(keyboard_list)
+            update.message.reply_text(text=text, reply_markup=reply_markup) # Send as new message
+            return ADMIN_MANAGE_CHAPTERS
+        else:
+            update.message.reply_text("لم يتم إضافة الفصل. قد يكون موجوداً بالفعل أو حدث خطأ.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+    except Exception as e:
+        logger.error(f"Error adding chapter '{chapter_name}' by admin {user_id}: {e}")
+        update.message.reply_text("حدث خطأ أثناء إضافة الفصل.", reply_markup=create_admin_menu_keyboard())
+        return ADMIN_MENU
+
+def add_lesson(update: Update, context: CallbackContext) -> int:
+    """Receives and adds a new lesson name for the selected chapter."""
+    user_id = update.effective_user.id
+    chapter_id = context.user_data.get('selected_admin_chapter_id')
+    chapter_name = context.user_data.get('selected_admin_chapter_name')
+    grade_id = context.user_data.get('selected_admin_grade_id') # For back button
+
+    if not is_admin(user_id) or not chapter_id or not grade_id:
+        update.message.reply_text("خطأ: الصلاحيات أو الفصل/المرحلة غير محددة.")
+        return ConversationHandler.END
+
+    lesson_name = update.message.text.strip()
+    if not lesson_name or len(lesson_name) > 150:
+        update.message.reply_text("اسم الدرس غير صالح أو طويل جداً. حاول مرة أخرى أو أرسل /cancel.")
+        return ADDING_LESSON
+
+    try:
+        lesson_id = QUIZ_DB.add_lesson(chapter_id, lesson_name)
+        if lesson_id:
+            logger.info(f"Admin {user_id} added new lesson '{lesson_name}' to chapter {chapter_id}")
+            update.message.reply_text(f"تمت إضافة الدرس '{lesson_name}' للفصل '{chapter_name}' بنجاح.")
+            # Go back to the lesson list for that chapter
+            lessons = QUIZ_DB.get_lessons_by_chapter(chapter_id)
+            text = f"الدروس للفصل '{chapter_name}':\n"
+            if lessons: text += "\n".join([f"- {name} (ID: {lid})" for lid, name in lessons])
+            else: text += "لا توجد دروس حالياً.\n"
+            text += "\nاختر درساً للتعديل أو اضغط لإضافة درس جديد."
+            keyboard_list = []
+            if lessons: keyboard_list.extend([[InlineKeyboardButton(name, callback_data=f"admin_view_lesson_{lid}")] for lid, name in lessons])
+            keyboard_list.append([InlineKeyboardButton("➕ إضافة درس جديد", callback_data="admin_add_lesson_prompt")])
+            keyboard_list.append([InlineKeyboardButton("🔙 رجوع للفصول", callback_data=f"admin_grade_{grade_id}")]) # Back to chapter list
+            reply_markup = InlineKeyboardMarkup(keyboard_list)
+            update.message.reply_text(text=text, reply_markup=reply_markup) # Send as new message
+            context.user_data['admin_flow'] = 'manage_lessons' # Ensure flow state is correct
+            return ADMIN_MANAGE_LESSONS
+        else:
+            update.message.reply_text("لم يتم إضافة الدرس. قد يكون موجوداً بالفعل أو حدث خطأ.", reply_markup=create_structure_admin_menu_keyboard())
+            return ADMIN_MANAGE_STRUCTURE
+    except Exception as e:
+        logger.error(f"Error adding lesson '{lesson_name}' by admin {user_id}: {e}")
+        update.message.reply_text("حدث خطأ أثناء إضافة الدرس.", reply_markup=create_admin_menu_keyboard())
+        return ADMIN_MENU
+
+def add_question_text(update: Update, context: CallbackContext) -> int:
+    """Receives the text for the new question."""
+    user_id = update.effective_user.id
+    if not is_admin(user_id) or 'new_question' not in context.user_data:
+        update.message.reply_text("خطأ: الصلاحيات أو بيانات السؤال غير موجودة.")
+        return ConversationHandler.END
+
+    question_text = update.message.text.strip()
+    if not question_text or len(question_text) < 5: # Basic validation
+        update.message.reply_text("نص السؤال قصير جداً أو غير صالح. حاول مرة أخرى أو أرسل /cancel.")
+        return ADDING_QUESTION
+
+    context.user_data['new_question']['text'] = question_text
+    context.user_data['new_question']['options'] = [] # Initialize options list
+    logger.info(f"Admin {user_id} added question text: '{question_text[:50]}...'" )
+
+    update.message.reply_text("تم حفظ نص السؤال. الآن أرسل الخيار الأول (أ). للإلغاء أرسل /cancel.")
     return ADDING_OPTIONS
 
 def add_question_option(update: Update, context: CallbackContext) -> int:
     """Receives options for the new question."""
     user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
+    if not is_admin(user_id) or 'new_question' not in context.user_data or 'options' not in context.user_data['new_question']:
+        update.message.reply_text("خطأ: الصلاحيات أو بيانات السؤال غير موجودة.")
+        return ConversationHandler.END
 
-    option_text = update.message.text
-    new_question_data = context.user_data.get('new_question')
+    option_text = update.message.text.strip()
+    if not option_text or len(option_text) > 200: # Basic validation
+        update.message.reply_text("نص الخيار غير صالح أو طويل جداً. حاول مرة أخرى أو أرسل /cancel.")
+        return ADDING_OPTIONS
 
-    if not new_question_data:
-        update.message.reply_text("حدث خطأ. يرجى البدء من جديد بإرسال نص السؤال.")
-        return ADDING_QUESTION
+    current_options = context.user_data['new_question']['options']
+    current_options.append(option_text)
+    num_options = len(current_options)
 
-    new_question_data['options'].append(option_text)
-    num_options = len(new_question_data['options'])
-    logger.info(f"Admin {user_id} added option {num_options}: {option_text}")
+    logger.info(f"Admin {user_id} added option {num_options}: '{option_text[:50]}...'" )
 
-    if num_options < 4:
+    if num_options < 4: # Assuming 4 options (A, B, C, D)
         next_option_letter = chr(ord('أ') + num_options)
-        update.message.reply_text(f"✅ تم إضافة الخيار. أرسل الخيار التالي ({next_option_letter}) أو أرسل /done إذا اكتملت الخيارات.")
+        update.message.reply_text(f"تمت إضافة الخيار {chr(ord('أ') + num_options - 1)}. الآن أرسل الخيار التالي ({next_option_letter}). للإلغاء أرسل /cancel.")
         return ADDING_OPTIONS
     else:
-        # Maximum options reached (assuming 4 for now)
-        update.message.reply_text("✅ تم إضافة الخيار الرابع والأخير. الآن، أرسل رقم الخيار الصحيح (1, 2, 3, أو 4).")
+        # Got all 4 options, ask for the correct one
+        option_letters = [chr(ord('أ') + i) for i in range(num_options)]
+        keyboard = [[KeyboardButton(letter)] for letter in option_letters]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        update.message.reply_text("تمت إضافة جميع الخيارات. الآن اختر الحرف المقابل للإجابة الصحيحة من الأزرار أدناه. للإلغاء أرسل /cancel.", reply_markup=reply_markup)
         return ADDING_CORRECT_OPTION
-
-def add_question_done_options(update: Update, context: CallbackContext) -> int:
-    """Handles /done command when adding options."""
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
-
-    new_question_data = context.user_data.get('new_question')
-    if not new_question_data or len(new_question_data.get('options', [])) < 2:
-        update.message.reply_text("يجب إضافة خيارين على الأقل. أرسل الخيار التالي أو /cancel.")
-        return ADDING_OPTIONS
-
-    num_options = len(new_question_data['options'])
-    update.message.reply_text(f"👍 تم الانتهاء من إضافة الخيارات ({num_options} خيارات). الآن، أرسل رقم الخيار الصحيح (من 1 إلى {num_options}).")
-    return ADDING_CORRECT_OPTION
 
 def add_question_correct_option(update: Update, context: CallbackContext) -> int:
-    """Receives the correct option index."""
+    """Receives the correct option letter for the new question."""
     user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
+    if not is_admin(user_id) or 'new_question' not in context.user_data or not context.user_data['new_question'].get('options'):
+        update.message.reply_text("خطأ: الصلاحيات أو بيانات السؤال غير موجودة.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
 
-    new_question_data = context.user_data.get('new_question')
-    if not new_question_data or not new_question_data.get('options'):
-        update.message.reply_text("حدث خطأ. يرجى البدء من جديد.")
-        return cancel(update, context)
+    correct_letter = update.message.text.strip().upper() # Normalize input
+    num_options = len(context.user_data['new_question']['options'])
+    valid_letters = [chr(ord('أ') + i) for i in range(num_options)]
 
+    # Convert Arabic letter to index (A=0, B=1, etc.)
     try:
-        correct_option_number = int(update.message.text)
-        num_options = len(new_question_data['options'])
-        if 1 <= correct_option_number <= num_options:
-            # Store 0-based index
-            new_question_data['correct_index'] = correct_option_number - 1
-            logger.info(f"Admin {user_id} set correct option to {correct_option_number}.")
-            update.message.reply_text("✅ تم تحديد الإجابة الصحيحة. هل تريد إضافة صورة للسؤال؟ أرسل الصورة الآن أو أرسل /skip لتخطي إضافة الصورة.")
-            return ADDING_IMAGE
+        # Check if it's one of the expected Arabic letters
+        if correct_letter in valid_letters:
+             correct_index = valid_letters.index(correct_letter)
         else:
-            update.message.reply_text(f"رقم غير صالح. يرجى إرسال رقم بين 1 و {num_options}.")
-            return ADDING_CORRECT_OPTION
+             # Try converting potential English letter input
+             eng_letter = correct_letter
+             if 'A' <= eng_letter <= 'D': # Assuming max 4 options
+                  correct_index = ord(eng_letter) - ord('A')
+                  if correct_index >= num_options:
+                       raise ValueError("Index out of bounds")
+             else:
+                  raise ValueError("Invalid letter")
     except ValueError:
-        update.message.reply_text("إدخال غير صالح. يرجى إرسال رقم الخيار الصحيح.")
+        update.message.reply_text(f"إدخال غير صالح. يرجى اختيار أحد الحروف {', '.join(valid_letters)} من الأزرار. حاول مرة أخرى أو أرسل /cancel.")
+        # Resend the keyboard
+        keyboard = [[KeyboardButton(letter)] for letter in valid_letters]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        update.message.reply_text("اختر الحرف الصحيح:", reply_markup=reply_markup)
         return ADDING_CORRECT_OPTION
 
-def add_question_image(update: Update, context: CallbackContext) -> int:
-    """Receives an optional image for the question."""
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
+    context.user_data['new_question']['correct_index'] = correct_index
+    logger.info(f"Admin {user_id} selected correct option index: {correct_index} ({correct_letter})")
 
-    new_question_data = context.user_data.get('new_question')
-    if not new_question_data:
-        update.message.reply_text("حدث خطأ. يرجى البدء من جديد.")
-        return cancel(update, context)
+    # Ask if they want to add an image (optional)
+    keyboard = [[KeyboardButton("نعم"), KeyboardButton("لا")]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    update.message.reply_text("تم تحديد الإجابة الصحيحة. هل تريد إضافة صورة لهذا السؤال؟ (اختياري).", reply_markup=reply_markup)
+    return ADDING_IMAGE
+
+def add_question_image_prompt(update: Update, context: CallbackContext) -> int:
+    """Handles the response to whether an image should be added."""
+    user_id = update.effective_user.id
+    if not is_admin(user_id) or 'new_question' not in context.user_data:
+        update.message.reply_text("خطأ: الصلاحيات أو بيانات السؤال غير موجودة.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+
+    response = update.message.text.strip()
+
+    if response == "نعم":
+        update.message.reply_text("حسناً، أرسل الصورة الآن. للإلغاء أرسل /cancel.", reply_markup=ReplyKeyboardRemove())
+        return ADDING_IMAGE # Stay in state, waiting for photo
+    elif response == "لا":
+        update.message.reply_text("حسناً، لن يتم إضافة صورة.", reply_markup=ReplyKeyboardRemove())
+        # Finalize question without image
+        return finalize_question(update, context)
+    else:
+        # Invalid response, ask again
+        keyboard = [[KeyboardButton("نعم"), KeyboardButton("لا")]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        update.message.reply_text("الرجاء الاختيار 'نعم' أو 'لا' من الأزرار.", reply_markup=reply_markup)
+        return ADDING_IMAGE # Stay in state
+
+def add_question_image(update: Update, context: CallbackContext) -> int:
+    """Receives the image for the new question."""
+    user_id = update.effective_user.id
+    if not is_admin(user_id) or 'new_question' not in context.user_data:
+        update.message.reply_text("خطأ: الصلاحيات أو بيانات السؤال غير موجودة.")
+        return ConversationHandler.END
 
     if not update.message.photo:
-        update.message.reply_text("لم يتم إرسال صورة. يرجى إرسال صورة أو /skip.")
+        update.message.reply_text("لم يتم إرسال صورة. يرجى إرسال صورة أو اضغط /skip لتخطي إضافة الصورة أو /cancel للإلغاء.")
         return ADDING_IMAGE
 
-    # Get the largest photo
-    photo_file = update.message.photo[-1].get_file()
-    # Define a path to save the image (consider a more robust naming scheme)
-    image_dir = "/app/question_images" # Assuming running on Heroku, adjust if needed
-    os.makedirs(image_dir, exist_ok=True)
-    # Use file_id for uniqueness, but could lead to long names. Consider hashing or UUID.
-    image_filename = f"{photo_file.file_id}.jpg"
-    image_path = os.path.join(image_dir, image_filename)
+    # Get the largest photo version (file_id)
+    photo_file_id = update.message.photo[-1].file_id
+    context.user_data['new_question']['image_file_id'] = photo_file_id
+    logger.info(f"Admin {user_id} added image with file_id: {photo_file_id}")
 
-    try:
-        photo_file.download(image_path)
-        new_question_data['image_path'] = image_path # Store the path
-        logger.info(f"Admin {user_id} added image: {image_path}")
-        update.message.reply_text("🖼️ تم حفظ الصورة.")
-        # Proceed to ask for grade level
-        return ask_for_grade_level(update, context)
-    except Exception as e:
-        logger.error(f"Failed to download/save image: {e}")
-        update.message.reply_text("حدث خطأ أثناء حفظ الصورة. سنتخطى إضافة الصورة.")
-        # Proceed without image
-        return ask_for_grade_level(update, context)
+    update.message.reply_text("تم استلام الصورة.")
+    # Finalize question with image
+    return finalize_question(update, context)
 
-def add_question_skip_image(update: Update, context: CallbackContext) -> int:
-    """Handles skipping the image addition."""
+def skip_add_image(update: Update, context: CallbackContext) -> int:
+    """Handles skipping the image addition step."""
     user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
+    if not is_admin(user_id) or 'new_question' not in context.user_data:
+        update.message.reply_text("خطأ: الصلاحيات أو بيانات السؤال غير موجودة.", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
 
     logger.info(f"Admin {user_id} skipped adding image.")
-    update.message.reply_text("👍 تم تخطي إضافة الصورة.")
-    # Proceed to ask for grade level
-    return ask_for_grade_level(update, context)
+    update.message.reply_text("تم تخطي إضافة الصورة.", reply_markup=ReplyKeyboardRemove())
+    # Finalize question without image
+    return finalize_question(update, context)
 
-def ask_for_grade_level(update: Update, context: CallbackContext) -> int:
-    """Asks the admin to select the grade level for the new question."""
-    keyboard = create_grade_levels_keyboard(for_quiz=False, context=context) # Use admin context
-    if keyboard:
-        update.message.reply_text(
-            "🎓 الآن، اختر المرحلة الدراسية التي ينتمي إليها السؤال:",
-            reply_markup=keyboard
-        )
-        return ADDING_GRADE_LEVEL
-    else:
-        update.message.reply_text("لا توجد مراحل دراسية معرفة. يجب إضافتها أولاً من قائمة إدارة الهيكل. سيتم حفظ السؤال بدون مرحلة.")
-        # Skip directly to saving the question without structure info
-        return save_new_question(update, context)
-
-def add_question_grade_level(update: Update, context: CallbackContext) -> int:
-    """Handles the grade level selection callback for adding a question."""
-    query = update.callback_query
-    query.answer()
-    user_id = query.from_user.id
-    data = query.data
-
-    if not is_admin(user_id):
-        safe_edit_message_text(query, text=" وصول غير مصرح به.")
-        return cancel(update, context)
-
-    new_question_data = context.user_data.get('new_question')
-    if not new_question_data:
-        safe_edit_message_text(query, text="حدث خطأ. يرجى البدء من جديد.")
-        return cancel(update, context)
-
-    if data.startswith('grade_admin_'):
-        try:
-            grade_id = int(data.split('_')[2])
-            new_question_data['grade_level_id'] = grade_id
-            logger.info(f"Admin {user_id} selected grade {grade_id} for new question.")
-
-            # Now ask for chapter
-            keyboard = create_chapters_keyboard(grade_id, for_quiz=False, context=context)
-            if keyboard:
-                safe_edit_message_text(query,
-                    text="📖 اختر الفصل الذي ينتمي إليه السؤال:",
-                    reply_markup=keyboard
-                )
-                return ADDING_CHAPTER
-            else:
-                safe_edit_message_text(query, text="لا توجد فصول لهذه المرحلة. سيتم حفظ السؤال بدون فصل أو درس.")
-                return save_new_question(update, context)
-        except (ValueError, IndexError):
-            logger.warning(f"Invalid grade ID format in admin callback: {data}")
-            safe_edit_message_text(query, text="حدث خطأ. يرجى المحاولة مرة أخرى.")
-            # Resend grade selection
-            keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
-            safe_edit_message_text(query, text="اختر المرحلة الدراسية:", reply_markup=keyboard)
-            return ADDING_GRADE_LEVEL
-    elif data == 'admin_manage_structure': # Back button
-         # Go back to admin menu? Or cancel add question?
-         safe_edit_message_text(query, text="تم إلغاء إضافة السؤال.", reply_markup=create_admin_menu_keyboard())
-         del context.user_data['new_question']
-         return ADMIN_MENU
-    else:
-        keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار مرحلة.", reply_markup=keyboard)
-        return ADDING_GRADE_LEVEL
-
-def add_question_chapter(update: Update, context: CallbackContext) -> int:
-    """Handles the chapter selection callback for adding a question."""
-    query = update.callback_query
-    query.answer()
-    user_id = query.from_user.id
-    data = query.data
-
-    if not is_admin(user_id):
-        safe_edit_message_text(query, text=" وصول غير مصرح به.")
-        return cancel(update, context)
-
-    new_question_data = context.user_data.get('new_question')
-    if not new_question_data or 'grade_level_id' not in new_question_data:
-        safe_edit_message_text(query, text="حدث خطأ (مفقود المرحلة). يرجى البدء من جديد.")
-        return cancel(update, context)
-
-    if data.startswith('admin_chapter_'):
-        try:
-            chapter_id = int(data.split('_')[2])
-            new_question_data['chapter_id'] = chapter_id
-            logger.info(f"Admin {user_id} selected chapter {chapter_id} for new question.")
-
-            # Now ask for lesson
-            keyboard = create_lessons_keyboard(chapter_id, for_quiz=False, context=context)
-            if keyboard:
-                safe_edit_message_text(query,
-                    text="📄 اختر الدرس الذي ينتمي إليه السؤال (أو اختر 'رجوع' لحفظ السؤال تحت الفصل فقط):",
-                    reply_markup=keyboard
-                )
-                return ADDING_LESSON
-            else:
-                safe_edit_message_text(query, text="لا توجد دروس لهذا الفصل. سيتم حفظ السؤال تحت الفصل المحدد.")
-                return save_new_question(update, context)
-        except (ValueError, IndexError):
-            logger.warning(f"Invalid chapter ID format in admin callback: {data}")
-            safe_edit_message_text(query, text="حدث خطأ. يرجى المحاولة مرة أخرى.")
-            # Resend chapter selection
-            grade_id = new_question_data['grade_level_id']
-            keyboard = create_chapters_keyboard(grade_id, for_quiz=False, context=context)
-            safe_edit_message_text(query, text="اختر الفصل:", reply_markup=keyboard)
-            return ADDING_CHAPTER
-    elif data == 'admin_manage_structure': # Back button (from chapter selection)
-         # Go back to grade selection
-         keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
-         if keyboard:
-             safe_edit_message_text(query, text="اختر المرحلة الدراسية:", reply_markup=keyboard)
-             # Remove chapter_id if we go back
-             if 'chapter_id' in new_question_data: del new_question_data['chapter_id']
-             return ADDING_GRADE_LEVEL
-         else:
-             # Should not happen if grade selection was successful before
-             safe_edit_message_text(query, text="خطأ في الرجوع. إلغاء الإضافة.", reply_markup=create_admin_menu_keyboard())
-             del context.user_data['new_question']
-             return ADMIN_MENU
-    else:
-        grade_id = new_question_data['grade_level_id']
-        keyboard = create_chapters_keyboard(grade_id, for_quiz=False, context=context)
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار فصل.", reply_markup=keyboard)
-        return ADDING_CHAPTER
-
-def add_question_lesson(update: Update, context: CallbackContext) -> int:
-    """Handles the lesson selection callback for adding a question."""
-    query = update.callback_query
-    query.answer()
-    user_id = query.from_user.id
-    data = query.data
-
-    if not is_admin(user_id):
-        safe_edit_message_text(query, text=" وصول غير مصرح به.")
-        return cancel(update, context)
-
-    new_question_data = context.user_data.get('new_question')
-    if not new_question_data or 'chapter_id' not in new_question_data:
-        safe_edit_message_text(query, text="حدث خطأ (مفقود الفصل). يرجى البدء من جديد.")
-        return cancel(update, context)
-
-    if data.startswith('admin_lesson_'):
-        try:
-            lesson_id = int(data.split('_')[2])
-            new_question_data['lesson_id'] = lesson_id
-            logger.info(f"Admin {user_id} selected lesson {lesson_id} for new question.")
-            # All info gathered, save the question
-            safe_edit_message_text(query, text="✅ تم تحديد الدرس. جارٍ حفظ السؤال...")
-            return save_new_question(update, context)
-        except (ValueError, IndexError):
-            logger.warning(f"Invalid lesson ID format in admin callback: {data}")
-            safe_edit_message_text(query, text="حدث خطأ. يرجى المحاولة مرة أخرى.")
-            # Resend lesson selection
-            chapter_id = new_question_data['chapter_id']
-            keyboard = create_lessons_keyboard(chapter_id, for_quiz=False, context=context)
-            safe_edit_message_text(query, text="اختر الدرس:", reply_markup=keyboard)
-            return ADDING_LESSON
-    elif data == 'admin_manage_structure': # Back button (from lesson selection)
-         # Go back to chapter selection
-         grade_id = new_question_data['grade_level_id']
-         keyboard = create_chapters_keyboard(grade_id, for_quiz=False, context=context)
-         if keyboard:
-             safe_edit_message_text(query, text="اختر الفصل:", reply_markup=keyboard)
-             # Remove lesson_id if we go back
-             if 'lesson_id' in new_question_data: del new_question_data['lesson_id']
-             return ADDING_CHAPTER
-         else:
-             # Should not happen
-             safe_edit_message_text(query, text="خطأ في الرجوع. إلغاء الإضافة.", reply_markup=create_admin_menu_keyboard())
-             del context.user_data['new_question']
-             return ADMIN_MENU
-    else:
-        chapter_id = new_question_data['chapter_id']
-        keyboard = create_lessons_keyboard(chapter_id, for_quiz=False, context=context)
-        safe_edit_message_text(query, text="خيار غير صالح. يرجى اختيار درس أو الرجوع.", reply_markup=keyboard)
-        return ADDING_LESSON
-
-def save_new_question(update: Update, context: CallbackContext) -> int:
+def finalize_question(update: Update, context: CallbackContext) -> int:
     """Saves the completed question to the database."""
-    user_id = context.user_data.get("user_id") # Get user_id from context
-    if not user_id or not is_admin(user_id):
-        logger.warning("Unauthorized attempt to save question or missing user_id.")
-        if update and update.effective_message:
-             update.effective_message.reply_text("خطأ: غير مصرح لك أو خطأ في الجلسة.")
-        return cancel(update, context) if update else ConversationHandler.END
+    user_id = update.effective_user.id
+    question_data = context.user_data.get('new_question')
 
-    new_question_data = context.user_data.get('new_question')
-    if not new_question_data or 'text' not in new_question_data or 'options' not in new_question_data or 'correct_index' not in new_question_data:
-        logger.error(f"Incomplete question data for admin {user_id}: {new_question_data}")
-        message = "بيانات السؤال غير مكتملة. تعذر الحفظ. يرجى المحاولة مرة أخرى."
-        if update and update.callback_query:
-            safe_edit_message_text(update.callback_query, text=message, reply_markup=create_admin_menu_keyboard())
-        elif update and update.message:
-            update.message.reply_text(message, reply_markup=create_admin_menu_keyboard())
-        else: # If called from job or context without update
-             context.bot.send_message(chat_id=user_id, text=message, reply_markup=create_admin_menu_keyboard())
-        if 'new_question' in context.user_data: del context.user_data['new_question']
+    if not is_admin(user_id) or not question_data:
+        logger.error(f"Finalize question called for admin {user_id} but data is missing.")
+        update.message.reply_text("حدث خطأ أثناء حفظ السؤال. البيانات غير مكتملة.", reply_markup=create_admin_menu_keyboard())
+        context.user_data.pop('new_question', None)
         return ADMIN_MENU
 
     # Extract data
-    question_text = new_question_data['text']
-    options = new_question_data['options']
-    correct_option_index = new_question_data['correct_index']
-    image_path = new_question_data.get('image_path') # Optional
-    grade_level_id = new_question_data.get('grade_level_id') # Optional
-    chapter_id = new_question_data.get('chapter_id') # Optional
-    lesson_id = new_question_data.get('lesson_id') # Optional
+    chapter_id = question_data.get('chapter_id')
+    question_text = question_data.get('text')
+    options = question_data.get('options')
+    correct_index = question_data.get('correct_index')
+    image_file_id = question_data.get('image_file_id') # Can be None
 
-    # Save to DB
-    question_id = QUIZ_DB.add_question(
-        question_text,
-        options,
-        correct_option_index,
-        image_path,
-        grade_level_id,
-        chapter_id,
-        lesson_id
-    )
+    # Validate required fields
+    if not all([chapter_id, question_text, options, correct_index is not None]):
+        logger.error(f"Missing data when finalizing question for admin {user_id}: {question_data}")
+        update.message.reply_text("بيانات السؤال غير مكتملة. لم يتم الحفظ.", reply_markup=create_admin_menu_keyboard())
+        context.user_data.pop('new_question', None)
+        return ADMIN_MENU
 
-    final_message = ""
-    if question_id:
-        final_message = f"✅ تم حفظ السؤال بنجاح!\nID السؤال الجديد: {question_id}"
-        logger.info(f"Admin {user_id} successfully added question {question_id}.")
-    else:
-        final_message = "❌ حدث خطأ أثناء حفظ السؤال في قاعدة البيانات."
-        logger.error(f"Admin {user_id} failed to save question: {new_question_data}")
+    try:
+        question_id = QUIZ_DB.add_question(
+            chapter_id=chapter_id,
+            question_text=question_text,
+            options=options,
+            correct_option_index=correct_index,
+            image_url=image_file_id # Pass file_id as URL for now
+        )
+        if question_id:
+            logger.info(f"Admin {user_id} successfully added question {question_id} to chapter {chapter_id}.")
+            update.message.reply_text(f"تم حفظ السؤال بنجاح! (ID: {question_id})", reply_markup=create_admin_menu_keyboard())
+        else:
+            logger.error(f"Failed to add question to DB (returned None) for admin {user_id}.")
+            update.message.reply_text("حدث خطأ أثناء حفظ السؤال في قاعدة البيانات.", reply_markup=create_admin_menu_keyboard())
 
-    # Send confirmation and return to admin menu
-    keyboard = create_admin_menu_keyboard()
-    if update and update.callback_query:
-        # If triggered by a button press (like lesson selection)
-        safe_edit_message_text(update.callback_query, text=final_message, reply_markup=keyboard)
-    elif update and update.message:
-        # If triggered by a message (like skipping grade/chapter/lesson)
-        update.message.reply_text(final_message, reply_markup=keyboard)
-    else:
-        # If called without update (shouldn't happen in this flow normally)
-        context.bot.send_message(chat_id=user_id, text=final_message, reply_markup=keyboard)
+    except Exception as e:
+        logger.exception(f"Exception while saving question by admin {user_id}: {e}")
+        update.message.reply_text("حدث استثناء أثناء حفظ السؤال.", reply_markup=create_admin_menu_keyboard())
 
-    # Clean up
-    if 'new_question' in context.user_data: del context.user_data['new_question']
+    # Clean up and return to admin menu
+    context.user_data.pop('new_question', None)
+    context.user_data.pop('admin_flow', None)
+    context.user_data.pop('selected_admin_grade_id', None)
+    context.user_data.pop('selected_admin_grade_name', None)
+    context.user_data.pop('selected_admin_chapter_id', None)
+    context.user_data.pop('selected_admin_chapter_name', None)
     return ADMIN_MENU
-
-# --- Delete Question Flow ---
-
-def delete_question_id(update: Update, context: CallbackContext) -> int:
-    """Receives the ID of the question to delete."""
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
-
-    try:
-        question_id_to_delete = int(update.message.text)
-        logger.info(f"Admin {user_id} attempting to delete question {question_id_to_delete}.")
-
-        # Optional: Show question details before confirming deletion?
-        question_data = QUIZ_DB.get_question_by_id(question_id_to_delete)
-
-        if not question_data:
-            update.message.reply_text(f"لم يتم العثور على سؤال بالـ ID: {question_id_to_delete}. يرجى التأكد من الـ ID والمحاولة مرة أخرى.", reply_markup=create_admin_menu_keyboard())
-            return ADMIN_MENU
-
-        # Attempt deletion
-        success = QUIZ_DB.delete_question(question_id_to_delete)
-
-        if success:
-            update.message.reply_text(f"🗑️ تم حذف السؤال ذي الـ ID: {question_id_to_delete} بنجاح.", reply_markup=create_admin_menu_keyboard())
-            logger.info(f"Admin {user_id} successfully deleted question {question_id_to_delete}.")
-            # Consider deleting associated image file if it exists and is no longer needed
-            if question_data.get('image_path'):
-                 try:
-                      # Check if other questions use the same image before deleting?
-                      # For simplicity, let's just try deleting it.
-                      os.remove(question_data['image_path'])
-                      logger.info(f"Deleted associated image: {question_data['image_path']}")
-                 except OSError as e:
-                      logger.warning(f"Could not delete image file {question_data['image_path']}: {e}")
-        else:
-            update.message.reply_text(f"❌ حدث خطأ أثناء محاولة حذف السؤال ذي الـ ID: {question_id_to_delete}.", reply_markup=create_admin_menu_keyboard())
-            logger.error(f"Admin {user_id} failed to delete question {question_id_to_delete}.")
-
-        return ADMIN_MENU
-
-    except ValueError:
-        update.message.reply_text("إدخال غير صالح. يرجى إرسال رقم ID السؤال.", reply_markup=create_admin_menu_keyboard())
-        return DELETING_QUESTION # Stay in this state to re-prompt
-
-# --- Show Question Flow ---
-
-def show_question_id(update: Update, context: CallbackContext) -> int:
-    """Receives the ID of the question to show."""
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        update.message.reply_text(" وصول غير مصرح به.")
-        return cancel(update, context)
-
-    try:
-        question_id_to_show = int(update.message.text)
-        logger.info(f"Admin {user_id} requesting to view question {question_id_to_show}.")
-
-        question_data = QUIZ_DB.get_question_by_id(question_id_to_show)
-
-        if not question_data:
-            update.message.reply_text(f"لم يتم العثور على سؤال بالـ ID: {question_id_to_show}.", reply_markup=create_admin_menu_keyboard())
-            return ADMIN_MENU
-
-        # Format question details
-        text = f"👁️ تفاصيل السؤال (ID: {question_id_to_show})\n\n"
-        text += f"*النص:* {question_data['question_text']}\n\n"
-        text += "*الخيارات:*\n"
-        for i, option in enumerate(question_data['options']):
-            prefix = "✅" if i == question_data['correct_option_index'] else "🔘"
-            text += f" {prefix} {i+1}. {option}\n"
-        text += f"\n*المرحلة:* {question_data.get('grade_name', 'غير محدد')}\n"
-        text += f"*الفصل:* {question_data.get('chapter_name', 'غير محدد')}\n"
-        text += f"*الدرس:* {question_data.get('lesson_name', 'غير محدد')}\n"
-        image_path = question_data.get('image_path')
-
-        # Send details (with image if available)
-        if image_path:
-            try:
-                with open(image_path, 'rb') as img:
-                    update.message.reply_photo(photo=img, caption=text, reply_markup=create_admin_menu_keyboard(), parse_mode=ParseMode.MARKDOWN)
-            except FileNotFoundError:
-                 logger.warning(f"Image file not found for showing question {question_id_to_show}: {image_path}")
-                 update.message.reply_text(f"{text}\n\n(تعذر تحميل الصورة: {image_path})", reply_markup=create_admin_menu_keyboard(), parse_mode=ParseMode.MARKDOWN)
-            except Exception as e:
-                 logger.error(f"Error sending photo for question {question_id_to_show}: {e}")
-                 update.message.reply_text(text, reply_markup=create_admin_menu_keyboard(), parse_mode=ParseMode.MARKDOWN)
-        else:
-            update.message.reply_text(text, reply_markup=create_admin_menu_keyboard(), parse_mode=ParseMode.MARKDOWN)
-
-        return ADMIN_MENU
-
-    except ValueError:
-        update.message.reply_text("إدخال غير صالح. يرجى إرسال رقم ID السؤال.", reply_markup=create_admin_menu_keyboard())
-        return SHOWING_QUESTION # Stay in this state to re-prompt
-
-# --- Structure Management Callbacks ---
-
-def structure_admin_menu_callback(update: Update, context: CallbackContext) -> int:
-     """Handles structure management menu button presses."""
-     query = update.callback_query
-     query.answer()
-     user_id = query.from_user.id
-     data = query.data
-
-     if not is_admin(user_id):
-         safe_edit_message_text(query, text=" وصول غير مصرح به.", reply_markup=create_main_menu_keyboard(user_id))
-         return MAIN_MENU
-
-     logger.info(f"Admin {user_id} chose {data} from structure admin menu.")
-
-     if data == 'admin_manage_grades':
-         # TODO: Implement grade management (add/edit/delete)
-         safe_edit_message_text(query, text="إدارة المراحل قيد التطوير.", reply_markup=create_structure_admin_menu_keyboard())
-         return ADMIN_MANAGE_STRUCTURE
-     elif data == 'admin_manage_chapters':
-         # TODO: Implement chapter management
-         safe_edit_message_text(query, text="إدارة الفصول قيد التطوير.", reply_markup=create_structure_admin_menu_keyboard())
-         return ADMIN_MANAGE_STRUCTURE
-     elif data == 'admin_manage_lessons':
-         # TODO: Implement lesson management
-         safe_edit_message_text(query, text="إدارة الدروس قيد التطوير.", reply_markup=create_structure_admin_menu_keyboard())
-         return ADMIN_MANAGE_STRUCTURE
-     elif data == 'menu_admin':
-         safe_edit_message_text(query, text="قائمة الإدارة:", reply_markup=create_admin_menu_keyboard())
-         return ADMIN_MENU
-     else:
-         safe_edit_message_text(query, text="خيار غير معروف.", reply_markup=create_structure_admin_menu_keyboard())
-         return ADMIN_MANAGE_STRUCTURE
 
 # --- Error Handler ---
 
-def error_handler(update: object, context: CallbackContext) -> None:
+def error_handler(update: object, context: CallbackContext):
     """Log Errors caused by Updates."""
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
-    # Optionally inform user about the error
-    # if update and isinstance(update, Update) and update.effective_message:
-    #     update.effective_message.reply_text("حدث خطأ ما. يرجى المحاولة مرة أخرى لاحقاً.")
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+    # Optionally, notify user about the error
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            update.effective_message.reply_text("عذراً، حدث خطأ ما أثناء معالجة طلبك. 😥")
+        except Exception as e:
+            logger.error(f"Failed to send error message to user: {e}")
 
 # --- Main Function ---
 
-def main() -> None:
+def main():
     """Start the bot."""
+    # Basic checks
+    if not BOT_TOKEN:
+        logger.critical("BOT_TOKEN environment variable not set.")
+        sys.exit("Bot token not found.")
+    if not DATABASE_URL:
+        logger.critical("DATABASE_URL environment variable not set.")
+        sys.exit("Database URL not found.")
+    if not QUIZ_DB:
+         logger.critical("QuizDatabase instance (QUIZ_DB) not initialized.")
+         sys.exit("Database instance error.")
+
     # Create the Updater and pass it your bot's token.
-    updater = Updater(BOT_TOKEN)
+    updater = Updater(BOT_TOKEN, use_context=True)
 
     # Get the dispatcher to register handlers
-    dispatcher = updater.dispatcher
+    dp = updater.dispatcher
 
     # --- Conversation Handler Setup ---
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('start', start),
-            CallbackQueryHandler(main_menu_callback, pattern='^menu_info$') # Entry point for info menu
+            CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Allow re-entry via callback
             ],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(main_menu_callback, pattern='^(menu_|main_menu)$'),
+                CallbackQueryHandler(main_menu_callback, pattern='^menu_'),
+                # Include info menu handler entry point if needed directly from main
+                # CallbackQueryHandler(show_info_menu, pattern='^menu_info$'), # Handled within main_menu_callback
                 CommandHandler('help', help_command), # Allow help anytime
             ],
             QUIZ_MENU: [
-                CallbackQueryHandler(quiz_menu_callback, pattern='^(quiz_|main_menu)$')
+                CallbackQueryHandler(quiz_menu_callback, pattern='^(quiz_|main_menu)'),
             ],
             ADMIN_MENU: [
-                CallbackQueryHandler(admin_menu_callback, pattern='^(admin_|main_menu)$')
+                CallbackQueryHandler(admin_menu_callback, pattern='^(admin_|main_menu)'),
             ],
             SELECTING_QUIZ_DURATION: [
-                CallbackQueryHandler(select_quiz_duration_callback, pattern='^(duration_|menu_quiz)$')
+                CallbackQueryHandler(select_quiz_duration_callback, pattern='^(duration_|menu_quiz)'),
             ],
             SELECT_GRADE_LEVEL_FOR_QUIZ: [
-                 CallbackQueryHandler(select_grade_level_callback, pattern='^(grade_quiz_|menu_quiz)$')
+                CallbackQueryHandler(select_grade_level_for_quiz_callback, pattern='^(grade_quiz_|menu_quiz)'),
             ],
             SELECT_CHAPTER_FOR_QUIZ: [
-                 CallbackQueryHandler(select_chapter_for_quiz_callback, pattern='^(chapter_quiz_|quiz_by_grade_prompt)$')
+                CallbackQueryHandler(select_chapter_for_quiz_callback, pattern='^(chapter_quiz_|quiz_by_grade_prompt)'),
             ],
-            SELECT_CHAPTER_FOR_LESSON: [
-                 CallbackQueryHandler(select_chapter_for_lesson_callback, pattern='^(lesson_chapter_|quiz_by_grade_prompt)$')
-            ],
+             SELECT_CHAPTER_FOR_LESSON: [
+                 CallbackQueryHandler(select_chapter_for_lesson_callback, pattern='^(lesson_chapter_|quiz_by_grade_prompt)'),
+             ],
             SELECT_LESSON_FOR_QUIZ: [
-                 # Pattern needs to handle back button correctly
-                 CallbackQueryHandler(select_lesson_for_quiz_callback, pattern='^(lesson_quiz_|grade_quiz_|quiz_by_lesson_prompt)$')
+                CallbackQueryHandler(select_lesson_for_quiz_callback, pattern='^(lesson_quiz_|quiz_by_lesson_prompt)'),
             ],
             RUNNING_QUIZ: [
                 CallbackQueryHandler(handle_answer, pattern='^answer_'),
-                CallbackQueryHandler(skip_question, pattern='^skip_')
-                # No other handlers here, quiz ends via timer or last answer
+                CallbackQueryHandler(handle_skip, pattern='^skip_'),
+                # No other commands should interrupt the quiz except /cancel
             ],
             VIEWING_RESULTS: [
-                CallbackQueryHandler(results_menu_callback, pattern='^(menu_quiz|main_menu|review_)')
+                CallbackQueryHandler(view_results_callback, pattern='^(menu_quiz|main_menu|review_)'),
             ],
-            # Admin Add Question Flow
-            ADDING_QUESTION: [MessageHandler(Filters.text & ~Filters.command, add_question_text)],
+            ADMIN_MANAGE_STRUCTURE: [
+                 CallbackQueryHandler(admin_manage_structure_callback, pattern='^(admin_manage_|menu_admin)'),
+            ],
+            ADMIN_MANAGE_GRADES: [
+                 CallbackQueryHandler(admin_manage_grades_callback, pattern='^(admin_add_grade_prompt|admin_grade_|admin_manage_structure|admin_view_grade_)'),
+                 MessageHandler(Filters.text & ~Filters.command, add_grade_level), # Handles adding grade name
+            ],
+            ADMIN_MANAGE_CHAPTERS: [
+                 CallbackQueryHandler(admin_manage_chapters_callback, pattern='^(admin_add_chapter_prompt|admin_chapter_|admin_manage_grades|admin_view_chapter_)'),
+                 MessageHandler(Filters.text & ~Filters.command, add_chapter), # Handles adding chapter name
+            ],
+            ADMIN_MANAGE_LESSONS: [
+                 CallbackQueryHandler(admin_manage_lessons_callback, pattern='^(admin_add_lesson_prompt|admin_grade_|admin_view_lesson_)'), # Back button uses admin_grade_ pattern
+                 MessageHandler(Filters.text & ~Filters.command, add_lesson), # Handles adding lesson name
+            ],
+            ADDING_GRADE_LEVEL: [
+                 MessageHandler(Filters.text & ~Filters.command, add_grade_level),
+            ],
+            ADDING_CHAPTER: [
+                 MessageHandler(Filters.text & ~Filters.command, add_chapter),
+            ],
+            ADDING_LESSON: [
+                 MessageHandler(Filters.text & ~Filters.command, add_lesson),
+            ],
+            ADDING_QUESTION: [ # State after selecting chapter/lesson for question
+                MessageHandler(Filters.text & ~Filters.command, add_question_text),
+            ],
             ADDING_OPTIONS: [
                 MessageHandler(Filters.text & ~Filters.command, add_question_option),
-                CommandHandler('done', add_question_done_options)
             ],
-            ADDING_CORRECT_OPTION: [MessageHandler(Filters.text & ~Filters.command, add_question_correct_option)],
+            ADDING_CORRECT_OPTION: [
+                MessageHandler(Filters.regex('^[أ-يA-D]$'), add_question_correct_option), # Accept Arabic/Eng letters
+                MessageHandler(Filters.text & ~Filters.command, add_question_correct_option) # Catch invalid text
+            ],
             ADDING_IMAGE: [
                 MessageHandler(Filters.photo, add_question_image),
-                CommandHandler('skip', add_question_skip_image)
+                MessageHandler(Filters.regex('^(نعم|لا)$'), add_question_image_prompt),
+                CommandHandler('skip', skip_add_image), # Allow skipping image
+                MessageHandler(Filters.text & ~Filters.command & ~Filters.regex('^(نعم|لا)$'), add_question_image_prompt) # Catch invalid text
             ],
-            ADDING_GRADE_LEVEL: [CallbackQueryHandler(add_question_grade_level, pattern='^(grade_admin_|admin_manage_structure)$')],
-            ADDING_CHAPTER: [CallbackQueryHandler(add_question_chapter, pattern='^(admin_chapter_|admin_manage_structure)$')],
-            ADDING_LESSON: [CallbackQueryHandler(add_question_lesson, pattern='^(admin_lesson_|admin_manage_structure)$')],
-            # Admin Delete/Show Question Flow
-            DELETING_QUESTION: [MessageHandler(Filters.text & ~Filters.command, delete_question_id)],
-            SHOWING_QUESTION: [MessageHandler(Filters.text & ~Filters.command, show_question_id)],
-            # Admin Structure Management Flow
-            ADMIN_MANAGE_STRUCTURE: [CallbackQueryHandler(structure_admin_menu_callback, pattern='^(admin_manage_|menu_admin)$')],
-            # INFO_MENU state is handled by info_menu_conv_handler
-            INFO_MENU: [info_menu_conv_handler], # Delegate to the imported handler
+            # Integrate the INFO_MENU states from info_handlers
+            **info_menu_conv_handler.states,
+
+            # Note: DELETING_QUESTION, SHOWING_QUESTION states are not implemented yet
         },
         fallbacks=[
             CommandHandler('cancel', cancel),
-            CommandHandler('start', start) # Allow restarting anytime
+            CommandHandler('start', start), # Allow restarting
+            # Add a fallback for unexpected callbacks in any state?
+            CallbackQueryHandler(lambda u,c: u.callback_query.answer("أمر غير متوقع في هذه المرحلة.") or MAIN_MENU) # Generic fallback
             ],
-        # Allow re-entry into the conversation
-        allow_reentry=True
+        # Allow re-entry into the main states via commands/callbacks
+        allow_reentry=True,
+        # Define conversation timeout (optional)
+        # conversation_timeout=timedelta(minutes=30)
     )
 
-    dispatcher.add_handler(conv_handler)
+    # Add ConversationHandler to dispatcher
+    dp.add_handler(conv_handler)
 
-    # Add the info menu handler separately if it's not fully integrated into the main one
-    # dispatcher.add_handler(info_menu_conv_handler) # Might be redundant if INFO_MENU state points to it
+    # Add the info menu handler separately if it's not fully integrated above
+    # dp.add_handler(info_menu_conv_handler) # Already integrated via states dictionary merge
 
-    # Log all errors
-    dispatcher.add_error_handler(error_handler)
+    # Add error handler
+    dp.add_error_handler(error_handler)
 
-    # Start the Bot (using Webhook for Heroku)
+    # Start the Bot using Webhook for Heroku
     if HEROKU_APP_NAME:
-        logger.info(f"Starting webhook on port {PORT} for Heroku app {HEROKU_APP_NAME}")
+        logger.info(f"Starting webhook on port {PORT} for app {HEROKU_APP_NAME}")
         updater.start_webhook(listen="0.0.0.0",
                               port=PORT,
                               url_path=BOT_TOKEN,
                               webhook_url=f"https://{HEROKU_APP_NAME}.herokuapp.com/{BOT_TOKEN}")
-        updater.idle()
+        # Idle is handled by Heroku dyno
+        # updater.idle() # Not needed for webhook
     else:
-        # Fallback to polling if not on Heroku (for local testing)
-        logger.info("Starting bot with polling (not recommended for production).")
+        # Start polling if not on Heroku (for local testing)
+        logger.info("Starting bot in polling mode.")
         updater.start_polling()
         updater.idle()
-
-    # Close the database connection when the bot stops
-    if DB_CONN:
-        DB_CONN.close()
-        logger.info("Database connection closed.")
 
 if __name__ == '__main__':
     main()
