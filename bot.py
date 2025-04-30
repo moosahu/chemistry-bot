@@ -167,7 +167,7 @@ def create_main_menu_keyboard(user_id):
 def create_quiz_menu_keyboard():
     """Creates the quiz type selection inline keyboard (original structure)."""
     keyboard = [
-        [InlineKeyboardButton("🎯 اختبار عشوائي", callback_data='quiz_random_prompt')],
+        [InlineKeyboardButton("🎯 اختبار تحصيلي عام", callback_data='quiz_random_prompt')],
         [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data='quiz_by_chapter_prompt')],
         [InlineKeyboardButton("📝 اختبار حسب الدرس", callback_data='quiz_by_lesson_prompt')],
         [InlineKeyboardButton("🎓 اختبار حسب المرحلة الدراسية", callback_data='quiz_by_grade_prompt')],
@@ -512,7 +512,7 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
         return MAIN_MENU
     elif data == 'menu_about':
         about_text = "بوت الكيمياء التعليمي\n"
-        about_text += "تم التطوير بواسطة [اسم المطور أو الفريق]\n"
+        about_text += "تم التطوير بواسطة الاستاذ حسين الموسى\n"
         about_text += "الإصدار: 1.0 (تجريبي)\n\n"
         about_text += "يهدف هذا البوت لمساعدتك في دراسة الكيمياء من خلال الاختبارات والمعلومات."
         safe_edit_message_text(query, text=about_text, reply_markup=create_main_menu_keyboard(user_id))
