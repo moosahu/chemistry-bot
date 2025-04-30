@@ -772,9 +772,9 @@ def main():
         logger.info(f"Starting webhook for Heroku app {HEROKU_APP_NAME}")
         updater.start_webhook(listen="0.0.0.0",
                               port=PORT,
-                              url_path=BOT_TOKEN,
-                              webhook_url=f"https://{HEROKU_APP_NAME}.herokuapp.com/{BOT_TOKEN}")
-        logger.info(f"Webhook set to https://{HEROKU_APP_NAME}.herokuapp.com/{BOT_TOKEN}")
+                              url_path="webhook", # Use a simple, static path
+                              webhook_url=f"https://{HEROKU_APP_NAME}.herokuapp.com/webhook") # Update URL accordingly
+        logger.info(f"Webhook set to https://{HEROKU_APP_NAME}.herokuapp.com/webhook")
     else:
         # Start polling if not on Heroku (for local testing)
         logger.info("Starting bot in polling mode (not on Heroku)")
