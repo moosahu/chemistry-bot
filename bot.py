@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Chemistry Quiz and Info Telegram Bot
+Chemistry Quiz and Info Telegram Bot (Polling Mode for Diagnostics)
 
 This bot provides chemistry quizzes and information.
 """
@@ -55,8 +55,8 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 ADMIN_USER_ID = 6448526509 # Hardcoded as requested
-PORT = int(os.environ.get("PORT", 8443))
-HEROKU_APP_NAME = os.environ.get("HEROKU_APP_NAME")
+# PORT = int(os.environ.get("PORT", 8443)) # Not needed for polling
+# HEROKU_APP_NAME = os.environ.get("HEROKU_APP_NAME") # Not needed for polling
 
 if not BOT_TOKEN:
     logger.critical("BOT_TOKEN environment variable not set!")
@@ -276,12 +276,23 @@ def question_timer_callback(context: CallbackContext):
     logger.warning("question_timer_callback is a placeholder.")
     # Needs implementation to handle question timeout
 
+# --- Generic Update Handler for Debugging ---
+def generic_update_handler(update: Update, context: CallbackContext) -> None:
+    """Logs any incoming update."""
+    logger.critical("!!!!!!!!!!!!!! GENERIC UPDATE RECEIVED (POLLING) !!!!!!!!!!!!!!")
+    logger.info(f"Received update: {update.to_dict()}")
+    # Optionally, you can check update type and log more details
+    # if update.message:
+    #     logger.info(f"Message update: {update.message.text}")
+    # elif update.callback_query:
+    #     logger.info(f"Callback query update: {update.callback_query.data}")
+
 # --- Core Command Handlers ---
 
 def start(update: Update, context: CallbackContext) -> int:
     """Handles the /start command and displays the main menu."""
     # --- ADDED LOGGING --- #
-    logger.critical("!!!!!!!!!!!!!! START HANDLER TRIGGERED !!!!!!!!!!!!!!")
+    logger.critical("!!!!!!!!!!!!!! START HANDLER TRIGGERED (POLLING) !!!!!!!!!!!!!!")
     # --------------------- #
     user = update.effective_user
     user_id = user.id
@@ -294,7 +305,7 @@ def start(update: Update, context: CallbackContext) -> int:
         logger.info(f"New user {user_name} (ID: {user_id}) added to the database.")
 
     # Send main menu message
-    text = f"أهلاً بك يا {user_name} في بوت الكيمياء التعليمي!\n\nاختر أحد الخيارات التالية:"
+    text = f"أهلاً بك يا {user_name} في بوت الكيمياء التعليمي!\n\n(وضع الاقتراع التشخيصي)\nاختر أحد الخيارات التالية:"
     keyboard = create_main_menu_keyboard(user_id)
 
     if update.message:
@@ -366,16 +377,14 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return ADMIN_MENU # Transition to admin menu state
 
-    elif data == 'main_menu': # Handle explicit return to main menu
-        return start(update, context) # Reuse start handler logic
+    elif data == 'main_menu': # Explicitly handle returning to main menu
+        return start(update, context)
 
     else:
-        # Unknown callback data in main menu context
-        query.answer("خيار غير معروف")
-        return MAIN_MENU # Stay in main menu
+        logger.warning(f"Unknown main menu callback data: {data}")
+        return MAIN_MENU # Stay in main menu if unknown
 
-# --- Placeholder Handlers for Other Menus/Features ---
-
+# --- Quiz Menu Handler ---
 def quiz_menu_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     query.answer()
@@ -383,26 +392,44 @@ def quiz_menu_callback(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     logger.info(f"Quiz menu callback: User {user_id} chose {data}")
 
+    # Placeholder logic - needs full implementation
     if data == 'quiz_random_prompt':
-        text = "قسم الاختبار التحصيلي العام قيد التطوير."
-        safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
-        return QUIZ_MENU
+        text = "اختر مدة الاختبار التحصيلي العام:"
+        keyboard = create_quiz_duration_keyboard()
+        safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        context.user_data['quiz_type'] = 'random'
+        return SELECTING_QUIZ_DURATION # Placeholder state
     elif data == 'quiz_by_chapter_prompt':
-        text = "قسم الاختبار حسب الفصل قيد التطوير."
-        safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
-        return QUIZ_MENU
+        keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية:", reply_markup=keyboard)
+            context.user_data['quiz_type'] = 'chapter'
+            return SELECT_GRADE_LEVEL_FOR_QUIZ
+        else:
+            safe_edit_message_text(query, text="لا توجد مراحل دراسية متاحة حالياً.")
+            return QUIZ_MENU
     elif data == 'quiz_by_lesson_prompt':
-        text = "قسم الاختبار حسب الدرس قيد التطوير."
-        safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
-        return QUIZ_MENU
+        keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية:", reply_markup=keyboard)
+            context.user_data['quiz_type'] = 'lesson'
+            return SELECT_GRADE_LEVEL_FOR_QUIZ # Reuse state, next step differs
+        else:
+            safe_edit_message_text(query, text="لا توجد مراحل دراسية متاحة حالياً.")
+            return QUIZ_MENU
     elif data == 'quiz_by_grade_prompt':
-        text = "قسم الاختبار حسب المرحلة الدراسية قيد التطوير."
-        safe_edit_message_text(query, text=text, reply_markup=create_quiz_menu_keyboard())
-        return QUIZ_MENU
+        keyboard = create_grade_levels_keyboard(for_quiz=True, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية للاختبار:", reply_markup=keyboard)
+            context.user_data['quiz_type'] = 'grade'
+            return SELECT_GRADE_LEVEL_FOR_QUIZ # Reuse state
+        else:
+            safe_edit_message_text(query, text="لا توجد مراحل دراسية متاحة حالياً.")
+            return QUIZ_MENU
     elif data == 'main_menu':
         return start(update, context)
     else:
-        return QUIZ_MENU # Stay in quiz menu for unknown options
+        return QUIZ_MENU # Stay in quiz menu if unknown
 
 def admin_menu_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -410,159 +437,167 @@ def admin_menu_callback(update: Update, context: CallbackContext) -> int:
     data = query.data
     user_id = query.from_user.id
     logger.info(f"Admin menu callback: User {user_id} chose {data}")
-
-    if not is_admin(user_id):
-        query.answer("عذراً، هذه المنطقة مخصصة للمشرفين فقط.")
-        return ConversationHandler.END # Or return to MAIN_MENU
-
+    # Placeholder - Add logic for admin menu options
     if data == 'admin_add_question':
-        text = "قسم إضافة الأسئلة قيد التطوير."
-        safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
-        return ADMIN_MENU
+        text = "أرسل نص السؤال الجديد:"
+        safe_edit_message_text(query, text=text)
+        return ADDING_QUESTION
     elif data == 'admin_delete_question':
-        text = "قسم حذف الأسئلة قيد التطوير."
-        safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
-        return ADMIN_MENU
+        text = "أرسل ID السؤال الذي تريد حذفه:"
+        safe_edit_message_text(query, text=text)
+        return DELETING_QUESTION
     elif data == 'admin_show_question':
-        text = "قسم عرض الأسئلة قيد التطوير."
-        safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
-        return ADMIN_MENU
+        text = "أرسل ID السؤال الذي تريد عرضه:"
+        safe_edit_message_text(query, text=text)
+        return SHOWING_QUESTION
     elif data == 'admin_manage_structure':
-        text = "إدارة المراحل/الفصول/الدروس قيد التطوير."
-        # Example: Show structure admin menu if implemented
-        # keyboard = create_structure_admin_menu_keyboard()
-        # safe_edit_message_text(query, text=text, reply_markup=keyboard)
-        # return ADMIN_MANAGE_STRUCTURE # Need this state defined
-        safe_edit_message_text(query, text=text, reply_markup=create_admin_menu_keyboard())
-        return ADMIN_MENU # Stay in admin menu for now
+        text = "اختر ما تريد إدارته:"
+        keyboard = create_structure_admin_menu_keyboard()
+        safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        return ADMIN_MANAGE_STRUCTURE
     elif data == 'main_menu':
         return start(update, context)
     else:
-        return ADMIN_MENU # Stay in admin menu
+        return ADMIN_MENU # Stay in admin menu if unknown
 
-# --- Generic Update Handler for Debugging --- #
-def generic_update_handler(update: Update, context: CallbackContext):
-    """Logs any incoming update to check if webhook is receiving anything."""
-    logger.critical("!!!!!!!!!!!!!! GENERIC UPDATE RECEIVED !!!!!!!!!!!!!!")
-    logger.info(f"Received update: {update}")
-    # Optionally, you could try to pass this to the conversation handler
-    # main_conv_handler.handle_update(update, context.dispatcher, context.update_queue, context)
-    # But for now, just logging is safer for diagnosis.
-
-# --- Error Handler --- #
-def error_handler(update: Update, context: CallbackContext):
-    """Log Errors caused by Updates."""
-    logger.warning(f"Update \"{update}\" caused error \"{context.error}\"")
-    # Add more specific error handling if needed
-    if isinstance(context.error, BadRequest):
-        logger.error(f"BadRequest Error: {context.error.message}")
-        # Handle specific BadRequest errors, e.g., message not modified
-        if "Message is not modified" in context.error.message:
-            logger.info("Ignoring BadRequest: Message is not modified")
-            if update and update.callback_query:
-                update.callback_query.answer() # Answer query even if message not modified
+def admin_structure_menu_callback(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    query.answer()
+    data = query.data
+    user_id = query.from_user.id
+    logger.info(f"Admin structure menu callback: User {user_id} chose {data}")
+    # Placeholder - Add logic for structure admin menu options
+    if data == 'admin_manage_grades':
+        text = "إدارة المراحل الدراسية (قيد الإنشاء). أرسل اسم المرحلة الجديدة لإضافتها."
+        safe_edit_message_text(query, text=text)
+        return ADDING_GRADE_LEVEL # Placeholder state
+    elif data == 'admin_manage_chapters':
+        keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية لإدارة فصولها:", reply_markup=keyboard)
+            return SELECT_GRADE_FOR_CHAPTER # Placeholder state
         else:
-            # Try to inform the user about other bad requests if possible
-            if update and update.effective_chat:
-                try:
-                    context.bot.send_message(chat_id=update.effective_chat.id, text="حدث خطأ ما أثناء معالجة طلبك.")
-                except Exception as e:
-                    logger.error(f"Failed to send error message to user: {e}")
-    elif isinstance(context.error, TimedOut):
-        logger.error("Network Timeout Error")
-    elif isinstance(context.error, NetworkError):
-        logger.error(f"Network Error: {context.error}")
-    elif isinstance(context.error, ChatMigrated):
-        logger.warning(f"Chat migrated to {context.error.new_chat_id}")
-    elif isinstance(context.error, Unauthorized):
-        logger.error("Unauthorized Error - Bot might be blocked by the user")
+            safe_edit_message_text(query, text="لا توجد مراحل دراسية لإدارة فصولها.")
+            return ADMIN_MANAGE_STRUCTURE
+    elif data == 'admin_manage_lessons':
+        keyboard = create_grade_levels_keyboard(for_quiz=False, context=context)
+        if keyboard:
+            safe_edit_message_text(query, text="اختر المرحلة الدراسية لإدارة دروسها:", reply_markup=keyboard)
+            return SELECT_GRADE_LEVEL # Placeholder state, need chapter next
+        else:
+            safe_edit_message_text(query, text="لا توجد مراحل دراسية لإدارة دروسها.")
+            return ADMIN_MANAGE_STRUCTURE
+    elif data == 'menu_admin':
+        text = "⚙️ قائمة إدارة البوت:"
+        keyboard = create_admin_menu_keyboard()
+        safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        return ADMIN_MENU
     else:
-        logger.error(f"Unhandled error: {context.error}")
+        return ADMIN_MANAGE_STRUCTURE # Stay in structure menu if unknown
 
-# --- Main Function --- #
-def main():
-    """Start the bot."""
+# --- Main Function (Modified for Polling) ---
+
+def main() -> None:
+    """Start the bot in polling mode."""
     # Create the Updater and pass it your bot's token.
-    updater = Updater(BOT_TOKEN, use_context=True)
+    updater = Updater(BOT_TOKEN)
 
     # Get the dispatcher to register handlers
-    dp = updater.dispatcher
+    dispatcher = updater.dispatcher
 
-    # --- Import Handlers Here to Avoid Circular Import --- #
-    try:
-        # Import the handler itself, not just the function
-        from info_handlers import info_menu_conv_handler
-    except ImportError as e:
-        logger.error(f"Failed to import info_menu_conv_handler: {e}")
-        info_menu_conv_handler = None # Set to None if import fails
+    # --- Register Handlers ---
 
-    # --- ADD GENERIC HANDLER (MUST BE ADDED BEFORE OTHER HANDLERS) --- #
-    # This handler will log any update received.
-    # We use a high group number to ensure it runs before other handlers.
-    dp.add_handler(MessageHandler(Filters.all, generic_update_handler), group=-1)
+    # Add generic update handler for debugging (high priority)
+    dispatcher.add_handler(MessageHandler(Filters.all, generic_update_handler), group=-1)
     logger.info("Generic update handler added with high priority (group -1).")
-    # ----------------------------------------------------------------- #
 
-    # --- Setup Main Conversation Handler --- #
-    # This handler manages the main states: MAIN_MENU, QUIZ_MENU, ADMIN_MENU
-    main_conv_handler = ConversationHandler(
+    # Import and register info menu conversation handler
+    try:
+        # Assuming info_menu_function.py contains the necessary handler
+        from info_menu_function import info_menu_conv_handler
+        dispatcher.add_handler(info_menu_conv_handler)
+        logger.info("Info menu conversation handler added.")
+    except ImportError as e:
+        logger.error(f"Could not import or add info_menu_conv_handler: {e}")
+    except NameError as e:
+         logger.error(f"Could not find info_menu_conv_handler in info_menu_function.py: {e}")
+
+    # Main conversation handler (entry point is /start)
+    conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(main_menu_callback, pattern='^menu_'), # Handles main menu buttons
-                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Handles explicit return button
+                CallbackQueryHandler(main_menu_callback, pattern='^menu_'),
+                CallbackQueryHandler(start, pattern='^main_menu$'), # Allow returning to main menu
+                # Add other main menu level handlers if needed
             ],
             QUIZ_MENU: [
-                CallbackQueryHandler(quiz_menu_callback, pattern='^quiz_'), # Handles quiz menu buttons
-                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Handles return button
+                CallbackQueryHandler(quiz_menu_callback, pattern='^quiz_'),
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'), # Back to main
             ],
             ADMIN_MENU: [
-                CallbackQueryHandler(admin_menu_callback, pattern='^admin_'), # Handles admin menu buttons
-                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Handles return button
+                CallbackQueryHandler(admin_menu_callback, pattern='^admin_'),
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'), # Back to main
             ],
-            # Add other top-level states here if needed (e.g., TAKING_QUIZ)
+            ADMIN_MANAGE_STRUCTURE: [
+                 CallbackQueryHandler(admin_structure_menu_callback, pattern='^admin_manage_'),
+                 CallbackQueryHandler(admin_menu_callback, pattern='^menu_admin$'), # Back to admin menu
+            ],
+            # --- Placeholder states for quiz flow ---
+            SELECT_GRADE_LEVEL_FOR_QUIZ: [
+                CallbackQueryHandler(quiz_menu_callback) # Placeholder, needs specific handler
+            ],
+            SELECT_CHAPTER_FOR_QUIZ: [
+                CallbackQueryHandler(quiz_menu_callback) # Placeholder, needs specific handler
+            ],
+            SELECT_LESSON_FOR_QUIZ: [
+                CallbackQueryHandler(quiz_menu_callback) # Placeholder, needs specific handler
+            ],
+            SELECTING_QUIZ_DURATION: [
+                CallbackQueryHandler(quiz_menu_callback) # Placeholder, needs specific handler
+            ],
+            TAKING_QUIZ: [
+                CallbackQueryHandler(quiz_menu_callback) # Placeholder, needs specific handler
+            ],
+            # --- Placeholder states for admin flow ---
+            ADDING_QUESTION: [
+                MessageHandler(Filters.text & ~Filters.command, quiz_menu_callback) # Placeholder
+            ],
+            ADDING_OPTIONS: [
+                MessageHandler(Filters.text & ~Filters.command, quiz_menu_callback) # Placeholder
+            ],
+            ADDING_CORRECT_ANSWER: [
+                MessageHandler(Filters.text & ~Filters.command, quiz_menu_callback) # Placeholder
+            ],
+            ADDING_EXPLANATION: [
+                MessageHandler(Filters.text & ~Filters.command, quiz_menu_callback) # Placeholder
+            ],
+            DELETING_QUESTION: [
+                MessageHandler(Filters.text & ~Filters.command, quiz_menu_callback) # Placeholder
+            ],
+            SHOWING_QUESTION: [
+                MessageHandler(Filters.text & ~Filters.command, quiz_menu_callback) # Placeholder
+            ],
+            ADDING_GRADE_LEVEL: [
+                MessageHandler(Filters.text & ~Filters.command, admin_structure_menu_callback) # Placeholder
+            ],
+            SELECT_GRADE_FOR_CHAPTER: [
+                 CallbackQueryHandler(admin_structure_menu_callback) # Placeholder
+            ],
+            # ... other states need proper handlers ...
         },
-        fallbacks=[
-            CommandHandler('start', start) # Allow restarting with /start
-            # Add other fallbacks like /cancel if needed
-        ],
-        # If conversations time out, return to start
-        conversation_timeout=timedelta(hours=1).total_seconds(),
-        # Allow reentry for flexibility
-        allow_reentry=True
+        fallbacks=[CommandHandler('start', start)], # Allow restarting with /start
+        # per_message=False # Keep state per user/chat
+        # map_to_parent needed if nesting conversations
     )
+    dispatcher.add_handler(conv_handler)
 
-    # Add the main conversation handler (group 0 by default)
-    dp.add_handler(main_conv_handler)
+    # --- Start the Bot in Polling Mode ---
+    logger.info("Starting bot in POLLING mode for diagnostics...")
+    updater.start_polling()
+    logger.info("Bot started and running in polling mode...")
 
-    # Add the info menu conversation handler IF it was imported successfully (group 0 by default)
-    if info_menu_conv_handler:
-        dp.add_handler(info_menu_conv_handler)
-        logger.info("Info menu conversation handler added.")
-    else:
-        logger.warning("Info menu conversation handler could not be added.")
-
-    # Add the error handler (group 0 by default)
-    dp.add_error_handler(error_handler)
-
-    # Start the Bot (Webhook or Polling)
-    if HEROKU_APP_NAME:
-        # Run on Heroku using Webhook
-        logger.info(f"Starting webhook for Heroku app {HEROKU_APP_NAME}")
-        # --- Use Simple Webhook Path --- #
-        WEBHOOK_PATH = "/webhook" # Use a simple, static path
-        updater.start_webhook(listen="0.0.0.0",
-                              port=PORT,
-                              url_path=WEBHOOK_PATH,
-                              webhook_url=f"https://{HEROKU_APP_NAME}.herokuapp.com{WEBHOOK_PATH}")
-        logger.info(f"Webhook set to https://{HEROKU_APP_NAME}.herokuapp.com{WEBHOOK_PATH}")
-        # ----------------------------- #
-    else:
-        # Run locally using Polling
-        logger.info("Starting bot in polling mode (not on Heroku)")
-        updater.start_polling()
-
-    logger.info("Bot started and running...")
+    # Run the bot until interrupted
     updater.idle()
 
 if __name__ == '__main__':
