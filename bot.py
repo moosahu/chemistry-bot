@@ -440,6 +440,16 @@ def admin_menu_callback(update: Update, context: CallbackContext) -> int:
     else:
         return ADMIN_MENU # Stay in admin menu
 
+# --- Generic Update Handler for Debugging --- #
+def generic_update_handler(update: Update, context: CallbackContext):
+    """Logs any incoming update to check if webhook is receiving anything."""
+    logger.critical("!!!!!!!!!!!!!! GENERIC UPDATE RECEIVED !!!!!!!!!!!!!!")
+    logger.info(f"Received update: {update}")
+    # Optionally, you could try to pass this to the conversation handler
+    # main_conv_handler.handle_update(update, context.dispatcher, context.update_queue, context)
+    # But for now, just logging is safer for diagnosis.
+
+# --- Error Handler --- #
 def error_handler(update: Update, context: CallbackContext):
     """Log Errors caused by Updates."""
     logger.warning(f"Update \"{update}\" caused error \"{context.error}\"")
@@ -486,6 +496,13 @@ def main():
         logger.error(f"Failed to import info_menu_conv_handler: {e}")
         info_menu_conv_handler = None # Set to None if import fails
 
+    # --- ADD GENERIC HANDLER (MUST BE ADDED BEFORE OTHER HANDLERS) --- #
+    # This handler will log any update received.
+    # We use a high group number to ensure it runs before other handlers.
+    dp.add_handler(MessageHandler(Filters.all, generic_update_handler), group=-1)
+    logger.info("Generic update handler added with high priority (group -1).")
+    # ----------------------------------------------------------------- #
+
     # --- Setup Main Conversation Handler --- #
     # This handler manages the main states: MAIN_MENU, QUIZ_MENU, ADMIN_MENU
     main_conv_handler = ConversationHandler(
@@ -515,17 +532,17 @@ def main():
         allow_reentry=True
     )
 
-    # Add the main conversation handler
+    # Add the main conversation handler (group 0 by default)
     dp.add_handler(main_conv_handler)
 
-    # Add the info menu conversation handler IF it was imported successfully
+    # Add the info menu conversation handler IF it was imported successfully (group 0 by default)
     if info_menu_conv_handler:
         dp.add_handler(info_menu_conv_handler)
         logger.info("Info menu conversation handler added.")
     else:
         logger.warning("Info menu conversation handler could not be added.")
 
-    # Add the error handler
+    # Add the error handler (group 0 by default)
     dp.add_error_handler(error_handler)
 
     # Start the Bot (Webhook or Polling)
