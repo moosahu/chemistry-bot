@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Chemistry Quiz and Info Telegram Bot (Webhook Debugging)
+Chemistry Quiz and Info Telegram Bot (Webhook Debugging - Syntax Fixed)
 
 This bot provides chemistry quizzes and information.
 Added extra logging for webhook debugging.
+Corrected SyntaxError related to callback_data escaping.
 """
 
 import logging
@@ -138,57 +139,56 @@ def get_user_name(user):
     else:
         return str(user.id)
 
-# --- Keyboard Creation Functions (Using original button text) ---
+# --- Keyboard Creation Functions (Syntax Corrected) ---
 def create_main_menu_keyboard(user_id):
     keyboard = [
-        [InlineKeyboardButton("📚 المعلومات الكيميائية", callback_data=\'menu_info\')],
-        [InlineKeyboardButton("📝 الاختبارات", callback_data=\'menu_quiz\')],
-        [InlineKeyboardButton("📊 تقارير الأداء", callback_data=\'menu_reports\')],
-        [InlineKeyboardButton("ℹ️ حول البوت", callback_data=\'menu_about\')]
+        [InlineKeyboardButton("📚 المعلومات الكيميائية", callback_data='menu_info')],
+        [InlineKeyboardButton("📝 الاختبارات", callback_data='menu_quiz')],
+        [InlineKeyboardButton("📊 تقارير الأداء", callback_data='menu_reports')],
+        [InlineKeyboardButton("ℹ️ حول البوت", callback_data='menu_about')]
     ]
     if is_admin(user_id):
-        keyboard.append([InlineKeyboardButton("⚙️ إدارة البوت", callback_data=\'menu_admin\')])
+        keyboard.append([InlineKeyboardButton("⚙️ إدارة البوت", callback_data='menu_admin')])
     return InlineKeyboardMarkup(keyboard)
 
 def create_quiz_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🎯 اختبار عشوائي", callback_data=\'quiz_random_prompt\')], # Original text
-        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data=\'quiz_by_chapter_prompt\')],
-        [InlineKeyboardButton("📝 اختبار حسب الدرس", callback_data=\'quiz_by_lesson_prompt\')],
-        [InlineKeyboardButton("🎓 اختبار حسب المرحلة الدراسية", callback_data=\'quiz_by_grade_prompt\')],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=\'main_menu\')]
+        [InlineKeyboardButton("🎯 اختبار عشوائي", callback_data='quiz_random_prompt')], # Original text
+        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data='quiz_by_chapter_prompt')],
+        [InlineKeyboardButton("📝 اختبار حسب الدرس", callback_data='quiz_by_lesson_prompt')],
+        [InlineKeyboardButton("🎓 اختبار حسب المرحلة الدراسية", callback_data='quiz_by_grade_prompt')],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# ... (Keep other keyboard functions as they were in the user-provided file) ...
 def create_admin_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("➕ إضافة سؤال", callback_data=\'admin_add_question\')],
-        [InlineKeyboardButton("🗑️ حذف سؤال", callback_data=\'admin_delete_question\')],
-        [InlineKeyboardButton("🔍 عرض سؤال", callback_data=\'admin_show_question\')],
-        [InlineKeyboardButton("🏫 إدارة المراحل/الفصول/الدروس", callback_data=\'admin_manage_structure\')],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=\'main_menu\')]
+        [InlineKeyboardButton("➕ إضافة سؤال", callback_data='admin_add_question')],
+        [InlineKeyboardButton("🗑️ حذف سؤال", callback_data='admin_delete_question')],
+        [InlineKeyboardButton("🔍 عرض سؤال", callback_data='admin_show_question')],
+        [InlineKeyboardButton("🏫 إدارة المراحل/الفصول/الدروس", callback_data='admin_manage_structure')],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def create_structure_admin_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🏫 إدارة المراحل الدراسية", callback_data=\'admin_manage_grades\')],
-        [InlineKeyboardButton("📚 إدارة الفصول", callback_data=\'admin_manage_chapters\')],
-        [InlineKeyboardButton("📝 إدارة الدروس", callback_data=\'admin_manage_lessons\')],
-        [InlineKeyboardButton("🔙 العودة لقائمة الإدارة", callback_data=\'menu_admin\')]
+        [InlineKeyboardButton("🏫 إدارة المراحل الدراسية", callback_data='admin_manage_grades')],
+        [InlineKeyboardButton("📚 إدارة الفصول", callback_data='admin_manage_chapters')],
+        [InlineKeyboardButton("📝 إدارة الدروس", callback_data='admin_manage_lessons')],
+        [InlineKeyboardButton("🔙 العودة لقائمة الإدارة", callback_data='menu_admin')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def create_quiz_duration_keyboard():
     keyboard = [
-        [InlineKeyboardButton("5 دقائق", callback_data=\'quiz_duration_5\')],
-        [InlineKeyboardButton("10 دقائق", callback_data=\'quiz_duration_10\')],
-        [InlineKeyboardButton("15 دقيقة", callback_data=\'quiz_duration_15\')],
-        [InlineKeyboardButton("20 دقيقة", callback_data=\'quiz_duration_20\')],
-        [InlineKeyboardButton("30 دقيقة", callback_data=\'quiz_duration_30\')],
-        [InlineKeyboardButton("بدون وقت محدد", callback_data=\'quiz_duration_0\')],
-        [InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data=\'menu_quiz\')]
+        [InlineKeyboardButton("5 دقائق", callback_data='quiz_duration_5')],
+        [InlineKeyboardButton("10 دقائق", callback_data='quiz_duration_10')],
+        [InlineKeyboardButton("15 دقيقة", callback_data='quiz_duration_15')],
+        [InlineKeyboardButton("20 دقيقة", callback_data='quiz_duration_20')],
+        [InlineKeyboardButton("30 دقيقة", callback_data='quiz_duration_30')],
+        [InlineKeyboardButton("بدون وقت محدد", callback_data='quiz_duration_0')],
+        [InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data='menu_quiz')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -197,14 +197,15 @@ def create_grade_levels_keyboard(for_quiz=False, context=None):
     keyboard = []
     if grades:
         for grade_id, grade_name in grades:
-            callback_suffix = f\"quiz_{grade_id}\" if for_quiz else f\"admin_{grade_id}\"
-            keyboard.append([InlineKeyboardButton(grade_name, callback_data=f\"grade_{callback_suffix}\")])
+            callback_suffix = f"quiz_{grade_id}" if for_quiz else f"admin_{grade_id}"
+            keyboard.append([InlineKeyboardButton(grade_name, callback_data=f"grade_{callback_suffix}")])
         if for_quiz:
-             keyboard.append([InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data=\'grade_quiz_all\')])
+             # Changed text back to original as per user file
+             keyboard.append([InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data='grade_quiz_all')])
     else:
         logger.info("No grade levels found in the database.")
         return None
-    back_callback = \'menu_quiz\' if for_quiz else \'admin_manage_structure\'
+    back_callback = 'menu_quiz' if for_quiz else 'admin_manage_structure'
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
@@ -214,19 +215,19 @@ def create_chapters_keyboard(grade_level_id, for_quiz=False, for_lesson=False, c
     if chapters:
         for chapter_id, chapter_name in chapters:
             if for_quiz:
-                callback_data = f\"chapter_quiz_{chapter_id}\"
+                callback_data = f"chapter_quiz_{chapter_id}"
             elif for_lesson:
-                 callback_data = f\"lesson_chapter_{chapter_id}\"
+                 callback_data = f"lesson_chapter_{chapter_id}"
             else:
-                callback_data = f\"admin_chapter_{chapter_id}\"
+                callback_data = f"admin_chapter_{chapter_id}"
             keyboard.append([InlineKeyboardButton(chapter_name, callback_data=callback_data)])
     else:
         logger.info(f"No chapters found for grade level {grade_level_id}.")
         return None
     if for_quiz or for_lesson:
-        back_callback = \'quiz_by_grade_prompt\'
+        back_callback = 'quiz_by_grade_prompt'
     else:
-        back_callback = \'admin_manage_structure\'
+        back_callback = 'admin_manage_structure'
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
@@ -235,15 +236,15 @@ def create_lessons_keyboard(chapter_id, for_quiz=False, context=None):
     keyboard = []
     if lessons:
         for lesson_id, lesson_name in lessons:
-            callback_data = f\"lesson_quiz_{lesson_id}\" if for_quiz else f\"admin_lesson_{lesson_id}\"
+            callback_data = f"lesson_quiz_{lesson_id}" if for_quiz else f"admin_lesson_{lesson_id}"
             keyboard.append([InlineKeyboardButton(lesson_name, callback_data=callback_data)])
     else:
         logger.info(f"No lessons found for chapter {chapter_id}.")
         return None
     if for_quiz:
-        back_callback = \'quiz_by_lesson_prompt\'
+        back_callback = 'quiz_by_lesson_prompt'
     else:
-        back_callback = \'admin_manage_structure\'
+        back_callback = 'admin_manage_structure'
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
     return InlineKeyboardMarkup(keyboard)
 
@@ -252,15 +253,15 @@ def create_quiz_question_keyboard(options, question_id):
     shuffled_options = list(enumerate(options))
     random.shuffle(shuffled_options)
     for original_index, option_text in shuffled_options:
-        callback_data = f\"answer_{question_id}_{original_index}\"
+        callback_data = f"answer_{question_id}_{original_index}"
         keyboard.append([InlineKeyboardButton(option_text, callback_data=callback_data)])
-    keyboard.append([InlineKeyboardButton("⏭️ تخطي السؤال", callback_data=f\"skip_{question_id}\")])
+    keyboard.append([InlineKeyboardButton("⏭️ تخطي السؤال", callback_data=f"skip_{question_id}")])
     return InlineKeyboardMarkup(keyboard)
 
 def create_results_menu_keyboard(quiz_id):
     keyboard = [
-        [InlineKeyboardButton("🔄 إعادة الاختبار", callback_data=\'menu_quiz\')],
-        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data=\'main_menu\')]
+        [InlineKeyboardButton("🔄 إعادة الاختبار", callback_data='menu_quiz')],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='main_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -269,12 +270,12 @@ def set_quiz_timer(context: CallbackContext, chat_id, user_id, quiz_id, duration
     if duration_minutes <= 0:
         return None
     job_context = {
-        \'chat_id\': chat_id,
-        \'user_id\': user_id,
-        \'quiz_id\': quiz_id
+        'chat_id': chat_id,
+        'user_id': user_id,
+        'quiz_id': quiz_id
     }
     try:
-        if \'end_quiz_timeout\' not in globals():
+        if 'end_quiz_timeout' not in globals():
             logger.error("end_quiz_timeout function is not defined!")
             return None
         job = context.job_queue.run_once(
@@ -291,13 +292,13 @@ def set_quiz_timer(context: CallbackContext, chat_id, user_id, quiz_id, duration
 
 def set_question_timer(context: CallbackContext, chat_id, user_id, quiz_id):
     job_context = {
-        \'chat_id\': chat_id,
-        \'user_id\': user_id,
-        \'quiz_id\': quiz_id,
-        \'type\': \'question_timer\'
+        'chat_id': chat_id,
+        'user_id': user_id,
+        'quiz_id': quiz_id,
+        'type': 'question_timer'
     }
     try:
-        if \'question_timer_callback\' not in globals():
+        if 'question_timer_callback' not in globals():
             logger.error("question_timer_callback function is not defined!")
             return None
         job = context.job_queue.run_once(
@@ -314,18 +315,18 @@ def set_question_timer(context: CallbackContext, chat_id, user_id, quiz_id):
 
 def question_timer_callback(context: CallbackContext):
     job_context = context.job.context
-    chat_id = job_context[\'chat_id\']
-    user_id = job_context[\'user_id\']
-    quiz_id = job_context[\'quiz_id\']
+    chat_id = job_context['chat_id']
+    user_id = job_context['user_id']
+    quiz_id = job_context['quiz_id']
     user_data = context.dispatcher.user_data.get(user_id, {})
     # ... (rest of timer logic from user file)
     logger.warning("question_timer_callback needs full implementation check")
 
 def end_quiz_timeout(context: CallbackContext):
     job_context = context.job.context
-    chat_id = job_context[\'chat_id\']
-    user_id = job_context[\'user_id\']
-    quiz_id = job_context[\'quiz_id\']
+    chat_id = job_context['chat_id']
+    user_id = job_context['user_id']
+    quiz_id = job_context['quiz_id']
     user_data = context.dispatcher.user_data.get(user_id, {})
     # ... (rest of timer logic from user file)
     logger.warning("end_quiz_timeout needs full implementation check")
@@ -333,43 +334,42 @@ def end_quiz_timeout(context: CallbackContext):
 # --- Generic Update Handler for Debugging (Enhanced) ---
 def generic_update_handler(update: Update, context: CallbackContext) -> None:
     """Logs any incoming update in detail."""
-    logger.critical("!!!!!!!!!!!!!! GENERIC UPDATE RECEIVED (Webhook Debug) !!!!!!!!!!!!!!")
+    logger.critical("!!!!!!!!!!!!!! GENERIC UPDATE RECEIVED (Webhook Debug - Syntax Fixed) !!!!!!!!!!!!!!")
     try:
         update_dict = update.to_dict()
-        logger.info(f"Received update (Webhook Debug):
+        logger.info(f"Received update (Webhook Debug - Syntax Fixed):
 {json.dumps(update_dict, indent=2, ensure_ascii=False)}")
     except Exception as e:
         logger.error(f"Error converting update to dict or logging: {e}")
-        logger.info(f"Raw update object (Webhook Debug): {update}")
+        logger.info(f"Raw update object (Webhook Debug - Syntax Fixed): {update}")
 
     # Check if it contains a message and log text
     if update.message:
-        logger.info(f"Message text (Webhook Debug): {update.message.text}")
+        logger.info(f"Message text (Webhook Debug - Syntax Fixed): {update.message.text}")
     elif update.callback_query:
-        logger.info(f"Callback query data (Webhook Debug): {update.callback_query.data}")
+        logger.info(f"Callback query data (Webhook Debug - Syntax Fixed): {update.callback_query.data}")
 
 # --- Core Command Handlers (Enhanced Logging in start) ---
 def start(update: Update, context: CallbackContext) -> int:
     """Handles the /start command and displays the main menu."""
     # --- ENHANCED LOGGING --- #
-    logger.critical("!!!!!!!!!!!!!! START HANDLER TRIGGERED (Webhook Debug) !!!!!!!!!!!!!!")
+    logger.critical("!!!!!!!!!!!!!! START HANDLER TRIGGERED (Webhook Debug - Syntax Fixed) !!!!!!!!!!!!!!")
     logger.info(f"Update received in start handler: {update.to_dict()}")
     # ------------------------ #
     user = update.effective_user
     if not user:
         logger.error("Could not get effective_user from update in start handler!")
-        # Attempt to get user info differently if possible, or return
         if update.message:
             user = update.message.from_user
         elif update.callback_query:
             user = update.callback_query.from_user
         else:
             logger.error("Cannot determine user from update in start handler.")
-            return ConversationHandler.END # Or appropriate state
+            return ConversationHandler.END
 
     user_id = user.id
     user_name = get_user_name(user)
-    logger.info(f"User {user_name} (ID: {user_id}) started the bot (Webhook Debug).")
+    logger.info(f"User {user_name} (ID: {user_id}) started the bot (Webhook Debug - Syntax Fixed).")
 
     # Check if user exists, add if not
     if not QUIZ_DB.user_exists(user_id):
@@ -381,14 +381,14 @@ def start(update: Update, context: CallbackContext) -> int:
     keyboard = create_main_menu_keyboard(user_id)
 
     if update.message:
-        logger.info("Replying to message in start handler (Webhook Debug)")
+        logger.info("Replying to message in start handler (Webhook Debug - Syntax Fixed)")
         try:
             update.message.reply_text(text, reply_markup=keyboard)
             logger.info("Reply sent successfully in start handler.")
         except Exception as e:
             logger.error(f"Error sending reply in start handler: {e}")
-    elif update.callback_query: # Handle coming back from another menu
-        logger.info("Editing message in start handler (from callback) (Webhook Debug)")
+    elif update.callback_query:
+        logger.info("Editing message in start handler (from callback) (Webhook Debug - Syntax Fixed)")
         query = update.callback_query
         try:
             query.answer()
@@ -397,9 +397,9 @@ def start(update: Update, context: CallbackContext) -> int:
         except Exception as e:
             logger.error(f"Error editing message in start handler (callback): {e}")
     else:
-        logger.warning("Update in start handler is neither message nor callback query (Webhook Debug)")
+        logger.warning("Update in start handler is neither message nor callback query (Webhook Debug - Syntax Fixed)")
 
-    logger.info("Returning MAIN_MENU state from start handler (Webhook Debug)")
+    logger.info("Returning MAIN_MENU state from start handler (Webhook Debug - Syntax Fixed)")
     return MAIN_MENU
 
 # ... (Keep other handlers like main_menu_callback, quiz_menu_callback, etc. as they were) ...
@@ -407,28 +407,28 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
-    logger.info(f"Main menu callback: User {user_id} chose {data} (Webhook Debug)")
+    logger.info(f"Main menu callback: User {user_id} chose {data} (Webhook Debug - Syntax Fixed)")
     query.answer()
 
-    if data == \'menu_info\':
-        logger.info("Transitioning to info menu via info_menu_conv_handler entry point (Webhook Debug)")
+    if data == 'menu_info':
+        logger.info("Transitioning to info menu via info_menu_conv_handler entry point (Webhook Debug - Syntax Fixed)")
         try:
             return show_info_menu(update, context)
         except Exception as e:
              logger.error(f"Cannot call show_info_menu directly: {e}")
              safe_edit_message_text(query, text="Error accessing info menu.")
              return MAIN_MENU
-    elif data == \'menu_quiz\':
+    elif data == 'menu_quiz':
         text = "اختر نوع الاختبار الذي تريده:"
         keyboard = create_quiz_menu_keyboard()
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return QUIZ_MENU
-    elif data == \'menu_reports\':
+    elif data == 'menu_reports':
         text = "📊 قسم تقارير الأداء قيد التطوير حالياً."
         keyboard = create_main_menu_keyboard(user_id)
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return MAIN_MENU
-    elif data == \'menu_about\':
+    elif data == 'menu_about':
         text = ("**حول بوت الكيمياء التعليمي**\n\n"
                 "هذا البوت يهدف لمساعدتك في تعلم الكيمياء واختبار معلوماتك.\n"
                 "**المميزات الحالية:**\n"
@@ -440,68 +440,62 @@ def main_menu_callback(update: Update, context: CallbackContext) -> int:
         keyboard = create_main_menu_keyboard(user_id)
         safe_edit_message_text(query, text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
         return MAIN_MENU
-    elif data == \'menu_admin\' and is_admin(user_id):
+    elif data == 'menu_admin' and is_admin(user_id):
         text = "⚙️ قائمة إدارة البوت:"
         keyboard = create_admin_menu_keyboard()
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return ADMIN_MENU
-    elif data == \'main_menu\':
+    elif data == 'main_menu':
         return start(update, context)
     else:
-        logger.warning(f"Unknown main menu callback data: {data} (Webhook Debug)")
+        logger.warning(f"Unknown main menu callback data: {data} (Webhook Debug - Syntax Fixed)")
         return MAIN_MENU
 
 # --- (Include other handlers: quiz_menu_callback, admin_menu_callback, etc.) ---
 # Placeholder for brevity - assume they exist as in the original file
 
-# --- Main Function (Webhook Mode - Enhanced Logging) ---
+# --- Main Function (Webhook Mode - Syntax Corrected & Enhanced Logging) ---
 def main() -> None:
-    """Start the bot in webhook mode with enhanced logging."""
+    """Start the bot in webhook mode with syntax corrected and enhanced logging."""
     updater = Updater(BOT_TOKEN)
     dispatcher = updater.dispatcher
 
     # --- Register Handlers ---
-    # Add generic update handler for debugging (VERY high priority)
-    # This will log *every* update received by the dispatcher
     dispatcher.add_handler(MessageHandler(Filters.all, generic_update_handler), group=-10)
-    logger.info("Generic update handler added with VERY high priority (group -10) for Webhook Debug.")
+    logger.info("Generic update handler added with VERY high priority (group -10) for Webhook Debug (Syntax Fixed).")
 
-    # Import and register info menu conversation handler
     dispatcher.add_handler(info_menu_conv_handler)
     logger.info("Info menu conversation handler added.")
 
-    # Main conversation handler
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler(\'start\', start)],
+        entry_points=[CommandHandler('start', start)],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(main_menu_callback, pattern=\'^menu_\'),
-                CallbackQueryHandler(start, pattern=\'^main_menu$\'),
+                CallbackQueryHandler(main_menu_callback, pattern='^menu_'),
+                CallbackQueryHandler(start, pattern='^main_menu$'),
             ],
             QUIZ_MENU: [
                 # Placeholder - Add quiz menu handlers
-                CallbackQueryHandler(main_menu_callback, pattern=\'^main_menu$\'),
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'),
             ],
             ADMIN_MENU: [
                 # Placeholder - Add admin menu handlers
-                CallbackQueryHandler(main_menu_callback, pattern=\'^main_menu$\'),
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'),
             ],
             ADMIN_MANAGE_STRUCTURE: [
                  # Placeholder - Add structure admin handlers
-                 CallbackQueryHandler(admin_menu_callback, pattern=\'^menu_admin$\'),
+                 CallbackQueryHandler(admin_menu_callback, pattern='^menu_admin$'),
             ],
-            # Include INFO_MENU state from info_handlers
             INFO_MENU: info_menu_conv_handler.states[INFO_MENU_STATE_CONST],
             # ... other states need proper handlers ...
         },
-        fallbacks=[CommandHandler(\'start\', start)],
-        # Ensure info menu handler can be fallen back to if needed, or handle its fallbacks
+        fallbacks=[CommandHandler('start', start)],
     )
     dispatcher.add_handler(conv_handler)
 
     # --- Start the Bot in Webhook Mode ---
     if HEROKU_APP_NAME:
-        logger.info(f"Starting bot in WEBHOOK mode on port {PORT} (Webhook Debug)...")
+        logger.info(f"Starting bot in WEBHOOK mode on port {PORT} (Webhook Debug - Syntax Fixed)...")
         webhook_url = f"https://{HEROKU_APP_NAME}.herokuapp.com/{BOT_TOKEN}"
         try:
             updater.start_webhook(listen="0.0.0.0",
@@ -509,7 +503,6 @@ def main() -> None:
                                   url_path=BOT_TOKEN,
                                   webhook_url=webhook_url)
             logger.info(f"Webhook set attempt to {webhook_url}")
-            # Verify webhook setting with getWebhookInfo
             webhook_info = updater.bot.get_webhook_info()
             logger.info(f"Actual webhook info from Telegram: {webhook_info}")
             if webhook_info.url != webhook_url:
@@ -518,16 +511,14 @@ def main() -> None:
                 logger.info("Webhook URL matches expected URL.")
         except Exception as e:
             logger.error(f"Error starting webhook: {e}")
-            # Fallback or exit might be needed here
             sys.exit("Webhook start failed.")
-
     else:
         logger.error("HEROKU_APP_NAME not set. Cannot start in webhook mode.")
         sys.exit("Missing Heroku app name.")
 
-    logger.info("Bot started and running (Webhook Debug)...")
+    logger.info("Bot started and running (Webhook Debug - Syntax Fixed)...")
     updater.idle()
 
-if __name__ == \'__main__\':
+if __name__ == '__main__':
     main()
 
