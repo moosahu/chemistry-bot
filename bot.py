@@ -131,7 +131,7 @@ else:
 
 # Import info menu functions AFTER defining states
 from info_menu_function import show_info_menu, INFO_MENU as INFO_MENU_STATE_CONST # Import constant if needed
-from info_handlers import info_menu_conv_handler # Import the handler
+from info_handlers import info_menu_conv_handler, info_menu_callback # Import the callback too
 
 # --- Helper Functions ---
 
@@ -166,9 +166,7 @@ def create_main_menu_keyboard(user_id):
 
 def create_quiz_menu_keyboard():
     """Creates the quiz type selection inline keyboard (original structure)."""
-    keyboard = [
-        [InlineKeyboardButton("🎯 اختبار عشوائي", callback_data='quiz_random_prompt')],
-        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data='quiz_by_chapter_prompt')],
+    keyboard = [        [InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data=\'quiz_random_prompt\')],        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data='quiz_by_chapter_prompt')],
         [InlineKeyboardButton("📝 اختبار حسب الدرس", callback_data='quiz_by_lesson_prompt')],
         [InlineKeyboardButton("🎓 اختبار حسب المرحلة الدراسية", callback_data='quiz_by_grade_prompt')],
         # [InlineKeyboardButton("🔄 مراجعة الأخطاء", callback_data='quiz_review_prompt')], # Keep commented out
@@ -748,7 +746,7 @@ def main():
             # ... etc ...
 
             # Integrate the INFO_MENU handler
-            INFO_MENU: [info_menu_conv_handler], # Delegate to the imported handler
+            INFO_MENU: [CallbackQueryHandler(info_menu_callback)], # Use the imported callback directly
         },
         fallbacks=[
             CommandHandler('cancel', cancel),
