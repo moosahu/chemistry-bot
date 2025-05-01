@@ -745,8 +745,10 @@ def main():
             # ADDING_QUESTION: [...],
             # ... etc ...
 
-            # Integrate the INFO_MENU handler
-            INFO_MENU: [CallbackQueryHandler(info_menu_callback)], # Use the imported callback directly
+            INFO_MENU: [
+                CallbackQueryHandler(info_menu_callback, pattern='^info_.*$'), # Handle info sub-options
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # Handle back button to main menu
+            ],
         },
         fallbacks=[
             CommandHandler('cancel', cancel),
