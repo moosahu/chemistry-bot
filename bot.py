@@ -23,24 +23,23 @@ from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    # ParseMode, # Moved to telegram.constants in newer versions
+    ParseMode, # Re-add for PTB v13.15
     ReplyKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardRemove,
     InputMediaPhoto # Added from original, might be needed for image handling
 )
-from telegram.constants import ParseMode # Import from correct location for newer versions
 from telegram.ext import (
     Updater,
     CommandHandler,
     MessageHandler,
-    Filters,
+    # Filters, # Removed in PTB v20+
     CallbackContext,
     CallbackQueryHandler,
     ConversationHandler,
     JobQueue # Added from original for timers
 )
-from telegram.error import BadRequest, TelegramError, NetworkError, Unauthorized, TimedOut, ChatMigrated # Added error types from original
+from telegram.ext import filters # Import new filters module for PTB v20+from telegram.error import BadRequest, TelegramError, NetworkError, Unauthorized, TimedOut, ChatMigrated # Added error types from original
 
 # --- Configuration & Constants ---
 
