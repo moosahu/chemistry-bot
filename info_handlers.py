@@ -10,7 +10,7 @@ try:
 except ImportError as e:
     logging.error(f"Failed to import from info_menu_function: {e}")
     # Define placeholder if import fails
-    INFO_MENU = 23 # Assuming state 23 from previous context
+    INFO_MENU = 31 # MUST match the value in bot.py
     def show_info_menu(update: Update, context: CallbackContext) -> int:
         logging.error("Placeholder show_info_menu called!")
         if update.callback_query:
