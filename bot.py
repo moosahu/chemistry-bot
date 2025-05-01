@@ -166,7 +166,7 @@ def create_main_menu_keyboard(user_id):
 
 def create_quiz_menu_keyboard():
     """Creates the quiz type selection inline keyboard (original structure)."""
-    keyboard = [        [InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data=\'quiz_random_prompt\')],        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data='quiz_by_chapter_prompt')],
+    keyboard = [        [InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data='quiz_random_prompt')],        [InlineKeyboardButton("📄 اختبار حسب الفصل", callback_data='quiz_by_chapter_prompt')],
         [InlineKeyboardButton("📝 اختبار حسب الدرس", callback_data='quiz_by_lesson_prompt')],
         [InlineKeyboardButton("🎓 اختبار حسب المرحلة الدراسية", callback_data='quiz_by_grade_prompt')],
         # [InlineKeyboardButton("🔄 مراجعة الأخطاء", callback_data='quiz_review_prompt')], # Keep commented out
