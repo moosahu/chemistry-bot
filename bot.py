@@ -767,14 +767,21 @@ def main():
     # Log all errors
     dp.add_error_handler(error_handler)
 
-    # Start the Bot using Webhook for Heroku
-    if HEROKU_APP_NAME:
-        logger.info(f"Starting webhook for Heroku app {HEROKU_APP_NAME}")
+    # Get Render app name for webhook URL
+    APP_NAME = os.environ.get("APP_NAME")
+
+    # Start the Bot using Webhook for Render deployment
+    if APP_NAME:
+        logger.info(f"Starting webhook for Render app {APP_NAME}")
+        # Use a fixed, simple path like /webhook or /<BOT_TOKEN>
+        # Using /webhook here for simplicity
+        webhook_path = "webhook"
+        webhook_url = f"https://{APP_NAME}.onrender.com/{webhook_path}"
         updater.start_webhook(listen="0.0.0.0",
                               port=PORT,
-                              url_path="webhook", # Use a simple, static path
-                              webhook_url=f"https://{HEROKU_APP_NAME}.herokuapp.com/webhook") # Update URL accordingly
-        logger.info(f"Webhook set to https://{HEROKU_APP_NAME}.herokuapp.com/webhook")
+                              url_path=webhook_path,
+                              webhook_url=webhook_url)
+        logger.info(f"Webhook set to {webhook_url}")
     else:
         # Start polling if not on Heroku (for local testing)
         logger.info("Starting bot in polling mode (not on Heroku)")
