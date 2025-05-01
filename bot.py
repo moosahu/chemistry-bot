@@ -23,12 +23,13 @@ from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    ParseMode,
+    # ParseMode, # Moved to telegram.constants in newer versions
     ReplyKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardRemove,
     InputMediaPhoto # Added from original, might be needed for image handling
 )
+from telegram.constants import ParseMode # Import from correct location for newer versions
 from telegram.ext import (
     Updater,
     CommandHandler,
