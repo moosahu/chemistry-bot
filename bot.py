@@ -169,7 +169,7 @@ def set_question_timer(context: CallbackContext, chat_id: int, user_id: int, qui
         context.job_queue.run_once(
             question_timer_callback,
             QUESTION_TIMER_SECONDS,
-            context={\"chat_id\": chat_id, \"user_id\": user_id, \"quiz_id\": quiz_id, \"question_index\": question_index},
+            context={"chat_id": chat_id, "user_id": user_id, "quiz_id": quiz_id, "question_index": question_index},
             name=job_name
         )
         logger.info(f"Set question timer for {QUESTION_TIMER_SECONDS} seconds. Job: {job_name}")
