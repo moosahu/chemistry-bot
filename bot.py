@@ -445,8 +445,9 @@ def handle_info_selection(update: Update, context: CallbackContext):
     # Process content for chemical notation if needed
     processed_content = process_text_with_chemical_notation(content)
 
-    text = f"*{title}*
-\n{processed_content}"
+    text = f"""*{title}*
+
+{processed_content}"""
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة المعلومات", callback_data='menu_info')]]) # Corrected
     safe_edit_message_text(query, text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
     return INFO_MENU
