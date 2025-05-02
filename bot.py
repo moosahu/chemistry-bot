@@ -535,8 +535,9 @@ def display_question(chat_id, user_id, quiz_id, question_index, context):
     # Process question text for chemical notation
     processed_question_text = process_text_with_chemical_notation(question_text)
 
-    text = f"*السؤال {question_index + 1} من {len(quiz_data['questions'])}:*
-\n{processed_question_text}" # Corrected
+    text = f"""*السؤال {question_index + 1} من {len(quiz_data['questions'])}:*
+
+{processed_question_text}"""
     keyboard = create_quiz_question_keyboard(options, question_id, question_index)
 
     # Set question timer if enabled
