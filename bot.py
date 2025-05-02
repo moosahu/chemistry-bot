@@ -154,7 +154,7 @@ def set_quiz_timer(context: CallbackContext, chat_id: int, user_id: int, quiz_id
         context.job_queue.run_once(
             end_quiz_timeout,
             duration_minutes * 60,
-            context={\"chat_id\": chat_id, \"user_id\": user_id, \"quiz_id\": quiz_id},
+            context={"chat_id": chat_id, "user_id": user_id, "quiz_id": quiz_id},
             name=job_name
         )
         logger.info(f"Set quiz timer for {duration_minutes} minutes. Job: {job_name}")
