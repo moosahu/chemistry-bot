@@ -9,13 +9,13 @@ MAX_RETRIES = 3
 RETRY_DELAY = 5 # seconds
 
 def connect_db(database_url):
-    """Establishes a connection to the PostgreSQL database."""
+    """Establishes a connection to the PostgreSQL database with retries."""
     conn = None
     retries = 0
     while retries < MAX_RETRIES:
         try:
-            conn = psycopg2.connect(database_url, sslmode=\'require\
-			)
+            # Correctly call connect with sslmode=\'require\'
+            conn = psycopg2.connect(database_url, sslmode=\'require\')
             logger.info("Database connection established successfully.")
             return conn
         except psycopg2.OperationalError as e:
@@ -28,8 +28,10 @@ def connect_db(database_url):
                 logger.critical("Max retries reached. Could not connect to the database.")
                 return None
         except Exception as e:
+            # Catch any other unexpected errors during connection
             logger.critical(f"An unexpected error occurred during database connection: {e}")
             return None
+    return None # Should not be reached if MAX_RETRIES > 0, but good practice
 
 def setup_database(conn):
     """Creates necessary tables if they don\t exist."""
@@ -37,6 +39,7 @@ def setup_database(conn):
         logger.error("Cannot setup database: No connection.")
         return
 
+    # Use triple quotes for multi-line SQL commands for clarity and safety
     commands = (
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -95,14 +98,11 @@ def setup_database(conn):
             total_questions INTEGER NOT NULL,
             percentage REAL, -- Calculated percentage
             time_taken_seconds INTEGER,
-            quiz_type VARCHAR(50), -- e.g., \'random\
-			, \'grade\
-			, \'chapter\
-			, \'lesson\'
+            quiz_type VARCHAR(50), -- e.g., \'random\', \'grade\', \'chapter\', \'lesson\'
             filter_id INTEGER, -- ID of the grade/chapter/lesson if applicable
             completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        """
+        """,
         # Add indexes for faster lookups
         """CREATE INDEX IF NOT EXISTS idx_questions_grade ON questions (grade_level_id);""",
         """CREATE INDEX IF NOT EXISTS idx_questions_chapter ON questions (chapter_id);""",
@@ -113,7 +113,9 @@ def setup_database(conn):
     try:
         cur = conn.cursor()
         for command in commands:
-            cur.execute(command)
+            # Ensure command is not empty before executing
+            if command and command.strip():
+                cur.execute(command)
         conn.commit()
         logger.info("Database setup/check completed successfully.")
     except (Exception, psycopg2.DatabaseError) as error:
@@ -124,16 +126,5 @@ def setup_database(conn):
         if cur:
             cur.close()
 
-# Example usage (optional, for testing)
-# if __name__ == \'__main__\
-	#:
-#     DATABASE_URL_TEST = os.environ.get("DATABASE_URL") # Get from env for testing
-#     if DATABASE_URL_TEST:
-#         test_conn = connect_db(DATABASE_URL_TEST)
-#         if test_conn:
-#             setup_database(test_conn)
-#             test_conn.close()
-#             logger.info("Test connection closed.")
-#     else:
-#         logger.error("DATABASE_URL not set for testing.")
+# Note: Removed the example usage block for clarity in production code
 

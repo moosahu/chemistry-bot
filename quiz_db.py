@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import psycopg2
+import psycopg2.extras # Moved import to top
 import logging
 import random
 
@@ -16,7 +17,8 @@ class QuizDatabase:
             return None
         cur = None
         try:
-            cur = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor) # Use DictCursor
+            # Use DictCursor for dictionary-like row access
+            cur = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             cur.execute(query, params)
             if commit:
                 self.conn.commit()
@@ -139,22 +141,22 @@ class QuizDatabase:
         params = (quiz_id, user_id, score, total_questions, percentage, time_taken_seconds, quiz_type, filter_id)
         return self._execute_query(query, params, commit=True)
 
-    # --- Admin Functions (Placeholders - Implement as needed) --- 
+    # --- Admin Functions (Corrected dictionary access) --- 
 
     def add_grade_level(self, name):
         query = "INSERT INTO grade_levels (name) VALUES (%s) RETURNING id;"
         result = self._execute_query(query, (name,), fetch_one=True, commit=True)
-        return result[\"id\"] if result else None
+        return result["id"] if result else None # Corrected
 
     def add_chapter(self, name, grade_level_id):
         query = "INSERT INTO chapters (name, grade_level_id) VALUES (%s, %s) RETURNING id;"
         result = self._execute_query(query, (name, grade_level_id), fetch_one=True, commit=True)
-        return result[\"id\"] if result else None
+        return result["id"] if result else None # Corrected
 
     def add_lesson(self, name, chapter_id):
         query = "INSERT INTO lessons (name, chapter_id) VALUES (%s, %s) RETURNING id;"
         result = self._execute_query(query, (name, chapter_id), fetch_one=True, commit=True)
-        return result[\"id\"] if result else None
+        return result["id"] if result else None # Corrected
 
     def add_question(self, text, opt1, opt2, opt3, opt4, correct, explanation=None, image_data=None, grade_id=None, chapter_id=None, lesson_id=None):
         query = """
@@ -163,7 +165,7 @@ class QuizDatabase:
         """
         params = (text, opt1, opt2, opt3, opt4, correct, explanation, image_data, grade_id, chapter_id, lesson_id)
         result = self._execute_query(query, params, fetch_one=True, commit=True)
-        return result[\"id\"] if result else None
+        return result["id"] if result else None # Corrected
 
     def delete_question(self, question_id):
         query = "DELETE FROM questions WHERE id = %s;"
@@ -173,7 +175,4 @@ class QuizDatabase:
         query = "SELECT * FROM questions WHERE id = %s;"
         result = self._execute_query(query, (question_id,), fetch_one=True)
         return dict(result) if result else None
-
-# Import psycopg2.extras for DictCursor
-import psycopg2.extras
 
