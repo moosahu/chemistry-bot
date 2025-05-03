@@ -708,5 +708,5 @@ def start_quiz(update: Update, context: CallbackContext) -> int:
                 questions.append(transformed_q)
         logger.info(f"Successfully transformed {len(questions)} questions for the quiz.")
     else:
-        logger.warning(f"No questions fetched or transformed from API for quiz type 
+        logger.warning(f"No questions fetched or transformed from API for quiz type {quiz_type}.")
 (Content truncated due to size limit. Use line ranges to read in chunks)
