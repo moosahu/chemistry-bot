@@ -176,3 +176,63 @@ class QuizDatabase:
         result = self._execute_query(query, (question_id,), fetch_one=True)
         return dict(result) if result else None
 
+
+
+
+    # --- Performance Reports Functions ---
+
+    def get_user_overall_stats(self, user_id):
+        """Calculates overall quiz statistics for a user."""
+        query = """
+        SELECT 
+            COUNT(*) as total_quizzes,
+            AVG(percentage) as avg_percentage,
+            AVG(time_taken_seconds) as avg_time
+        FROM quiz_results
+        WHERE user_id = %s;
+        """
+        result = self._execute_query(query, (user_id,), fetch_one=True)
+        if result and result['total_quizzes'] > 0:
+            # Convert avg_time from Decimal/float to integer seconds
+            avg_time_int = int(result['avg_time']) if result['avg_time'] is not None else 0
+            return {
+                'total_quizzes': result['total_quizzes'],
+                'avg_percentage': round(result['avg_percentage'], 2) if result['avg_percentage'] is not None else 0.0,
+                'avg_time': avg_time_int
+            }
+        else:
+            return {'total_quizzes': 0, 'avg_percentage': 0.0, 'avg_time': 0}
+
+    def get_user_stats_by_type(self, user_id):
+        """Calculates average percentage score for each quiz type for a user."""
+        query = """
+        SELECT 
+            quiz_type,
+            AVG(percentage) as avg_percentage
+        FROM quiz_results
+        WHERE user_id = %s
+        GROUP BY quiz_type;
+        """
+        results = self._execute_query(query, (user_id,), fetch_all=True)
+        stats_by_type = {}
+        if results:
+            for row in results:
+                stats_by_type[row['quiz_type']] = round(row['avg_percentage'], 2) if row['avg_percentage'] is not None else 0.0
+        return stats_by_type
+
+    def get_user_last_quizzes(self, user_id, limit=5):
+        """Retrieves the details of the last few quizzes taken by a user."""
+        query = """
+        SELECT 
+            quiz_type, 
+            percentage, 
+            completed_at
+        FROM quiz_results
+        WHERE user_id = %s
+        ORDER BY completed_at DESC
+        LIMIT %s;
+        """
+        results = self._execute_query(query, (user_id, limit), fetch_all=True)
+        # Format results directly using list comprehension with dict conversion
+        return [dict(row) for row in results] if results else []
+

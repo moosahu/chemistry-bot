@@ -1064,7 +1064,53 @@ def main_menu_callback(update: Update, context: CallbackContext):
 def handle_reports(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
-    safe_edit_message_text(query, text="📊 قسم تقارير الأداء قيد التطوير حالياً.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]])) # Corrected
+    user_id = query.from_user.id
+
+    # Fetch stats from DB
+    overall_stats = QUIZ_DB.get_user_overall_stats(user_id)
+    stats_by_type = QUIZ_DB.get_user_stats_by_type(user_id)
+    last_quizzes = QUIZ_DB.get_user_last_quizzes(user_id, limit=5)
+
+    # Format the report text
+    report_text = f"📊 *تقرير الأداء الخاص بك يا {get_user_name(query.from_user)}*\n\n"
+
+    if overall_stats['total_quizzes'] > 0:
+        report_text += f"📈 *ملخص عام:*\n"
+        report_text += f"- إجمالي الاختبارات: {overall_stats['total_quizzes']}\n"
+        report_text += f"- متوسط النسبة: {overall_stats['avg_percentage']}%\n"
+        # Format average time
+        avg_seconds = overall_stats['avg_time']
+        avg_minutes = avg_seconds // 60
+        avg_remaining_seconds = avg_seconds % 60
+        report_text += f"- متوسط الوقت: {avg_minutes} دقيقة و {avg_remaining_seconds} ثانية\n\n"
+
+        if stats_by_type:
+            report_text += f"📊 *متوسط النسبة حسب النوع:*\n"
+            # Define display names for quiz types
+            type_names = {
+                'random': 'عشوائي',
+                'grade': 'حسب المرحلة',
+                'chapter': 'حسب الفصل',
+                'lesson': 'حسب الدرس'
+            }
+            for quiz_type, avg_perc in stats_by_type.items():
+                display_name = type_names.get(quiz_type, quiz_type) # Use original type if not found
+                report_text += f"- {display_name}: {avg_perc}%\n"
+            report_text += "\n"
+
+        if last_quizzes:
+            report_text += f"⏳ *آخر 5 اختبارات:*\n"
+            for quiz in last_quizzes:
+                quiz_type_display = type_names.get(quiz['quiz_type'], quiz['quiz_type'])
+                # Format timestamp
+                completion_time = quiz['completed_at'].strftime('%Y-%m-%d %H:%M')
+                report_text += f"- {quiz_type_display}: {quiz['percentage']:.2f}% (في {completion_time})\n"
+            report_text += "\n"
+    else:
+        report_text += "لم تقم بإجراء أي اختبارات بعد. ابدأ اختباراً لتتبع أدائك!\n\n"
+
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]])
+    safe_edit_message_text(query, text=report_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
     return MAIN_MENU
 
 def handle_about(update: Update, context: CallbackContext):
