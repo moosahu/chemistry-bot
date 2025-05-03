@@ -118,7 +118,7 @@ class QuizDatabase:
                 if 1 <= opt["option_index"] <= 4:
                     options_list[opt["option_index"] - 1] = opt["option_text"]
                 else:
-                    logger.warning(f"[_get_options_for_question] Invalid option_index {opt["option_index"]} found for question_id {question_id}")
+                    logger.warning(f"[_get_options_for_question] Invalid option_index {opt['option_index']} found for question_id {question_id}")
         else:
             logger.warning(f"[_get_options_for_question] No options found in DB for question_id: {question_id}")
             
