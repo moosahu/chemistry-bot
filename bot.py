@@ -357,7 +357,7 @@ def create_dynamic_keyboard(items: list, callback_prefix: str, back_callback: st
     keyboard = []
     row = []
     for item in items:
-        button = InlineKeyboardButton(item["name"], callback_data=f"{callback_prefix}_{item['id']}")
+        button = InlineKeyboardButton(item["name"], callback_data=f"{callback_prefix}_{item["id"]}")
         row.append(button)
         if len(row) == items_per_row:
             keyboard.append(row)
@@ -481,18 +481,25 @@ def menu_reports_callback(update: Update, context: CallbackContext) -> int:
 
     try:
         stats = QUIZ_DB.get_user_stats(user_id)
+        report_lines = ["📊 تقرير أدائك:"] # Start with title
+
         if stats:
-            total_quizzes = stats["total_quizzes"]
-            avg_score = stats["average_score"]
-            text = f"📊 تقرير أدائك:\n\n📝 عدد الاختبارات المكتملة: {total_quizzes}\n"
+            total_quizzes = stats.get("total_quizzes", 0)
+            avg_score = stats.get("average_score")
+
+            report_lines.append(f"\n📝 عدد الاختبارات المكتملة: {total_quizzes}")
+
             if total_quizzes > 0 and avg_score is not None:
-                 text += f"🎯 متوسط الدرجات: {avg_score:.1f}%\n"
+                 report_lines.append(f"🎯 متوسط الدرجات: {avg_score:.1f}%")
             else:
-                 text += "لم تكمل أي اختبارات بعد.\n"
+                 # Add empty line if no average score
+                 report_lines.append("لم تكمل أي اختبارات بعد.")
             # Add more stats if available (e.g., last score, best score)
         else:
-            text = "📊 تقرير أدائك:
-لم تقم بإكمال أي اختبارات بعد."
+            report_lines.append("\nلم تقم بإكمال أي اختبارات بعد.")
+
+        # Join the lines into a single string
+        text = "\n".join(report_lines)
 
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]])
         query.edit_message_text(text=text, reply_markup=keyboard)
@@ -506,7 +513,17 @@ def menu_reports_callback(update: Update, context: CallbackContext) -> int:
 def menu_about_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     query.answer()
-    text = "ℹ️ **حول البوت**\n\nهذا البوت مصمم لمساعدتك في تعلم الكيمياء واختبار معلوماتك.\n\n**الميزات:**\n- اختبارات متنوعة (عامة، حسب المقرر/الوحدة/الدرس)\n- معلومات كيميائية (قيد الإنشاء)\n- تتبع الأداء\n\nتم التطوير بواسطة [اسم المطور/الفريق]"
+    # Using triple quotes for multi-line string
+    text = """ℹ️ **حول البوت**
+
+هذا البوت مصمم لمساعدتك في تعلم الكيمياء واختبار معلوماتك.
+
+**الميزات:**
+- اختبارات متنوعة (عامة، حسب المقرر/الوحدة/الدرس)
+- معلومات كيميائية (قيد الإنشاء)
+- تتبع الأداء
+
+تم التطوير بواسطة [اسم المطور/الفريق]"""
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]])
     query.edit_message_text(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
     return MAIN_MENU
