@@ -1189,9 +1189,11 @@ def main() -> None:
                 CallbackQueryHandler(handle_admin_menu, pattern='^menu_admin$'), # Back to admin menu
             ],
             # Add other admin states (ADDING_QUESTION, etc.) as needed
-        },        fallbacks=[CommandHandler(\'start\', start)], # Allow restarting
+        },
+        fallbacks=[CommandHandler('start', start)], # Allow restarting
         per_message=True, # Explicitly track every message/callback
-        # per_user=True, per_chat=False # Default is True, True    )
+        # per_user=True, per_chat=False # Default is True, True
+    )
 
     dp.add_handler(conv_handler)
 
