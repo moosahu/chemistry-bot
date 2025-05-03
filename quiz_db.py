@@ -55,16 +55,19 @@ class QuizDatabase:
 
     def get_all_grade_levels(self):
         """Retrieves all grade levels."""
+        # Assuming grade_levels table also uses 'id'
         query = "SELECT id, name FROM grade_levels ORDER BY id;"
         return self._execute_query(query, fetch_all=True)
 
     def get_chapters_by_grade(self, grade_level_id):
         """Retrieves chapters for a specific grade level."""
+        # Assuming chapters table also uses 'id'
         query = "SELECT id, name FROM chapters WHERE grade_level_id = %s ORDER BY id;"
         return self._execute_query(query, (grade_level_id,), fetch_all=True)
 
     def get_lessons_by_chapter(self, chapter_id):
         """Retrieves lessons for a specific chapter."""
+        # Assuming lessons table also uses 'id'
         query = "SELECT id, name FROM lessons WHERE chapter_id = %s ORDER BY id;"
         return self._execute_query(query, (chapter_id,), fetch_all=True)
 
@@ -80,7 +83,7 @@ class QuizDatabase:
     def get_random_questions(self, limit=10):
         """Retrieves a specified number of random questions."""
         query = """
-        SELECT id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
+        SELECT question_id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
         FROM questions
         ORDER BY RANDOM()
         LIMIT %s;
@@ -91,7 +94,7 @@ class QuizDatabase:
     def get_questions_by_grade(self, grade_level_id, limit=10):
         """Retrieves questions for a specific grade level, limited."""
         query = """
-        SELECT id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
+        SELECT question_id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
         FROM questions
         WHERE grade_level_id = %s
         ORDER BY RANDOM() -- Still randomize within the grade
@@ -103,7 +106,7 @@ class QuizDatabase:
     def get_questions_by_chapter(self, chapter_id, limit=10):
         """Retrieves questions for a specific chapter, limited."""
         query = """
-        SELECT id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
+        SELECT question_id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
         FROM questions
         WHERE chapter_id = %s
         ORDER BY RANDOM()
@@ -115,7 +118,7 @@ class QuizDatabase:
     def get_questions_by_lesson(self, lesson_id, limit=10):
         """Retrieves questions for a specific lesson, limited."""
         query = """
-        SELECT id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
+        SELECT question_id, question_text, option1, option2, option3, option4, correct_answer, explanation, image_data
         FROM questions
         WHERE lesson_id = %s
         ORDER BY RANDOM()
@@ -141,39 +144,42 @@ class QuizDatabase:
         params = (quiz_id, user_id, score, total_questions, percentage, time_taken_seconds, quiz_type, filter_id)
         return self._execute_query(query, params, commit=True)
 
-    # --- Admin Functions (Corrected dictionary access) --- 
+    # --- Admin Functions (Corrected dictionary access and column names) --- 
 
     def add_grade_level(self, name):
+        # Assuming grade_levels table also uses 'id'
         query = "INSERT INTO grade_levels (name) VALUES (%s) RETURNING id;"
         result = self._execute_query(query, (name,), fetch_one=True, commit=True)
-        return result["id"] if result else None # Corrected
+        return result["id"] if result else None 
 
     def add_chapter(self, name, grade_level_id):
+        # Assuming chapters table also uses 'id'
         query = "INSERT INTO chapters (name, grade_level_id) VALUES (%s, %s) RETURNING id;"
         result = self._execute_query(query, (name, grade_level_id), fetch_one=True, commit=True)
-        return result["id"] if result else None # Corrected
+        return result["id"] if result else None 
 
     def add_lesson(self, name, chapter_id):
+        # Assuming lessons table also uses 'id'
         query = "INSERT INTO lessons (name, chapter_id) VALUES (%s, %s) RETURNING id;"
         result = self._execute_query(query, (name, chapter_id), fetch_one=True, commit=True)
-        return result["id"] if result else None # Corrected
+        return result["id"] if result else None 
 
     def add_question(self, text, opt1, opt2, opt3, opt4, correct, explanation=None, image_data=None, grade_id=None, chapter_id=None, lesson_id=None):
         query = """
         INSERT INTO questions (question_text, option1, option2, option3, option4, correct_answer, explanation, image_data, grade_level_id, chapter_id, lesson_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING question_id;
         """
         params = (text, opt1, opt2, opt3, opt4, correct, explanation, image_data, grade_id, chapter_id, lesson_id)
         result = self._execute_query(query, params, fetch_one=True, commit=True)
-        return result["id"] if result else None # Corrected
+        return result["question_id"] if result else None # Corrected to question_id
 
-    def delete_question(self, question_id):
-        query = "DELETE FROM questions WHERE id = %s;"
-        return self._execute_query(query, (question_id,), commit=True)
+    def delete_question(self, question_id_to_delete):
+        query = "DELETE FROM questions WHERE question_id = %s;"
+        return self._execute_query(query, (question_id_to_delete,), commit=True)
 
-    def get_question_by_id(self, question_id):
-        query = "SELECT * FROM questions WHERE id = %s;"
-        result = self._execute_query(query, (question_id,), fetch_one=True)
+    def get_question_by_id(self, question_id_to_get):
+        query = "SELECT * FROM questions WHERE question_id = %s;"
+        result = self._execute_query(query, (question_id_to_get,), fetch_one=True)
         return dict(result) if result else None
 
 
@@ -235,4 +241,5 @@ class QuizDatabase:
         results = self._execute_query(query, (user_id, limit), fetch_all=True)
         # Format results directly using list comprehension with dict conversion
         return [dict(row) for row in results] if results else []
+
 
