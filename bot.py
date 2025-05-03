@@ -444,11 +444,8 @@ def handle_info_selection(update: Update, context: CallbackContext):
 
     # Process content for chemical notation if needed
     processed_content = process_text_with_chemical_notation(content)
-
-    text = f"""*{title}*
-
-{processed_content}"""
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة المعلومات", callback_data='menu_info')]]) # Corrected
+    text = f"""*{title}*\n\n{processed_content}"""
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]])
     safe_edit_message_text(query, text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
     return INFO_MENU
 
@@ -1079,7 +1076,7 @@ def handle_about(update: Update, context: CallbackContext):
 - معلومات كيميائية مفيدة (عناصر، مركبات، مفاهيم، قوانين).
 - (قريباً) تقارير أداء لتتبع تقدمك.
 
-تم التطوير بواسطة فريق Manus AI."""
+تم التطوير بواسطة الاستاذ حسين الموسى."""
     safe_edit_message_text(query, text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]])) # Corrected
     return MAIN_MENU
 
