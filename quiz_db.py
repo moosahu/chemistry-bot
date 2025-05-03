@@ -40,14 +40,14 @@ class QuizDatabase:
     def add_or_update_user(self, user_id, username, first_name, last_name):
         """Adds a new user or updates their info and last active time."""
         query = """
-        INSERT INTO users (user_id, username, first_name, last_name, last_active)
+        INSERT INTO users (user_id, username, first_name, last_name, last_interaction_date)
         VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (user_id)
         DO UPDATE SET
             username = EXCLUDED.username,
             first_name = EXCLUDED.first_name,
             last_name = EXCLUDED.last_name,
-            last_active = CURRENT_TIMESTAMP;
+            last_interaction_date = CURRENT_TIMESTAMP;
         """
         return self._execute_query(query, (user_id, username, first_name, last_name), commit=True)
 
