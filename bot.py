@@ -747,7 +747,6 @@ def send_question(update: Update, context: CallbackContext):
 
     question_text = f"*السؤال {current_index + 1} من {total_questions}:*\n\n{process_text_with_chemical_notation(question['question_text'])}"
 
-{process_text_with_chemical_notation(question['question_text'])}"
 
     options = [
         question['option1'],
