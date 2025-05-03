@@ -2,3 +2,4 @@ python-telegram-bot==13.15
 pandas
 psycopg2-binary
 openpyxl
+requests
