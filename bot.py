@@ -460,10 +460,10 @@ def menu_info_callback(update: Update, context: CallbackContext) -> int:
         if not courses_data:
              query.edit_message_text(text="لا توجد مقررات متاحة حالياً في قسم المعلومات.")
              return MAIN_MENU
-        # Assuming API returns list of dicts like [{'id': 1, 'name': 'Course 1'}, ...]
+        # Assuming API returns list of dicts like [{\'id\': 1, \'name\': \'Course 1\'}, ...]
         keyboard = create_dynamic_keyboard(courses_data, "info_course", "main_menu")
-        query.edit_message_text(text="📚 المعلومات الكيميائية:
-اختر المقرر لعرض معلوماته (الميزة قيد الإنشاء).", reply_markup=keyboard)
+        # *** CORRECTED LINE 465 ***
+        query.edit_message_text(text="📚 المعلومات الكيميائية:\nاختر المقرر لعرض معلوماته (الميزة قيد الإنشاء).", reply_markup=keyboard)
         return INFO_MENU # Go to info menu state
     else:
         query.edit_message_text(text="⚠️ حدث خطأ أثناء جلب قائمة المقررات. الرجاء المحاولة مرة أخرى لاحقاً.")
