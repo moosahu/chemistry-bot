@@ -123,9 +123,10 @@ else:
     ADMIN_MANAGE_GRADES, ADMIN_MANAGE_CHAPTERS, ADMIN_MANAGE_LESSONS,
     INFO_MENU,
     SHOWING_INFO_CONTENT, # New state for showing info content
+    SHOWING_REPORTS, # New state for showing reports
     SELECT_CHAPTER_FOR_LESSON_QUIZ,
     SHOWING_RESULTS # New state for showing quiz results
-) = range(35) # Increased range for new states
+) = range(36) # Increased range for new states
 
 # --- Helper Functions ---
 
@@ -1111,7 +1112,7 @@ def handle_reports(update: Update, context: CallbackContext):
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]])
     safe_edit_message_text(query, text=report_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
-    return MAIN_MENU
+    return SHOWING_REPORTS
 
 def handle_about(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -1220,11 +1221,13 @@ def main() -> None:
             INFO_MENU: [
                 CallbackQueryHandler(handle_info_selection, pattern='^info_'),
                 CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'),
+                        SHOWING_INFO_CONTENT: [ # New state for info content view
+                CallbackQueryHandler(main_menu_callback, pattern=\\'^main_menu$\\'), # Back button
             ],
-            SHOWING_INFO_CONTENT: [ # New state for info content view
-                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'), # Back button
+            SHOWING_REPORTS: [ # New state for reports view
+                CallbackQueryHandler(main_menu_callback, pattern=\\'^main_menu$\\'), # Back button
             ],
-            ADMIN_MENU: [               # Add admin action handlers here (add/delete/show question, manage structure)
+            ADMIN_MENU: [              # Add admin action handlers here (add/delete/show question, manage structure)
                 # CallbackQueryHandler(prompt_add_question, pattern='^admin_add_question$'),
                 # CallbackQueryHandler(prompt_delete_question, pattern='^admin_delete_question$'),
                 # CallbackQueryHandler(prompt_show_question, pattern='^admin_show_question$'),
