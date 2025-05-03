@@ -443,6 +443,7 @@ def create_back_button(target_menu='main_menu'):
 # --- Command Handlers ---
 
 def start(update: Update, context: CallbackContext) -> int:
+    logger.info("****** RECEIVED UPDATE: Processing /start command ******") # Diagnostic log added
     user = update.effective_user
     user_id = user.id
     username = user.username
