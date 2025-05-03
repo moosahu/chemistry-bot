@@ -1320,9 +1320,7 @@ def show_user_reports(update: Update, context: CallbackContext) -> int:
 
         # Add stats by type if implemented
         # if stats_by_type:
-        #     text += "*📈 الأداء حسب النوع:*
-"
-        #     for type_stat in stats_by_type:
+        #     text += "*📈 الأداء حسب النوع:*\n""        #     for type_stat in stats_by_type:
         #         # Format and add stats by type
         #         pass
 
