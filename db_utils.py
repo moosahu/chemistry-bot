@@ -1,130 +1,157 @@
-# -*- coding: utf-8 -*-
 import psycopg2
-import logging
-import time
+import os
+from urllib.parse import urlparse
 
-logger = logging.getLogger(__name__)
+# Get database URL from environment variables
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-MAX_RETRIES = 3
-RETRY_DELAY = 5 # seconds
+if not DATABASE_URL:
+    raise ValueError("No DATABASE_URL set for Connection")
 
-def connect_db(database_url):
-    """Establishes a connection to the PostgreSQL database with retries."""
-    conn = None
-    retries = 0
-    while retries < MAX_RETRIES:
-        try:
-            # Correctly call connect with sslmode=\'require\'
-            conn = psycopg2.connect(database_url, sslmode=\'require\')
-            logger.info("Database connection established successfully.")
-            return conn
-        except psycopg2.OperationalError as e:
-            retries += 1
-            logger.error(f"Database connection failed (Attempt {retries}/{MAX_RETRIES}): {e}")
-            if retries < MAX_RETRIES:
-                logger.info(f"Retrying connection in {RETRY_DELAY} seconds...")
-                time.sleep(RETRY_DELAY)
-            else:
-                logger.critical("Max retries reached. Could not connect to the database.")
-                return None
-        except Exception as e:
-            # Catch any other unexpected errors during connection
-            logger.critical(f"An unexpected error occurred during database connection: {e}")
-            return None
-    return None # Should not be reached if MAX_RETRIES > 0, but good practice
+# Parse the database URL
+try:
+    result = urlparse(DATABASE_URL)
+    username = result.username
+    password = result.password
+    database = result.path[1:]
+    hostname = result.hostname
+    port = result.port
+except Exception as e:
+    raise ValueError(f"Error parsing DATABASE_URL: {e}")
 
-def setup_database(conn):
-    """Creates necessary tables if they don\t exist."""
-    if not conn:
-        logger.error("Cannot setup database: No connection.")
-        return
-
-    # Use triple quotes for multi-line SQL commands for clarity and safety
-    commands = (
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            user_id BIGINT PRIMARY KEY,
-            username VARCHAR(255),
-            first_name VARCHAR(255),
-            last_name VARCHAR(255),
-            last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS grade_levels (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) UNIQUE NOT NULL
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS chapters (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            grade_level_id INTEGER REFERENCES grade_levels(id) ON DELETE CASCADE,
-            UNIQUE (name, grade_level_id)
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS lessons (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            chapter_id INTEGER REFERENCES chapters(id) ON DELETE CASCADE,
-            UNIQUE (name, chapter_id)
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS questions (
-            id SERIAL PRIMARY KEY,
-            question_text TEXT NOT NULL,
-            option1 TEXT NOT NULL,
-            option2 TEXT NOT NULL,
-            option3 TEXT NOT NULL,
-            option4 TEXT NOT NULL,
-            correct_answer INTEGER NOT NULL CHECK (correct_answer BETWEEN 1 AND 4),
-            explanation TEXT,
-            image_data BYTEA, -- Store image as binary data
-            grade_level_id INTEGER REFERENCES grade_levels(id) ON DELETE SET NULL,
-            chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL,
-            lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS quiz_results (
-            result_id SERIAL PRIMARY KEY,
-            quiz_id BIGINT NOT NULL, -- Identifier for a specific quiz instance
-            user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-            score INTEGER NOT NULL,
-            total_questions INTEGER NOT NULL,
-            percentage REAL, -- Calculated percentage
-            time_taken_seconds INTEGER,
-            quiz_type VARCHAR(50), -- e.g., \'random\', \'grade\', \'chapter\', \'lesson\'
-            filter_id INTEGER, -- ID of the grade/chapter/lesson if applicable
-            completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """,
-        # Add indexes for faster lookups
-        """CREATE INDEX IF NOT EXISTS idx_questions_grade ON questions (grade_level_id);""",
-        """CREATE INDEX IF NOT EXISTS idx_questions_chapter ON questions (chapter_id);""",
-        """CREATE INDEX IF NOT EXISTS idx_questions_lesson ON questions (lesson_id);""",
-        """CREATE INDEX IF NOT EXISTS idx_quiz_results_user ON quiz_results (user_id);"""
-    )
-    cur = None
+def connect_db():
+    """Connects to the PostgreSQL database."""
     try:
-        cur = conn.cursor()
-        for command in commands:
-            # Ensure command is not empty before executing
-            if command and command.strip():
-                cur.execute(command)
+        # Ensure sslmode is set correctly without backslashes
+        conn = psycopg2.connect(
+            database=database,
+            user=username,
+            password=password,
+            host=hostname,
+            port=port,
+            sslmode='require' # Correct syntax
+        )
+        return conn
+    except psycopg2.Error as e:
+        print(f"Error connecting to database: {e}")
+        # Consider logging the error instead of just printing
+        # Log the connection details being used (excluding password) for debugging
+        print(f"Attempted connection with: user={username}, db={database}, host={hostname}, port={port}, sslmode=require")
+        return None # Return None or raise an exception
+
+def setup_database():
+    """Sets up the database schema if it doesn't exist."""
+    conn = connect_db()
+    if conn is None:
+        print("Failed to connect to database for setup.")
+        return # Exit if connection failed
+
+    try:
+        with conn.cursor() as cur:
+            # Create users table (if not exists) - Storing user info
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    first_name VARCHAR(255),
+                    last_name VARCHAR(255),
+                    username VARCHAR(255),
+                    language_code VARCHAR(10),
+                    registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_interaction_date TIMESTAMP
+                );
+            """)
+
+            # Create quizzes table (if not exists) - Storing quiz metadata
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS quizzes (
+                    quiz_id SERIAL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL UNIQUE,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # Create questions table (if not exists) - Storing quiz questions
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS questions (
+                    question_id SERIAL PRIMARY KEY,
+                    quiz_id INTEGER REFERENCES quizzes(quiz_id) ON DELETE CASCADE,
+                    question_text TEXT NOT NULL,
+                    image_url VARCHAR(512), -- Optional image URL for the question
+                    correct_option INTEGER NOT NULL CHECK (correct_option >= 0 AND correct_option <= 3), -- Assuming 4 options (0-3)
+                    explanation TEXT -- Optional explanation for the correct answer
+                );
+            """)
+            # Add index for faster question retrieval by quiz_id
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id);")
+
+
+            # Create options table (if not exists) - Storing answer options for questions
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS options (
+                    option_id SERIAL PRIMARY KEY,
+                    question_id INTEGER REFERENCES questions(question_id) ON DELETE CASCADE,
+                    option_index INTEGER NOT NULL, -- 0, 1, 2, 3
+                    option_text TEXT NOT NULL,
+                    UNIQUE (question_id, option_index) -- Ensure option index is unique per question
+                );
+            """)
+            # Add index for faster option retrieval by question_id
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id);")
+
+
+            # Create user_quiz_attempts table (if not exists) - Tracking user attempts
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_quiz_attempts (
+                    attempt_id SERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                    quiz_id INTEGER REFERENCES quizzes(quiz_id) ON DELETE CASCADE,
+                    start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    end_time TIMESTAMP,
+                    score INTEGER,
+                    total_questions INTEGER,
+                    completed BOOLEAN DEFAULT FALSE
+                );
+            """)
+            # Add indexes for faster lookups
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_quiz_attempts_user_id ON user_quiz_attempts(user_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_quiz_attempts_quiz_id ON user_quiz_attempts(quiz_id);")
+
+
+            # Create user_answers table (if not exists) - Storing specific answers for each attempt
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_answers (
+                    answer_id SERIAL PRIMARY KEY,
+                    attempt_id INTEGER REFERENCES user_quiz_attempts(attempt_id) ON DELETE CASCADE,
+                    question_id INTEGER REFERENCES questions(question_id) ON DELETE SET NULL, -- Keep answer even if question deleted? Or CASCADE?
+                    selected_option_index INTEGER, -- The index chosen by the user
+                    is_correct BOOLEAN,
+                    answer_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            # Add index for faster answer retrieval by attempt_id
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_user_answers_attempt_id ON user_answers(attempt_id);")
+
         conn.commit()
-        logger.info("Database setup/check completed successfully.")
-    except (Exception, psycopg2.DatabaseError) as error:
-        logger.error(f"Error during database setup: {error}")
+        print("Database setup/check completed successfully.")
+    except psycopg2.Error as e:
+        print(f"Error during database setup: {e}")
         if conn:
             conn.rollback() # Rollback changes on error
     finally:
-        if cur:
-            cur.close()
+        if conn:
+            conn.close()
 
-# Note: Removed the example usage block for clarity in production code
+# Example usage (optional, for testing)
+if __name__ == "__main__":
+    print("Attempting to connect to database...")
+    connection = connect_db()
+    if connection:
+        print("Connection successful!")
+        connection.close()
+        print("Connection closed.")
+        print("\nRunning database setup...")
+        setup_database()
+    else:
+        print("Connection failed.")
 
