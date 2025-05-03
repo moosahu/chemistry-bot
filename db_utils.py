@@ -3,25 +3,25 @@ import os
 from urllib.parse import urlparse
 
 # Get database URL from environment variables
-DATABASE_URL = os.environ.get('DATABASE_URL')
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if not DATABASE_URL:
     raise ValueError("No DATABASE_URL set for Connection")
 
-# Parse the database URL
-try:
-    result = urlparse(DATABASE_URL)
-    username = result.username
-    password = result.password
-    database = result.path[1:]
-    hostname = result.hostname
-    port = result.port
-except Exception as e:
-    raise ValueError(f"Error parsing DATABASE_URL: {e}")
-
-def connect_db():
-    """Connects to the PostgreSQL database."""
+def connect_db(database_url):
+    """Connects to the PostgreSQL database using the provided URL."""
+    if not database_url:
+        print("Error: database_url parameter is missing or empty.")
+        return None
     try:
+        # Parse the database URL passed as argument
+        result = urlparse(database_url)
+        username = result.username
+        password = result.password
+        database = result.path[1:]
+        hostname = result.hostname
+        port = result.port
+
         # Ensure sslmode is set correctly without backslashes
         conn = psycopg2.connect(
             database=database,
@@ -29,19 +29,23 @@ def connect_db():
             password=password,
             host=hostname,
             port=port,
-            sslmode='require' # Correct syntax
+            sslmode="require" # Correct syntax
         )
         return conn
     except psycopg2.Error as e:
         print(f"Error connecting to database: {e}")
-        # Consider logging the error instead of just printing
         # Log the connection details being used (excluding password) for debugging
         print(f"Attempted connection with: user={username}, db={database}, host={hostname}, port={port}, sslmode=require")
         return None # Return None or raise an exception
+    except Exception as e:
+        # Catch potential parsing errors if url is invalid
+        print(f"Error parsing database URL within connect_db: {e}")
+        return None
 
 def setup_database():
     """Sets up the database schema if it doesn't exist."""
-    conn = connect_db()
+    # Use the global DATABASE_URL for setup
+    conn = connect_db(DATABASE_URL)
     if conn is None:
         print("Failed to connect to database for setup.")
         return # Exit if connection failed
@@ -145,7 +149,8 @@ def setup_database():
 # Example usage (optional, for testing)
 if __name__ == "__main__":
     print("Attempting to connect to database...")
-    connection = connect_db()
+    # Use the global DATABASE_URL for testing connection
+    connection = connect_db(DATABASE_URL)
     if connection:
         print("Connection successful!")
         connection.close()
