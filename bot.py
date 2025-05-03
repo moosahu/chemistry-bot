@@ -745,7 +745,7 @@ def send_question(update: Update, context: CallbackContext):
          handle_quiz_skip(chat_id, user_id, quiz_id, current_index, context, error_skip=True)
          return TAKING_QUIZ
 
-    question_text = f"*السؤال {current_index + 1} من {total_questions}:*
+    question_text = f"*السؤال {current_index + 1} من {total_questions}:*\n\n{process_text_with_chemical_notation(question['question_text'])}"
 
 {process_text_with_chemical_notation(question['question_text'])}"
 
