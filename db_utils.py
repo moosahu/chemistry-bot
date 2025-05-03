@@ -136,6 +136,24 @@ def setup_database():
             # Add index for faster answer retrieval by attempt_id
             cur.execute("CREATE INDEX IF NOT EXISTS idx_user_answers_attempt_id ON user_answers(attempt_id);")
 
+            # Create quiz_results table (if not exists) - Storing final results for reporting
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS quiz_results (
+                    result_id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    quiz_type VARCHAR(50) NOT NULL,
+                    filter_id INTEGER, -- Represents grade_id, chapter_id, or lesson_id depending on quiz_type
+                    score INTEGER NOT NULL,
+                    total_questions INTEGER NOT NULL,
+                    percentage NUMERIC(5, 2) NOT NULL,
+                    time_taken_seconds INTEGER NOT NULL,
+                    completed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            # Add indexes for faster reporting queries
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_quiz_results_user_id ON quiz_results(user_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_quiz_results_quiz_type ON quiz_results(quiz_type);")
+
         conn.commit()
         print("Database setup/check completed successfully.")
     except psycopg2.Error as e:
