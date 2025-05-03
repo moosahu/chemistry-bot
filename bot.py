@@ -40,7 +40,7 @@ from telegram.ext import (
     JobQueue,
     Dispatcher # Import Dispatcher
 )
-from telegram.ext import filters
+from telegram.ext import Filters
 from telegram.error import BadRequest, TelegramError, NetworkError, Unauthorized, TimedOut, ChatMigrated
 
 # --- Configuration & Constants ---
@@ -1047,8 +1047,8 @@ def main() -> None:
             CommandHandler('start', start), # Allow restarting
             CommandHandler('about', about),
             CallbackQueryHandler(button_handler), # Catch stray button presses?
-            MessageHandler(filters.COMMAND, unknown_command),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_message)
+            MessageHandler(Filters.command, unknown_command),
+            MessageHandler(Filters.text & ~Filters.command, unknown_message)
         ],
         # per_user=True, per_chat=False # Default
     )
