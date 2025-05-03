@@ -102,7 +102,7 @@ if not DATABASE_URL:
 
 DB_CONN = connect_db(DATABASE_URL)
 if DB_CONN:
-    setup_database(DB_CONN) # Ensure tables exist
+    setup_database() # Ensure tables exist
     QUIZ_DB = QuizDatabase(DB_CONN)
     logger.info("QuizDatabase initialized successfully.")
 else:
