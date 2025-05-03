@@ -49,8 +49,31 @@ class QuizDatabase:
             if cur:
                 cur.close()
 
+    # --- User Management --- 
+    def register_user(self, user_id, first_name, username):
+        """Registers a new user or updates their info if they already exist."""
+        # Use COALESCE for username as it might be None
+        logger.info(f"[register_user] Registering/updating user_id: {user_id}, first_name: {first_name}, username: {username}")
+        query = """
+        INSERT INTO users (user_id, first_name, username, last_interaction_date)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id)
+        DO UPDATE SET
+            first_name = EXCLUDED.first_name,
+            username = EXCLUDED.username,
+            last_interaction_date = CURRENT_TIMESTAMP;
+        """
+        # Note: Assuming 'last_name' is not strictly required for registration based on bot.py call
+        success = self._execute_query(query, (user_id, first_name, username), commit=True)
+        if success:
+            logger.info(f"[register_user] Successfully registered/updated user_id {user_id}.")
+        else:
+            logger.error(f"[register_user] Failed to register/update user_id {user_id}.")
+        return success
+
     def add_or_update_user(self, user_id, username, first_name, last_name):
-        """Adds a new user or updates their info and last active time."""
+        """DEPRECATED? Adds a new user or updates their info and last active time. Consider using register_user."""
+        logger.warning("[add_or_update_user] Called potentially deprecated function. Consider using register_user.")
         query = """
         INSERT INTO users (user_id, username, first_name, last_name, last_interaction_date)
         VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
