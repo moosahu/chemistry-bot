@@ -1165,7 +1165,8 @@ def main() -> None:
             TAKING_QUIZ: [
                 CallbackQueryHandler(handle_quiz_answer, pattern='^answer_\d+_\d+_\d+$'),
                 CallbackQueryHandler(handle_quiz_skip_callback, pattern='^skip_\d+_\d+$'),
-                # Add handler for potential unexpected messages?            ],
+                # Add handler for potential unexpected messages?
+            ],
             SHOWING_RESULTS: [
                  CallbackQueryHandler(quiz_menu, pattern='^menu_quiz$'),
                  CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'),
