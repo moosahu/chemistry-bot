@@ -473,9 +473,8 @@ def start_quiz(chat_id, user_id, quiz_type, filter_id, duration_minutes, context
 
     if not questions:
         safe_send_message(context.bot, chat_id, text="عذراً، لم يتم العثور على أسئلة لهذا الاختيار. الرجاء المحاولة مرة أخرى أو اختيار نوع آخر.")
-        # Go back to quiz menu or appropriate state
-        quiz_menu(Update(0, message=context.bot.get_chat(chat_id).get_member(user_id).user), context) # Simulate update to show menu
-        return ConversationHandler.END # Or return to QUIZ_MENU
+        # Go back to quiz type selection state
+        return SELECTING_QUIZ_TYPE
 
     quiz_id = int(time.time() * 1000) # Unique enough ID based on timestamp
     start_time = time.time()
