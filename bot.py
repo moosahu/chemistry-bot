@@ -327,8 +327,7 @@ def question_timer_callback(context: CallbackContext):
         logger.info(f"Question {question_index} already answered/skipped or quiz ended, ignoring timer.")
 
 # --- Keyboard Creation Functions ---
-# NOTE: Keyboards related to Grade/Chapter/Lesson selection might need updates
-# if the IDs/names are now fetched differently (e.g., via API or if QUIZ_DB structure changed)
+# NOTE: Keyboards related to Grade/Chapter/Lesson selection might need # if the IDs/names are now fetched differently (e.g., via API or if QUIZ_DB structure changed)
 
 def create_main_menu_keyboard(user_id):
     keyboard = [
@@ -343,18 +342,16 @@ def create_main_menu_keyboard(user_id):
 
 def create_quiz_menu_keyboard():
     # TODO: Update callbacks if quiz types/filters change based on API structure
-    # Assuming \'lesson\', \'unit\', \'course\' IDs will be used as filters
+    # Assuming 'lesson', 'unit', 'course' IDs will be used as filters
     keyboard = [
-        [InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data=\'quiz_random_prompt\')],
+        [InlineKeyboardButton("📚 اختبار تحصيلي عام", callback_data='quiz_random_prompt')],
         # Maybe fetch available courses/units/lessons from API to build dynamic menus?
-        [InlineKeyboardButton("📄 اختبار حسب المقرر", callback_data=\'quiz_by_course_prompt\')],
-        [InlineKeyboardButton("📝 اختبار حسب الوحدة", callback_data=\'quiz_by_unit_prompt\')],
-        [InlineKeyboardButton("🎓 اختبار حسب الدرس", callback_data=\'quiz_by_lesson_prompt\')],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=\'main_menu\')]
+        [InlineKeyboardButton("📄 اختبار حسب المقرر", callback_data='quiz_by_course_prompt')],
+        [InlineKeyboardButton("📝 اختبار حسب الوحدة", callback_data='quiz_by_unit_prompt')],
+        [InlineKeyboardButton("🎓 اختبار حسب الدرس", callback_data='quiz_by_lesson_prompt')],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]
     ]
-    return InlineKeyboardMarkup(keyboard)
-
-def create_admin_menu_keyboard():
+    return InlineKeyboardMarkup(keyboard)ef create_admin_menu_keyboard():
     # Admin functions might need significant rework if questions are managed via web app/API
     keyboard = [
         # [InlineKeyboardButton("➕ إضافة سؤال", callback_data=\'admin_add_question\')], # Likely removed/changed
