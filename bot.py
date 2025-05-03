@@ -1132,9 +1132,7 @@ def show_performance_reports(update: Update, context: CallbackContext) -> int:
         # stats_by_type = QUIZ_DB.get_user_stats_by_type(user_id)
         last_quizzes = QUIZ_DB.get_user_last_quizzes(user_id, limit=5)
 
-        text = "📊 *تقارير أدائك في الاختبارات:*
-
-"
+        text = "📊 *تقارير أدائك في الاختبارات:*\n\n"
 
         if overall_stats and overall_stats['total_quizzes'] > 0:
             # Format overall stats from the raw dictionary returned by DB function
