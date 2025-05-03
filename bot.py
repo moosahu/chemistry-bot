@@ -357,7 +357,7 @@ def create_dynamic_keyboard(items: list, callback_prefix: str, back_callback: st
     keyboard = []
     row = []
     for item in items:
-        button = InlineKeyboardButton(item["name"], callback_data=f"{callback_prefix}_{item["id"]}")
+        button = InlineKeyboardButton(item["name"], callback_data=f"{callback_prefix}_{item['id']}")
         row.append(button)
         if len(row) == items_per_row:
             keyboard.append(row)
@@ -566,19 +566,19 @@ def quiz_select_course_callback(update: Update, context: CallbackContext) -> int
 
     if courses_data == "TIMEOUT":
         query.edit_message_text(text="⏳ حدث خطأ أثناء جلب قائمة المقررات (مهلة زمنية). الرجاء المحاولة مرة أخرى لاحقاً.",
-                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data="menu_quiz")]])))
+                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data="menu_quiz")]]))
         return QUIZ_MENU
     elif courses_data and isinstance(courses_data, list):
         if not courses_data:
              query.edit_message_text(text="لا توجد مقررات متاحة حالياً للاختبار.",
-                                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data="menu_quiz")]])))
+                                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data="menu_quiz")]]))
              return QUIZ_MENU
         keyboard = create_dynamic_keyboard(courses_data, "quiz_course", "menu_quiz") # prefix 'quiz_course_'
         query.edit_message_text(text="📄 اختر المقرر لبدء الاختبار:", reply_markup=keyboard)
         return SELECT_COURSE_FOR_QUIZ
     else:
         query.edit_message_text(text="⚠️ حدث خطأ أثناء جلب قائمة المقررات. الرجاء المحاولة مرة أخرى لاحقاً.",
-                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data="menu_quiz")]])))
+                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لقائمة الاختبارات", callback_data="menu_quiz")]]))
         return QUIZ_MENU
 
 def quiz_select_unit_callback(update: Update, context: CallbackContext) -> int:
@@ -597,12 +597,12 @@ def quiz_select_unit_callback(update: Update, context: CallbackContext) -> int:
 
     if units_data == "TIMEOUT":
         query.edit_message_text(text="⏳ حدث خطأ أثناء جلب قائمة الوحدات (مهلة زمنية). الرجاء المحاولة مرة أخرى لاحقاً.",
-                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لاختيار المقرر", callback_data="quiz_select_course")]])))
+                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لاختيار المقرر", callback_data="quiz_select_course")]]))
         return SELECT_COURSE_FOR_QUIZ
     elif units_data and isinstance(units_data, list):
         if not units_data:
              query.edit_message_text(text="لا توجد وحدات متاحة حالياً لهذا المقرر.",
-                                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لاختيار المقرر", callback_data="quiz_select_course")]])))
+                                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لاختيار المقرر", callback_data="quiz_select_course")]]))
              return SELECT_COURSE_FOR_QUIZ
         keyboard = create_dynamic_keyboard(units_data, "quiz_unit", "quiz_select_course") # prefix 'quiz_unit_'
         query.edit_message_text(text="🗂️ اختر الوحدة لبدء الاختبار:", reply_markup=keyboard)
@@ -610,7 +610,7 @@ def quiz_select_unit_callback(update: Update, context: CallbackContext) -> int:
     else:
         logger.error(f"API error or invalid data fetching units for course {course_id}: {units_data}")
         query.edit_message_text(text="⚠️ حدث خطأ أثناء جلب قائمة الوحدات. الرجاء المحاولة مرة أخرى لاحقاً.",
-                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لاختيار المقرر", callback_data="quiz_select_course")]])))
+                                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة لاختيار المقرر", callback_data="quiz_select_course")]]))
         return SELECT_COURSE_FOR_QUIZ
 
 def quiz_select_lesson_callback(update: Update, context: CallbackContext) -> int:
@@ -763,5 +763,4 @@ def handle_question_count_callback(update: Update, context: CallbackContext) -> 
             return SELECT_QUESTION_COUNT
 
     except (ValueError, IndexError) as e:
-        logger.error(f"Error parsing question count callback data 
-(Content truncated due to size limit. Use line ranges to read in chunks)
+        logger.error(f"Error parsing question count callback data: {e}")
