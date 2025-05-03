@@ -6,7 +6,7 @@ import random
 
 # Enhanced logging for debugging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG) # Set level to DEBUG for maximum verbosity during this test
+logger.setLevel(logging.DEBUG) # Set level to DEBUG for maximum verbosity
 
 class QuizDatabase:
     def __init__(self, conn):
@@ -63,20 +63,21 @@ class QuizDatabase:
         """
         return self._execute_query(query, (user_id, username, first_name, last_name), commit=True)
 
-    # --- Structure Retrieval (Assuming these tables exist and use 'id') --- 
-    def get_all_grade_levels(self):
-        query = "SELECT id, name FROM grade_levels ORDER BY id;"
+    # --- Structure Retrieval (Updated based on confirmed structure) --- 
+    # Assuming these tables and columns exist as confirmed
+    def get_all_courses(self):
+        query = "SELECT course_id, name FROM courses ORDER BY course_id;" # Assuming PK is course_id
         return self._execute_query(query, fetch_all=True)
 
-    def get_chapters_by_grade(self, grade_level_id):
-        query = "SELECT id, name FROM chapters WHERE grade_level_id = %s ORDER BY id;"
-        return self._execute_query(query, (grade_level_id,), fetch_all=True)
+    def get_units_by_course(self, course_id):
+        query = "SELECT unit_id, name FROM units WHERE course_id = %s ORDER BY unit_id;" # Assuming PK is unit_id
+        return self._execute_query(query, (course_id,), fetch_all=True)
 
-    def get_lessons_by_chapter(self, chapter_id):
-        query = "SELECT id, name FROM lessons WHERE chapter_id = %s ORDER BY id;"
-        return self._execute_query(query, (chapter_id,), fetch_all=True)
+    def get_lessons_by_unit(self, unit_id):
+        query = "SELECT lesson_id, name FROM lessons WHERE unit_id = %s ORDER BY lesson_id;" # Assuming PK is lesson_id
+        return self._execute_query(query, (unit_id,), fetch_all=True)
 
-    # --- Question Retrieval (Updated for new DB structure + More Debug Logging) --- 
+    # --- Question Retrieval --- 
 
     def _get_options_for_question(self, question_id):
         """Retrieves options for a specific question_id."""
@@ -99,9 +100,6 @@ class QuizDatabase:
         else:
             logger.warning(f"[_get_options_for_question] No options found in DB for question_id: {question_id}")
             
-        # Return only the text, filtering out None if fewer than 4 options exist
-        # Important: We need exactly 4 options (even if None) for the bot structure
-        # final_options = [text for text in options_list if text is not None]
         final_options = options_list # Keep the list of 4, including None
         logger.debug(f"[_get_options_for_question] Final options list for question_id {question_id}: {final_options}")
         return final_options
@@ -115,29 +113,30 @@ class QuizDatabase:
             return []
             
         for i, q_row in enumerate(question_rows):
+            # Ensure q_row is a dictionary-like object
+            if not hasattr(q_row, '__getitem__') or not hasattr(q_row, 'keys'):
+                logger.error(f"[_format_questions_with_options] Skipping row {i} because it's not a dictionary-like object: {q_row}")
+                continue
+                
             logger.debug(f"[_format_questions_with_options] Processing raw question row {i}: {dict(q_row)}")
-            question_id = q_row['question_id']
+            question_id = q_row.get('question_id') # Use .get for safety
             if question_id is None:
                 logger.error(f"[_format_questions_with_options] Skipping row {i} due to missing question_id.")
                 continue
                 
             options = self._get_options_for_question(question_id)
             
-            # Check if we got exactly 4 options (even if some are None)
             if len(options) != 4:
                 logger.error(f"[_format_questions_with_options] Expected 4 options for question_id {question_id}, but got {len(options)}. Skipping question.")
                 continue
                 
-            # Check if at least one option is not None (basic sanity check)
             if all(opt is None for opt in options):
                  logger.warning(f"[_format_questions_with_options] All options are None for question_id {question_id}. Proceeding, but this might indicate an issue.")
 
-            # Determine correct answer index (0-based)
-            correct_db_index = q_row['correct_option'] # This is 1-based index from DB
+            correct_db_index = q_row.get('correct_option') # 1-based index from DB
             correct_answer_index = None
             if correct_db_index is not None:
                 if 1 <= correct_db_index <= 4:
-                    # Check if the correct option actually exists (is not None)
                     if options[correct_db_index - 1] is not None:
                         correct_answer_index = correct_db_index - 1
                         logger.debug(f"[_format_questions_with_options] Correct answer index for {question_id} set to {correct_answer_index} (DB index {correct_db_index})")
@@ -150,18 +149,17 @@ class QuizDatabase:
 
             question_dict = {
                 'question_id': question_id,
-                'question_text': q_row['question_text'],
+                'question_text': q_row.get('question_text'),
                 'option1': options[0],
                 'option2': options[1],
                 'option3': options[2],
                 'option4': options[3],
                 'correct_answer': correct_answer_index, # 0-based index or None
-                'explanation': q_row['explanation'],
-                'image_url': q_row['image_url'] 
+                'explanation': q_row.get('explanation'),
+                'image_url': q_row.get('image_url') 
             }
             logger.debug(f"[_format_questions_with_options] Formatted question dict {i}: {question_dict}")
             
-            # Final check: Ensure essential fields are present
             if not question_dict['question_text'] or question_dict['correct_answer'] is None:
                  logger.error(f"[_format_questions_with_options] Skipping question {question_id} due to missing text or invalid correct answer index.")
                  continue
@@ -194,18 +192,81 @@ class QuizDatabase:
         logger.info(f"[get_random_questions] Returning {len(formatted_questions)} formatted questions after processing.")
         return formatted_questions
 
-    # --- Filtered Question Retrieval (Temporarily Disabled/Limited) --- 
-    def get_questions_by_grade(self, grade_level_id, limit=10):
-        logger.warning("Filtering questions by grade level is not currently supported due to DB structure. Returning empty list.")
-        return []
-
-    def get_questions_by_chapter(self, chapter_id, limit=10):
-        logger.warning("Filtering questions by chapter is not currently supported due to DB structure. Returning empty list.")
-        return []
+    # --- Filtered Question Retrieval (NEW IMPLEMENTATION) --- 
 
     def get_questions_by_lesson(self, lesson_id, limit=10):
-        logger.warning("Filtering questions by lesson is not currently supported due to DB structure. Returning empty list.")
-        return []
+        """Retrieves random questions for a specific lesson_id."""
+        logger.info(f"[get_questions_by_lesson] Attempting to fetch {limit} questions for lesson_id: {lesson_id}")
+        query = """
+        SELECT q.question_id, q.question_text, q.image_url, q.correct_option, q.explanation 
+        FROM questions q 
+        WHERE q.lesson_id = %s 
+        ORDER BY RANDOM() 
+        LIMIT %s;
+        """
+        question_rows = self._execute_query(query, (lesson_id, limit), fetch_all=True)
+        if question_rows is None:
+             logger.error(f"[get_questions_by_lesson] Database query failed for lesson_id {lesson_id}.")
+             return []
+        logger.info(f"[get_questions_by_lesson] Fetched {len(question_rows)} raw question rows for lesson_id {lesson_id}.")
+        if not question_rows:
+            logger.warning(f"[get_questions_by_lesson] No raw question rows found for lesson_id {lesson_id}.")
+            return []
+        formatted_questions = self._format_questions_with_options(question_rows)
+        logger.info(f"[get_questions_by_lesson] Returning {len(formatted_questions)} formatted questions for lesson_id {lesson_id}.")
+        return formatted_questions
+
+    def get_questions_by_unit(self, unit_id, limit=10):
+        """Retrieves random questions for a specific unit_id."""
+        logger.info(f"[get_questions_by_unit] Attempting to fetch {limit} questions for unit_id: {unit_id}")
+        # Assuming lessons table has 'lesson_id' (PK) and 'unit_id' (FK)
+        # Assuming questions table has 'lesson_id' (FK)
+        query = """
+        SELECT q.question_id, q.question_text, q.image_url, q.correct_option, q.explanation 
+        FROM questions q
+        JOIN lessons l ON q.lesson_id = l.lesson_id
+        WHERE l.unit_id = %s 
+        ORDER BY RANDOM() 
+        LIMIT %s;
+        """
+        question_rows = self._execute_query(query, (unit_id, limit), fetch_all=True)
+        if question_rows is None:
+             logger.error(f"[get_questions_by_unit] Database query failed for unit_id {unit_id}.")
+             return []
+        logger.info(f"[get_questions_by_unit] Fetched {len(question_rows)} raw question rows for unit_id {unit_id}.")
+        if not question_rows:
+            logger.warning(f"[get_questions_by_unit] No raw question rows found for unit_id {unit_id}.")
+            return []
+        formatted_questions = self._format_questions_with_options(question_rows)
+        logger.info(f"[get_questions_by_unit] Returning {len(formatted_questions)} formatted questions for unit_id {unit_id}.")
+        return formatted_questions
+
+    def get_questions_by_course(self, course_id, limit=10):
+        """Retrieves random questions for a specific course_id."""
+        logger.info(f"[get_questions_by_course] Attempting to fetch {limit} questions for course_id: {course_id}")
+        # Assuming units table has 'unit_id' (PK) and 'course_id' (FK)
+        # Assuming lessons table has 'lesson_id' (PK) and 'unit_id' (FK)
+        # Assuming questions table has 'lesson_id' (FK)
+        query = """
+        SELECT q.question_id, q.question_text, q.image_url, q.correct_option, q.explanation 
+        FROM questions q
+        JOIN lessons l ON q.lesson_id = l.lesson_id
+        JOIN units u ON l.unit_id = u.unit_id
+        WHERE u.course_id = %s 
+        ORDER BY RANDOM() 
+        LIMIT %s;
+        """
+        question_rows = self._execute_query(query, (course_id, limit), fetch_all=True)
+        if question_rows is None:
+             logger.error(f"[get_questions_by_course] Database query failed for course_id {course_id}.")
+             return []
+        logger.info(f"[get_questions_by_course] Fetched {len(question_rows)} raw question rows for course_id {course_id}.")
+        if not question_rows:
+            logger.warning(f"[get_questions_by_course] No raw question rows found for course_id {course_id}.")
+            return []
+        formatted_questions = self._format_questions_with_options(question_rows)
+        logger.info(f"[get_questions_by_course] Returning {len(formatted_questions)} formatted questions for course_id {course_id}.")
+        return formatted_questions
 
     # --- Quiz Results --- 
     def save_quiz_result(self, quiz_id, user_id, score, total_questions, time_taken_seconds, quiz_type, filter_id):
@@ -220,46 +281,62 @@ class QuizDatabase:
         params = (quiz_id, user_id, score, total_questions, percentage, time_taken_seconds, quiz_type, filter_id)
         return self._execute_query(query, params, commit=True)
 
-    # --- Admin Functions (Partially Updated - Add/Delete need more work for options) --- 
-    def add_grade_level(self, name):
-        query = "INSERT INTO grade_levels (name) VALUES (%s) RETURNING id;"
+    # --- Admin Functions (Partially Updated - Add needs more work) --- 
+    # Assuming add functions for course, unit, lesson are needed
+    def add_course(self, name):
+        query = "INSERT INTO courses (name) VALUES (%s) RETURNING course_id;" # Assuming PK is course_id
         result = self._execute_query(query, (name,), fetch_one=True, commit=True)
-        return result["id"] if result else None
+        return result["course_id"] if result else None
 
-    def add_chapter(self, name, grade_level_id):
-        query = "INSERT INTO chapters (name, grade_level_id) VALUES (%s, %s) RETURNING id;"
-        result = self._execute_query(query, (name, grade_level_id), fetch_one=True, commit=True)
-        return result["id"] if result else None
+    def add_unit(self, name, course_id):
+        query = "INSERT INTO units (name, course_id) VALUES (%s, %s) RETURNING unit_id;" # Assuming PK is unit_id
+        result = self._execute_query(query, (name, course_id), fetch_one=True, commit=True)
+        return result["unit_id"] if result else None
 
-    def add_lesson(self, name, chapter_id):
-        query = "INSERT INTO lessons (name, chapter_id) VALUES (%s, %s) RETURNING id;"
-        result = self._execute_query(query, (name, chapter_id), fetch_one=True, commit=True)
-        return result["id"] if result else None
+    def add_lesson(self, name, unit_id):
+        # Updated to take unit_id based on confirmed structure
+        query = "INSERT INTO lessons (name, unit_id) VALUES (%s, %s) RETURNING lesson_id;" # Assuming PK is lesson_id
+        result = self._execute_query(query, (name, unit_id), fetch_one=True, commit=True)
+        return result["lesson_id"] if result else None
 
-    def add_question(self, text, opt1, opt2, opt3, opt4, correct_option_index, explanation=None, image_url=None, quiz_id=None):
-        """Adds a question and its options (Needs rework for separate options table)."""
-        logger.warning("add_question function is not fully updated for the current DB structure and will likely fail.")
-        # ... (rest of the function remains the same, known to be incomplete)
+    def add_question(self, text, opt1, opt2, opt3, opt4, correct_option_index, lesson_id, explanation=None, image_url=None):
+        """Adds a question and its options to the correct lesson."""
+        logger.info(f"Attempting to add question to lesson_id: {lesson_id}")
+        # Ensure correct_option_index is valid (0-3) before converting to 1-based
+        correct_db_index = None
+        if correct_option_index is not None and 0 <= correct_option_index <= 3:
+             correct_db_index = correct_option_index + 1
+        else:
+             logger.error(f"Invalid correct_option_index ({correct_option_index}) provided. Must be 0-3.")
+             return None # Or handle error appropriately
+             
         question_query = """
-        INSERT INTO questions (question_text, image_url, correct_option, explanation, quiz_id) 
+        INSERT INTO questions (question_text, image_url, correct_option, explanation, lesson_id) 
         VALUES (%s, %s, %s, %s, %s) RETURNING question_id;
         """
-        q_params = (text, image_url, correct_option_index + 1 if correct_option_index is not None else None, explanation, quiz_id)
-        q_result = self._execute_query(question_query, q_params, fetch_one=True, commit=False)
+        q_params = (text, image_url, correct_db_index, explanation, lesson_id)
+        q_result = self._execute_query(question_query, q_params, fetch_one=True, commit=False) # Commit after options
+        
         if not q_result or 'question_id' not in q_result:
             logger.error("Failed to insert question or retrieve question_id.")
             if self.conn: self.conn.rollback()
             return None
+            
         new_question_id = q_result['question_id']
-        options_to_insert = [opt for opt in [opt1, opt2, opt3, opt4] if opt is not None]
+        options_list = [opt1, opt2, opt3, opt4]
         option_query = "INSERT INTO options (question_id, option_index, option_text) VALUES (%s, %s, %s);"
+        
         try:
             cur = self.conn.cursor()
-            for index, option_text in enumerate(options_to_insert):
-                cur.execute(option_query, (new_question_id, index + 1, option_text))
+            for index, option_text in enumerate(options_list):
+                if option_text is not None: # Only insert non-null options
+                    cur.execute(option_query, (new_question_id, index + 1, option_text))
+                else:
+                    # Decide if you want to insert NULL or skip. Skipping seems safer.
+                    logger.debug(f"Skipping insertion for option index {index+1} as it is None.")
             self.conn.commit()
             cur.close()
-            logger.info(f"Successfully added question {new_question_id} and its options.")
+            logger.info(f"Successfully added question {new_question_id} to lesson {lesson_id} and its options.")
             return new_question_id
         except (Exception, psycopg2.DatabaseError) as error:
             logger.error(f"Failed to insert options for question_id {new_question_id}: {error}")
@@ -269,83 +346,76 @@ class QuizDatabase:
     def delete_question(self, question_id_to_delete):
         """Deletes a question and its associated options."""
         logger.info(f"Attempting to delete question {question_id_to_delete} and its options.")
+        # Also delete any quiz results associated with this specific question if needed?
+        # result_query = "DELETE FROM quiz_results WHERE ??? = %s;" # How are results linked?
         option_query = "DELETE FROM options WHERE question_id = %s;"
         question_query = "DELETE FROM questions WHERE question_id = %s;"
-        options_deleted = self._execute_query(option_query, (question_id_to_delete,), commit=False)
-        # No rollback here, proceed to delete question even if options fail
-        if options_deleted is None:
-             logger.warning(f"Failed or no options found/deleted for question_id {question_id_to_delete}. Proceeding to delete question anyway.")
-
-        question_deleted = self._execute_query(question_query, (question_id_to_delete,), commit=True)
-        if question_deleted:
-            logger.info(f"Successfully deleted question {question_id_to_delete}.")
-            return True
-        else:
-            logger.error(f"Failed to delete question {question_id_to_delete}.")
-            # Rollback might not be needed if commit=True failed, but doesn't hurt
-            if self.conn: self.conn.rollback() 
+        
+        # Use a transaction
+        cur = None
+        try:
+            cur = self.conn.cursor()
+            # Delete options first (foreign key constraint)
+            cur.execute(option_query, (question_id_to_delete,))
+            options_deleted_count = cur.rowcount
+            logger.debug(f"Deleted {options_deleted_count} options for question_id {question_id_to_delete}.")
+            
+            # Then delete the question
+            cur.execute(question_query, (question_id_to_delete,))
+            question_deleted_count = cur.rowcount
+            logger.debug(f"Deleted {question_deleted_count} question(s) for question_id {question_id_to_delete}.")
+            
+            if question_deleted_count > 0:
+                self.conn.commit()
+                logger.info(f"Successfully deleted question {question_id_to_delete} and its options.")
+                return True
+            else:
+                # Question might not have existed
+                logger.warning(f"Question {question_id_to_delete} not found for deletion.")
+                self.conn.rollback() # Rollback if question wasn't found (though options might be deleted)
+                return False
+        except (Exception, psycopg2.DatabaseError) as error:
+            logger.error(f"Error deleting question {question_id_to_delete}: {error}")
+            if self.conn: self.conn.rollback()
             return False
+        finally:
+            if cur:
+                cur.close()
 
     def get_question_by_id(self, question_id_to_get):
         """Retrieves a single question by its ID, including its options."""
-        logger.debug(f"[get_question_by_id] Attempting to fetch question by id: {question_id_to_get}")
+        logger.debug(f"[get_question_by_id] Attempting to fetch question_id: {question_id_to_get}")
         query = """
-        SELECT question_id, question_text, image_url, correct_option, explanation
-        FROM questions 
+        SELECT question_id, question_text, image_url, correct_option, explanation, lesson_id
+        FROM questions
         WHERE question_id = %s;
         """
         question_row = self._execute_query(query, (question_id_to_get,), fetch_one=True)
-        if question_row:
-            logger.debug(f"[get_question_by_id] Found raw question row for id {question_id_to_get}.")
-            formatted_list = self._format_questions_with_options([question_row])
-            if formatted_list:
-                logger.debug(f"[get_question_by_id] Successfully formatted question {question_id_to_get}.")
-                return formatted_list[0]
-            else:
-                logger.error(f"[get_question_by_id] Failed to format question {question_id_to_get} after fetching.")
-                return None
+        if not question_row:
+            logger.warning(f"[get_question_by_id] Question with ID {question_id_to_get} not found.")
+            return None
+            
+        # Use list wrapper for compatibility with _format_questions_with_options
+        formatted_questions = self._format_questions_with_options([question_row]) 
+        
+        if formatted_questions:
+            logger.info(f"[get_question_by_id] Successfully retrieved and formatted question {question_id_to_get}.")
+            return formatted_questions[0] # Return the single dictionary
         else:
-            logger.warning(f"[get_question_by_id] No question found for id {question_id_to_get}.")
+            logger.error(f"[get_question_by_id] Failed to format question {question_id_to_get} after retrieval.")
             return None
 
-    # --- Performance Reports Functions --- 
-    def get_user_overall_stats(self, user_id):
+    # --- Utility/Stats Functions (Example) ---
+    def get_user_stats(self, user_id):
+        """Retrieves quiz statistics for a specific user."""
         query = """
         SELECT 
             COUNT(*) as total_quizzes,
-            AVG(percentage) as avg_percentage,
-            AVG(time_taken_seconds) as avg_time
+            AVG(percentage) as average_score,
+            SUM(time_taken_seconds) as total_time
         FROM quiz_results
         WHERE user_id = %s;
         """
         return self._execute_query(query, (user_id,), fetch_one=True)
-
-    def get_user_stats_by_type(self, user_id):
-        query = """
-        SELECT 
-            quiz_type,
-            AVG(percentage) as avg_percentage
-        FROM quiz_results
-        WHERE user_id = %s
-        GROUP BY quiz_type;
-        """
-        return self._execute_query(query, (user_id,), fetch_all=True)
-
-    def get_user_last_quizzes(self, user_id, limit=5):
-        # Updated to fetch more details for display
-        query = """
-        SELECT 
-            quiz_type, 
-            score, 
-            total_questions, 
-            percentage, 
-            time_taken_seconds, 
-            completed_at as timestamp
-        FROM quiz_results
-        WHERE user_id = %s
-        ORDER BY completed_at DESC
-        LIMIT %s;
-        """
-        return self._execute_query(query, (user_id, limit), fetch_all=True)
 
 
