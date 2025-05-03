@@ -122,9 +122,10 @@ else:
     SELECTING_CHAPTER_FOR_LESSON_ADMIN, ADMIN_MANAGE_STRUCTURE,
     ADMIN_MANAGE_GRADES, ADMIN_MANAGE_CHAPTERS, ADMIN_MANAGE_LESSONS,
     INFO_MENU,
+    SHOWING_INFO_CONTENT, # New state for showing info content
     SELECT_CHAPTER_FOR_LESSON_QUIZ,
     SHOWING_RESULTS # New state for showing quiz results
-) = range(34) # Increased range for new states
+) = range(35) # Increased range for new states
 
 # --- Helper Functions ---
 
@@ -447,7 +448,7 @@ def handle_info_selection(update: Update, context: CallbackContext):
     text = f"""*{title}*\n\n{processed_content}"""
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='main_menu')]])
     safe_edit_message_text(query, text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
-    return INFO_MENU
+    return SHOWING_INFO_CONTENT
 
 # --- Quiz Interaction Functions (Corrected Dictionary Access) ---
 
@@ -1164,8 +1165,7 @@ def main() -> None:
             TAKING_QUIZ: [
                 CallbackQueryHandler(handle_quiz_answer, pattern='^answer_\d+_\d+_\d+$'),
                 CallbackQueryHandler(handle_quiz_skip_callback, pattern='^skip_\d+_\d+$'),
-                # Add handler for potential unexpected messages?
-            ],
+                # Add handler for potential unexpected messages?            ],
             SHOWING_RESULTS: [
                  CallbackQueryHandler(quiz_menu, pattern='^menu_quiz$'),
                  CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'),
@@ -1174,8 +1174,10 @@ def main() -> None:
                 CallbackQueryHandler(handle_info_selection, pattern='^info_'),
                 CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'),
             ],
-            ADMIN_MENU: [
-                # Add admin action handlers here (add/delete/show question, manage structure)
+            SHOWING_INFO_CONTENT: [ # New state for info content view
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'), # Back button
+            ],
+            ADMIN_MENU: [               # Add admin action handlers here (add/delete/show question, manage structure)
                 # CallbackQueryHandler(prompt_add_question, pattern='^admin_add_question$'),
                 # CallbackQueryHandler(prompt_delete_question, pattern='^admin_delete_question$'),
                 # CallbackQueryHandler(prompt_show_question, pattern='^admin_show_question$'),
@@ -1190,8 +1192,8 @@ def main() -> None:
             ],
             # Add other admin states (ADDING_QUESTION, etc.) as needed
         },
-        fallbacks=[CommandHandler('start', start)], # Allow restarting
-        per_message=True, # Explicitly track every message/callback
+        fallbacks=[CommandHandler("start", start)], # Allow restarting
+        # per_message=True, # Explicitly track every message/callback
         # per_user=True, per_chat=False # Default is True, True
     )
 
