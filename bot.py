@@ -139,7 +139,7 @@ except ImportError as e:
     SELECT_LESSON_FOR_QUIZ_HIERARCHY, # User is selecting a lesson within a unit (renamed)
     SELECT_QUESTION_COUNT, # NEW: User is selecting number of questions
     CONFIRM_QUIZ_START      # Optional: Confirm before starting quiz by C/U/L
-) = range(44) # Adjusted range
+) = range(41) # Corrected range
 
 # --- Helper Functions ---
 
