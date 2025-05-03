@@ -1221,11 +1221,12 @@ def main() -> None:
             INFO_MENU: [
                 CallbackQueryHandler(handle_info_selection, pattern='^info_'),
                 CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'),
-                        SHOWING_INFO_CONTENT: [ # New state for info content view
-                CallbackQueryHandler(main_menu_callback, pattern=\\'^main_menu$\\'), # Back button
+            ],
+            SHOWING_INFO_CONTENT: [ # New state for info content view
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'), # Back button
             ],
             SHOWING_REPORTS: [ # New state for reports view
-                CallbackQueryHandler(main_menu_callback, pattern=\\'^main_menu$\\'), # Back button
+                CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'), # Back button
             ],
             ADMIN_MENU: [              # Add admin action handlers here (add/delete/show question, manage structure)
                 # CallbackQueryHandler(prompt_add_question, pattern='^admin_add_question$'),
