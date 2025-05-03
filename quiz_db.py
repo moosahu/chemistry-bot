@@ -63,19 +63,41 @@ class QuizDatabase:
         """
         return self._execute_query(query, (user_id, username, first_name, last_name), commit=True)
 
-    # --- Structure Retrieval (Updated based on confirmed structure) --- 
+    # --- Structure Retrieval (NEW: Based on confirmed structure) --- 
     # Assuming these tables and columns exist as confirmed
     def get_all_courses(self):
+        """Retrieves all courses for the new structure."""
+        logger.info("[get_all_courses] Fetching all courses.")
         query = "SELECT course_id, name FROM courses ORDER BY course_id;" # Assuming PK is course_id
         return self._execute_query(query, fetch_all=True)
 
     def get_units_by_course(self, course_id):
+        """Retrieves units for a specific course_id."""
+        logger.info(f"[get_units_by_course] Fetching units for course_id: {course_id}")
         query = "SELECT unit_id, name FROM units WHERE course_id = %s ORDER BY unit_id;" # Assuming PK is unit_id
         return self._execute_query(query, (course_id,), fetch_all=True)
 
     def get_lessons_by_unit(self, unit_id):
+        """Retrieves lessons for a specific unit_id."""
+        logger.info(f"[get_lessons_by_unit] Fetching lessons for unit_id: {unit_id}")
         query = "SELECT lesson_id, name FROM lessons WHERE unit_id = %s ORDER BY lesson_id;" # Assuming PK is lesson_id
         return self._execute_query(query, (unit_id,), fetch_all=True)
+
+    # --- Structure Retrieval (OLD/DEPRECATED - Added back temporarily to prevent AttributeError) --- 
+    def get_all_grade_levels(self):
+        """DEPRECATED: Returns empty list. Bot should use get_all_courses instead."""
+        logger.warning("Called DEPRECATED function get_all_grade_levels. Bot needs update. Returning empty list.")
+        return []
+
+    def get_chapters_by_grade(self, grade_level_id):
+        """DEPRECATED: Returns empty list. Bot should use get_units_by_course instead."""
+        logger.warning(f"Called DEPRECATED function get_chapters_by_grade for grade_id {grade_level_id}. Bot needs update. Returning empty list.")
+        return []
+
+    def get_lessons_by_chapter(self, chapter_id):
+        """DEPRECATED: Returns empty list. Bot should use get_lessons_by_unit instead."""
+        logger.warning(f"Called DEPRECATED function get_lessons_by_chapter for chapter_id {chapter_id}. Bot needs update. Returning empty list.")
+        return []
 
     # --- Question Retrieval --- 
 
@@ -93,10 +115,10 @@ class QuizDatabase:
         if options_result:
             logger.debug(f"[_get_options_for_question] Raw options for question_id {question_id}: {options_result}")
             for opt in options_result:
-                if 1 <= opt['option_index'] <= 4:
-                    options_list[opt['option_index'] - 1] = opt['option_text']
+                if 1 <= opt["option_index"] <= 4:
+                    options_list[opt["option_index"] - 1] = opt["option_text"]
                 else:
-                    logger.warning(f"[_get_options_for_question] Invalid option_index {opt['option_index']} found for question_id {question_id}")
+                    logger.warning(f"[_get_options_for_question] Invalid option_index {opt["option_index"]} found for question_id {question_id}")
         else:
             logger.warning(f"[_get_options_for_question] No options found in DB for question_id: {question_id}")
             
@@ -114,12 +136,12 @@ class QuizDatabase:
             
         for i, q_row in enumerate(question_rows):
             # Ensure q_row is a dictionary-like object
-            if not hasattr(q_row, '__getitem__') or not hasattr(q_row, 'keys'):
+            if not hasattr(q_row, "__getitem__") or not hasattr(q_row, "keys"):
                 logger.error(f"[_format_questions_with_options] Skipping row {i} because it's not a dictionary-like object: {q_row}")
                 continue
                 
             logger.debug(f"[_format_questions_with_options] Processing raw question row {i}: {dict(q_row)}")
-            question_id = q_row.get('question_id') # Use .get for safety
+            question_id = q_row.get("question_id") # Use .get for safety
             if question_id is None:
                 logger.error(f"[_format_questions_with_options] Skipping row {i} due to missing question_id.")
                 continue
@@ -133,7 +155,7 @@ class QuizDatabase:
             if all(opt is None for opt in options):
                  logger.warning(f"[_format_questions_with_options] All options are None for question_id {question_id}. Proceeding, but this might indicate an issue.")
 
-            correct_db_index = q_row.get('correct_option') # 1-based index from DB
+            correct_db_index = q_row.get("correct_option") # 1-based index from DB
             correct_answer_index = None
             if correct_db_index is not None:
                 if 1 <= correct_db_index <= 4:
@@ -148,19 +170,19 @@ class QuizDatabase:
                  logger.warning(f"[_format_questions_with_options] Missing correct_option value for question_id {question_id}. Setting correct_answer index to None.")
 
             question_dict = {
-                'question_id': question_id,
-                'question_text': q_row.get('question_text'),
-                'option1': options[0],
-                'option2': options[1],
-                'option3': options[2],
-                'option4': options[3],
-                'correct_answer': correct_answer_index, # 0-based index or None
-                'explanation': q_row.get('explanation'),
-                'image_url': q_row.get('image_url') 
+                "question_id": question_id,
+                "question_text": q_row.get("question_text"),
+                "option1": options[0],
+                "option2": options[1],
+                "option3": options[2],
+                "option4": options[3],
+                "correct_answer": correct_answer_index, # 0-based index or None
+                "explanation": q_row.get("explanation"),
+                "image_url": q_row.get("image_url") 
             }
             logger.debug(f"[_format_questions_with_options] Formatted question dict {i}: {question_dict}")
             
-            if not question_dict['question_text'] or question_dict['correct_answer'] is None:
+            if not question_dict["question_text"] or question_dict["correct_answer"] is None:
                  logger.error(f"[_format_questions_with_options] Skipping question {question_id} due to missing text or invalid correct answer index.")
                  continue
                  
@@ -317,12 +339,12 @@ class QuizDatabase:
         q_params = (text, image_url, correct_db_index, explanation, lesson_id)
         q_result = self._execute_query(question_query, q_params, fetch_one=True, commit=False) # Commit after options
         
-        if not q_result or 'question_id' not in q_result:
+        if not q_result or "question_id" not in q_result:
             logger.error("Failed to insert question or retrieve question_id.")
             if self.conn: self.conn.rollback()
             return None
             
-        new_question_id = q_result['question_id']
+        new_question_id = q_result["question_id"]
         options_list = [opt1, opt2, opt3, opt4]
         option_query = "INSERT INTO options (question_id, option_index, option_text) VALUES (%s, %s, %s);"
         
