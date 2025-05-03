@@ -955,9 +955,7 @@ def process_answer(update: Update, context: CallbackContext, quiz_id: str, quest
 
     # Provide feedback
     feedback_text = "✅ إجابة صحيحة!" if is_correct else "❌ إجابة خاطئة."
-    if not is_correct and question.get('explanation'):
-        feedback_text += f"\n\n*الشرح:*
-{process_text_with_chemical_notation(question['explanation'])}"
+    if not is_correct and question.get('explanation'):        feedback_text += f"\n\n*الشرح:*\n{process_text_with_chemical_notation(question['explanation'])}""
     elif not is_correct:
          # Show the correct option text if no explanation
          try:
