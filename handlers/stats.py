@@ -82,13 +82,14 @@ def show_my_stats(update: Update, context: CallbackContext) -> int:
     stats_text = "📊 *إحصائياتي الشخصية*\n\n"
     if DB_MANAGER:
         user_stats = DB_MANAGER.get_user_stats(user_id)
-        if user_stats and user_stats["total_quizzes_taken"] > 0:
+        if user_stats and user_stats.get("total_quizzes_taken", 0) > 0: # Use .get for safety
             total_time_str = format_duration(user_stats.get("total_time_seconds", 0))
-            stats_text += f"📝 إجمالي الاختبارات: {user_stats["total_quizzes_taken"]}\n"
-            stats_text += f"✅ مجموع الإجابات الصحيحة: {user_stats["total_correct"]}\n"
-            stats_text += f"❌ مجموع الإجابات الخاطئة: {user_stats["total_wrong"]}\n"
-            stats_text += f"⏭️ مجموع الأسئلة المتخطاة: {user_stats["total_skipped"]}\n"
-            stats_text += f"💯 متوسط النتيجة: {user_stats["average_score"]:.1f}%\n"
+            # Corrected f-strings using single quotes for dictionary keys
+            stats_text += f"📝 إجمالي الاختبارات: {user_stats.get('total_quizzes_taken', 0)}\n"
+            stats_text += f"✅ مجموع الإجابات الصحيحة: {user_stats.get('total_correct', 0)}\n"
+            stats_text += f"❌ مجموع الإجابات الخاطئة: {user_stats.get('total_wrong', 0)}\n"
+            stats_text += f"⏭️ مجموع الأسئلة المتخطاة: {user_stats.get('total_skipped', 0)}\n"
+            stats_text += f"💯 متوسط النتيجة: {user_stats.get('average_score', 0.0):.1f}%\n"
             stats_text += f"⏱️ إجمالي وقت اللعب: {total_time_str}"
         else:
             stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
@@ -115,11 +116,13 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
-                display_name = entry.get("user_display_name", f"User {entry["user_id"]}")
+                # Use .get for safety and provide default values
+                display_name = entry.get("user_display_name", f"User {entry.get('user_id', 'N/A')}")
                 # Escape markdown characters in username
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
                 avg_score = entry.get("average_score", 0.0)
                 quizzes_taken = entry.get("quizzes_taken", 0)
+                # Corrected f-string using single quotes for dictionary keys
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
