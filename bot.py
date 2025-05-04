@@ -7,19 +7,10 @@ import logging
 import sys
 import os
 
-# --- Debugging Prints --- 
-# print(f"DEBUG: Current Working Directory: {os.getcwd()}")
-# print(f"DEBUG: sys.path before modification: {sys.path}")
-
 # --- Add project root to sys.path --- 
-# This ensures modules in subdirectories (database, handlers, etc.) can be imported correctly
 project_root = os.path.dirname(os.path.abspath(__file__))
-# Check if project_root is already in sys.path to avoid duplicates
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-# print(f"DEBUG: Project Root added: {project_root}")
-# print(f"DEBUG: sys.path after modification: {sys.path}")
-# --- End Debugging Prints ---
 
 from telegram.ext import (
     Application,
@@ -31,10 +22,10 @@ from telegram.ext import (
     PicklePersistence, # For storing conversation state across restarts
     CallbackContext # <-- Added missing import
 )
+from telegram import Update # <-- Added missing import for type hinting
 
 # --- Import Configuration and Core Components --- 
 try:
-    # print("DEBUG: Attempting to import config...")
     from config import (
         TELEGRAM_BOT_TOKEN, API_BASE_URL, DATABASE_URL, # Core config
         logger, # Logger instance
@@ -42,42 +33,35 @@ try:
         ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, 
         INFO_MENU, STATS_MENU, SHOW_INFO_DETAIL, END # Conversation states
     )
-    # print("DEBUG: Imported config successfully.")
-    
-    # print("DEBUG: Attempting to import database.schema...")
     from database.schema import setup_database_schema, apply_schema_updates
-    # print("DEBUG: Imported database.schema successfully.")
-
-    # print("DEBUG: Attempting to import handlers...")
     from handlers.common import start_handler, main_menu_handler, main_menu_callback
     from handlers.quiz import quiz_conv_handler
     from handlers.info import info_conv_handler
     from handlers.stats import stats_conv_handler
-    # print("DEBUG: Imported handlers successfully.")
 
 except ImportError as e:
-    # Basic logging if config fails
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger(__name__)
     logger.critical(f"Failed to import core modules: {e}. Bot cannot start.")
-    # Print sys.path again on failure for easier debugging
-    # print(f"DEBUG: sys.path on ImportError: {sys.path}") 
     exit(1)
 except Exception as e:
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger(__name__)
     logger.critical(f"An unexpected error occurred during imports: {e}. Bot cannot start.")
-    # Print sys.path again on failure for easier debugging
-    # print(f"DEBUG: sys.path on Exception: {sys.path}") 
     exit(1)
 
 # --- Error Handler --- 
-def error_handler(update: object, context: CallbackContext) -> None:
+# Corrected: Defined as async def
+async def error_handler(update: object, context: CallbackContext) -> None:
     """Log Errors caused by Updates."""
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
     # Optionally, notify the user or admin about the error
-    # Example: if update and hasattr(update, "effective_chat") and update.effective_chat:
-    #     context.bot.send_message(chat_id=update.effective_chat.id, text="حدث خطأ ما. يرجى المحاولة مرة أخرى لاحقاً.")
+    # Example: 
+    # if isinstance(update, Update) and update.effective_chat:
+    #     try:
+    #         await context.bot.send_message(chat_id=update.effective_chat.id, text="حدث خطأ ما. يرجى المحاولة مرة أخرى لاحقاً.")
+    #     except Exception as send_error:
+    #         logger.error(f"Failed to send error message to user: {send_error}")
 
 # --- Main Function --- 
 def main() -> None:
@@ -89,29 +73,21 @@ def main() -> None:
     try:
         if not setup_database_schema():
             logger.error("Database initial schema setup failed. Check connection and schema script.")
-            # Decide if bot should continue without DB or exit
-            # exit(1) # Uncomment to exit if DB setup is critical
         else:
             logger.info("Initial schema setup/check successful.")
-            # Apply any pending updates
             if not apply_schema_updates():
                 logger.warning("Applying schema updates failed. Bot will continue, but some features might be affected.")
             else:
                 logger.info("Schema updates applied successfully.")
     except Exception as db_exc:
         logger.error(f"Error during database setup: {db_exc}")
-        # Decide if bot should continue or exit
-        # exit(1)
 
     # --- Persistence --- 
-    # Use PicklePersistence to save conversation states across restarts
-    # Note: For production, consider using a database-backed persistence layer
     try:
         persistence = PicklePersistence(filepath="bot_conversation_persistence.pkl")
         logger.info("PicklePersistence configured.")
     except Exception as pers_exc:
         logger.error(f"Error configuring persistence: {pers_exc}")
-        # Decide if bot should continue without persistence
         persistence = None # Continue without persistence
 
     # --- Application Setup --- 
@@ -128,29 +104,20 @@ def main() -> None:
         exit(1)
 
     # --- Main Conversation Handler --- 
-    # This handler manages the top-level states (MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU)
-    # It delegates to specific conversation handlers (quiz_conv_handler, etc.) for sub-flows
     main_conv_handler = ConversationHandler(
         entry_points=[start_handler], # Start with /start
         states={
             MAIN_MENU: [
-                # Entry point for sub-conversations
                 quiz_conv_handler, 
                 info_conv_handler,
                 stats_conv_handler,
-                # Handle direct return to main menu (e.g., from sub-menus)
                 main_menu_handler, 
-                # Fallback within MAIN_MENU if no other handler matches
                 CallbackQueryHandler(main_menu_callback) 
             ],
-            # Other top-level states could be added here if needed
         },
         fallbacks=[
-            start_handler, # Allow restarting with /start
-            # Add a generic fallback message for the main conversation?
-            # MessageHandler(filters.ALL, lambda u, c: main_fallback(u, c)) # Consider if needed
+            start_handler, 
         ],
-        # Use persistence for conversation state
         persistent=True,
         name="main_conversation" # Name for persistence
     )
