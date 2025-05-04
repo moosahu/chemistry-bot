@@ -37,20 +37,20 @@ except ImportError as e:
     MAIN_MENU, TAKING_QUIZ, SHOWING_RESULTS = 0, 5, 6 # Match config.py
     QUESTION_TIMER_SECONDS, FEEDBACK_DELAY, ENABLE_QUESTION_TIMER = 60, 1.5, True
     NUM_OPTIONS = 4
-    def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
-    def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
+    async def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
+    async def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
     def remove_job_if_exists(*args, **kwargs): logger.warning("Placeholder remove_job_if_exists called!"); return False
     def create_main_menu_keyboard(*args, **kwargs): logger.error("Placeholder create_main_menu_keyboard called!"); return None
-    def fetch_from_api(*args, **kwargs): logger.error("Placeholder fetch_from_api called!"); return None
+    async def fetch_from_api(*args, **kwargs): logger.error("Placeholder fetch_from_api called!"); return None
     def transform_api_question(q): logger.error("Placeholder transform_api_question called!"); return q # Passthrough
     # Dummy DB_MANAGER
     class DummyDBManager:
-        def save_quiz_result(*args, **kwargs): logger.warning("Dummy DB_MANAGER.save_quiz_result called"); return True
+        async def save_quiz_result(*args, **kwargs): logger.warning("Dummy DB_MANAGER.save_quiz_result called"); return True
     DB_MANAGER = DummyDBManager()
 
 # --- Timer Callback --- 
 
-def question_timer_callback(context: CallbackContext):
+async def question_timer_callback(context: CallbackContext):
     """Handles the timeout for a single question."""
     job_context = context.job.context
     chat_id = job_context["chat_id"]
@@ -72,17 +72,17 @@ def question_timer_callback(context: CallbackContext):
             not quiz_data.get("finished")):
 
         logger.info(f"[QUIZ LOGIC] Question {question_index + 1} timed out for user {user_id}.")
-        safe_send_message(context.bot, chat_id, text=f"⏰ انتهى وقت السؤال {question_index + 1}! سيتم اعتباره متخطى.")
+        await safe_send_message(context.bot, chat_id, text=f"⏰ انتهى وقت السؤال {question_index + 1}! سيتم اعتباره متخطى.")
 
         # Call the skip handler, marking it as timed out
         # Pass the bot object explicitly if needed by handle_quiz_skip
-        handle_quiz_skip(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=True)
+        await handle_quiz_skip(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=True)
     else:
         logger.info(f"[TIMER] Quiz {quiz_id} ended or question {question_index} already handled, ignoring timer.")
 
 # --- Quiz Core Functions --- 
 
-def start_quiz_logic(update: Update, context: CallbackContext) -> int:
+async def start_quiz_logic(update: Update, context: CallbackContext) -> int:
     """Fetches questions, initializes quiz state, and sends the first question.
        This is the core logic called by the quiz conversation handler.
     """
@@ -95,10 +95,10 @@ def start_quiz_logic(update: Update, context: CallbackContext) -> int:
     quiz_selection = context.user_data.get("quiz_selection")
     if not quiz_selection or "type" not in quiz_selection or "count" not in quiz_selection:
         logger.error(f"[QUIZ LOGIC] start_quiz called for user {user_id} without complete quiz_selection.")
-        safe_send_message(context.bot, chat_id, text="حدث خطأ أثناء بدء الاختبار (لم يتم تحديد نوع أو عدد الأسئلة). يرجى المحاولة مرة أخرى.")
+        await safe_send_message(context.bot, chat_id, text="حدث خطأ أثناء بدء الاختبار (لم يتم تحديد نوع أو عدد الأسئلة). يرجى المحاولة مرة أخرى.")
         # Go back to main menu as quiz setup failed
         kb = create_main_menu_keyboard(user_id)
-        safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
+        await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
         return MAIN_MENU
 
     quiz_type = quiz_selection["type"] # e.g., "random", "lesson", "unit", "course"
@@ -109,18 +109,18 @@ def start_quiz_logic(update: Update, context: CallbackContext) -> int:
     # Validate num_questions
     if not isinstance(num_questions, int) or num_questions <= 0:
         logger.error(f"[QUIZ LOGIC] Invalid number of questions ({num_questions}) for user {user_id}. Aborting quiz start.")
-        safe_send_message(context.bot, chat_id, text=f"عدد الأسئلة غير صالح ({num_questions}). يرجى المحاولة مرة أخرى.")
+        await safe_send_message(context.bot, chat_id, text=f"عدد الأسئلة غير صالح ({num_questions}). يرجى المحاولة مرة أخرى.")
         kb = create_main_menu_keyboard(user_id)
-        safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
+        await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
         return MAIN_MENU
 
     # Ensure num_questions doesn't exceed max available
     num_questions = min(num_questions, max_available)
     if num_questions <= 0:
          logger.error(f"[QUIZ LOGIC] No questions available ({max_available}) for user {user_id}. Aborting quiz start.")
-         safe_send_message(context.bot, chat_id, text="لا توجد أسئلة متاحة لهذا الاختيار. لا يمكن بدء الاختبار.")
+         await safe_send_message(context.bot, chat_id, text="لا توجد أسئلة متاحة لهذا الاختيار. لا يمكن بدء الاختبار.")
          kb = create_main_menu_keyboard(user_id)
-         safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
+         await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
          return MAIN_MENU
 
     logger.info(f"[QUIZ LOGIC] Starting quiz for user {user_id}: type={quiz_type}, scope={quiz_scope_id}, count={num_questions}")
@@ -140,20 +140,20 @@ def start_quiz_logic(update: Update, context: CallbackContext) -> int:
         # params = {"limit": num_questions * 2} 
 
     logger.info(f"[API] Fetching {num_questions} questions from {questions_endpoint} with params {params}")
-    api_questions_response = fetch_from_api(questions_endpoint, params=params)
+    api_questions_response = await fetch_from_api(questions_endpoint, params=params)
 
     # --- Handle API Response --- 
     if api_questions_response == "TIMEOUT":
         logger.error(f"[API] Timeout fetching questions for quiz start (user {user_id}).")
-        safe_send_message(context.bot, chat_id, text="⏳ تعذر تحميل أسئلة الاختبار (مهلة الاتصال). يرجى المحاولة مرة أخرى لاحقاً.")
+        await safe_send_message(context.bot, chat_id, text="⏳ تعذر تحميل أسئلة الاختبار (مهلة الاتصال). يرجى المحاولة مرة أخرى لاحقاً.")
         kb = create_main_menu_keyboard(user_id)
-        safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
+        await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
         return MAIN_MENU
     elif not isinstance(api_questions_response, list):
         logger.error(f"[API] Failed to fetch questions or invalid format for quiz start (user {user_id}). Response: {api_questions_response}")
-        safe_send_message(context.bot, chat_id, text="⚠️ تعذر تحميل أسئلة الاختبار أو أن التنسيق غير صالح. يرجى المحاولة مرة أخرى لاحقاً.")
+        await safe_send_message(context.bot, chat_id, text="⚠️ تعذر تحميل أسئلة الاختبار أو أن التنسيق غير صالح. يرجى المحاولة مرة أخرى لاحقاً.")
         kb = create_main_menu_keyboard(user_id)
-        safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
+        await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
         return MAIN_MENU
 
     # --- Transform and Validate Questions --- 
@@ -175,9 +175,9 @@ def start_quiz_logic(update: Update, context: CallbackContext) -> int:
 
     if num_questions == 0:
         logger.error(f"[QUIZ LOGIC] No valid questions found after API fetch and transformation for user {user_id}. Aborting.")
-        safe_send_message(context.bot, chat_id, text="لم يتم العثور على أسئلة صالحة لهذا الاختبار. يرجى المحاولة مرة أخرى أو اختيار موضوع آخر.")
+        await safe_send_message(context.bot, chat_id, text="لم يتم العثور على أسئلة صالحة لهذا الاختبار. يرجى المحاولة مرة أخرى أو اختيار موضوع آخر.")
         kb = create_main_menu_keyboard(user_id)
-        safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
+        await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
         return MAIN_MENU
 
     # --- Initialize Quiz State in user_data --- 
@@ -202,11 +202,11 @@ def start_quiz_logic(update: Update, context: CallbackContext) -> int:
     logger.info(f"[QUIZ LOGIC] Initialized quiz {quiz_id} for user {user_id} with {num_questions} questions.")
 
     # --- Send the First Question --- 
-    send_question(context.bot, chat_id, user_id, quiz_id, 0, context)
+    await send_question(context.bot, chat_id, user_id, quiz_id, 0, context)
 
     return TAKING_QUIZ # Transition to the quiz-taking state
 
-def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext):
+async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext):
     """Sends a specific question to the user, including text, image, and options."""
     user_data = context.user_data
     quiz_data = user_data.get("current_quiz")
@@ -223,7 +223,7 @@ def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_index:
     quiz_data["current_question_index"] = question_index # Update current index
 
     # --- Prepare Question Text and Media --- 
-    question_text = f"*السؤال {question_index + 1} من {quiz_data['total_questions']}*\n\n" # Corrected f-string
+    question_text = f"*السؤال {question_index + 1} من {quiz_data["total_questions"]}*\n\n" # Corrected f-string
     if question.get("question_text"):
         question_text += question["question_text"]
     
@@ -278,7 +278,7 @@ def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_index:
     try:
         if main_image_url:
             logger.debug(f"[QUIZ LOGIC] Sending question {question_index} with image: {main_image_url}")
-            sent_message = bot.send_photo(
+            sent_message = await bot.send_photo(
                 chat_id=chat_id,
                 photo=main_image_url,
                 caption=question_text,
@@ -287,7 +287,7 @@ def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_index:
             )
         else:
             logger.debug(f"[QUIZ LOGIC] Sending question {question_index} as text.")
-            sent_message = safe_send_message(
+            sent_message = await safe_send_message(
                 bot,
                 chat_id=chat_id,
                 text=question_text,
@@ -302,476 +302,320 @@ def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_index:
                 # Corrected re.sub replacement string - remove newline
                 plain_text = re.sub(r"[*_`[\]()~>#+-=|{}.!]", r"\\\1", question_text) # Escape markdown chars
                 if main_image_url:
-                     sent_message = bot.send_photo(chat_id=chat_id, photo=main_image_url, caption=plain_text, reply_markup=reply_markup)
+                     sent_message = await bot.send_photo(chat_id=chat_id, photo=main_image_url, caption=plain_text, reply_markup=reply_markup)
                 else:
-                     sent_message = safe_send_message(bot, chat_id=chat_id, text=plain_text, reply_markup=reply_markup)
+                     sent_message = await safe_send_message(bot, chat_id=chat_id, text=plain_text, reply_markup=reply_markup)
             except Exception as fallback_e:
                  logger.error(f"[QUIZ LOGIC] Failed to send question {question_index} even as plain text: {fallback_e}")
-                 safe_send_message(bot, chat_id, text="حدث خطأ فادح أثناء إرسال السؤال. سيتم إنهاء الاختبار.")
-                 end_quiz(bot, chat_id, user_id, quiz_id, context, error=True)
+                 await safe_send_message(bot, chat_id, text="حدث خطأ فادح أثناء إرسال السؤال. سيتم إنهاء الاختبار.")
+                 await end_quiz(bot, chat_id, user_id, quiz_id, context, error=True)
                  return
         else:
              # Other BadRequest (e.g., invalid image URL)
-             safe_send_message(bot, chat_id, text="حدث خطأ أثناء إرسال السؤال (قد يكون بسبب الصورة). سيتم تخطي هذا السؤال.")
-             handle_quiz_skip(bot, chat_id, user_id, quiz_id, question_index, context, error=True)
-             return
+             await safe_send_message(bot, chat_id, text="حدث خطأ أثناء إرسال السؤال (قد يكون رابط الصورة غير صالح). سيتم تخطي هذا السؤال.")
+             # Skip this question automatically
+             await handle_quiz_skip(bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False, error_skip=True)
+             return # Stop further processing for this question
     except Exception as e:
         logger.exception(f"[QUIZ LOGIC] Unexpected error sending question {question_index} to {chat_id}: {e}")
-        safe_send_message(bot, chat_id, text="حدث خطأ غير متوقع أثناء إرسال السؤال. سيتم تخطي هذا السؤال.")
-        handle_quiz_skip(bot, chat_id, user_id, quiz_id, question_index, context, error=True)
+        await safe_send_message(bot, chat_id, text="حدث خطأ غير متوقع أثناء إرسال السؤال. سيتم إنهاء الاختبار.")
+        await end_quiz(bot, chat_id, user_id, quiz_id, context, error=True)
         return
 
-    # --- Store Message ID and Set Timer --- 
     if sent_message:
         quiz_data["last_question_message_id"] = sent_message.message_id
-        logger.debug(f"[QUIZ LOGIC] Question {question_index} sent (msg_id: {sent_message.message_id}).")
-
+        # --- Start Question Timer --- 
         if ENABLE_QUESTION_TIMER and QUESTION_TIMER_SECONDS > 0:
-            job_name = f"qtimer_{chat_id}_{user_id}_{quiz_id}_{question_index}" # Unique job name
-            remove_job_if_exists(job_name, context) # Remove previous timer just in case
-            timer_job = context.job_queue.run_once(
+            job_name = f"qtimer_{chat_id}_{quiz_id}_{question_index}"
+            # Remove previous timer if exists
+            remove_job_if_exists(job_name, context)
+            # Schedule new timer
+            context.job_queue.run_once(
                 question_timer_callback,
                 QUESTION_TIMER_SECONDS,
                 context={"chat_id": chat_id, "user_id": user_id, "quiz_id": quiz_id, "question_index": question_index},
                 name=job_name
             )
-            if timer_job:
-                quiz_data["question_timer_job_name"] = job_name
-                logger.info(f"[TIMER] Set question timer ({QUESTION_TIMER_SECONDS}s) for q:{question_index} quiz:{quiz_id}. Job: {job_name}")
-            else:
-                 logger.error(f"[TIMER] Failed to set question timer job for q:{question_index} quiz:{quiz_id}")
-                 quiz_data["question_timer_job_name"] = None
+            quiz_data["question_timer_job_name"] = job_name
+            logger.info(f"[QUIZ LOGIC] Started timer ({QUESTION_TIMER_SECONDS}s) for question {question_index}, job: {job_name}")
     else:
-        logger.error(f"[QUIZ LOGIC] Failed to send question {question_index} and get message ID.")
-        safe_send_message(bot, chat_id, text="فشل إرسال السؤال. سيتم تخطيه.")
-        handle_quiz_skip(bot, chat_id, user_id, quiz_id, question_index, context, error=True)
+        logger.error(f"[QUIZ LOGIC] Failed to get message_id after sending question {question_index}. Timer not started.")
 
-def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
-    """Handles user's answer selection via callback query.
-       Returns the next state (TAKING_QUIZ or SHOWING_RESULTS).
-    """
+async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
+    """Handles user's answer selection via inline keyboard button."""
     query = update.callback_query
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    user_id = user.id
-    query.answer() # Acknowledge callback
+    await query.answer() # Acknowledge the button press
+
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
+    callback_data = query.data
 
     # --- Parse Callback Data --- 
-    match = re.match(r"quiz_([^_]+)_ans_(\d+)_(\d+)", query.data) # Corrected regex
+    # Expected format: "quiz_{quiz_id}_ans_{question_index}_{answer_index}"
+    match = re.match(r"quiz_([^_]+)_ans_(\d+)_(\d+)", callback_data)
     if not match:
-        logger.warning(f"[QUIZ LOGIC] Invalid answer callback data: {query.data}")
-        return TAKING_QUIZ # Ignore invalid callback
+        logger.warning(f"[QUIZ CB] Invalid answer callback data format: {callback_data}")
+        await safe_send_message(context.bot, chat_id, text="حدث خطأ في بيانات الاستجابة. حاول مرة أخرى.")
+        return TAKING_QUIZ # Stay in the same state
 
-    quiz_id = match.group(1)
-    question_index = int(match.group(2))
-    selected_answer_index = int(match.group(3))
+    quiz_id_cb = match.group(1)
+    question_index_cb = int(match.group(2))
+    answer_index_cb = int(match.group(3))
 
+    # --- Validate Quiz State --- 
     user_data = context.user_data
     quiz_data = user_data.get("current_quiz")
-
-    # --- Validations --- 
-    if not quiz_data or quiz_data.get("quiz_id") != quiz_id or quiz_data.get("finished"):
-        logger.warning(f"[QUIZ LOGIC] Answer received for inactive/mismatched quiz {quiz_id} from user {user_id}")
-        safe_edit_message_text(query, text="هذا الاختبار لم يعد نشطاً.", reply_markup=None)
-        return TAKING_QUIZ # Stay in state, but message indicates issue
-
-    if question_index != quiz_data.get("current_question_index"):
-        logger.warning(f"[QUIZ LOGIC] Answer received for non-current question (q:{question_index}, current:{quiz_data.get('current_question_index')}) quiz:{quiz_id} user:{user_id}")
-        safe_send_message(context.bot, chat_id, text="لقد أجبت على سؤال سابق. لا يمكن تغيير الإجابة.")
+    if not quiz_data or quiz_data.get("quiz_id") != quiz_id_cb or quiz_data.get("finished"):
+        logger.warning(f"[QUIZ CB] Answer received for inactive/mismatched quiz {quiz_id_cb} user {user_id}")
+        await safe_edit_message_text(query.message, text="انتهى هذا الاختبار أو أنك في اختبار آخر.")
+        return TAKING_QUIZ # Or maybe MAIN_MENU?
+    if question_index_cb != quiz_data["current_question_index"]:
+        logger.warning(f"[QUIZ CB] Answer received for non-current question (cb:{question_index_cb}, current:{quiz_data["current_question_index"]}) quiz {quiz_id_cb}")
+        await safe_edit_message_text(query.message, text="لقد تم الرد على هذا السؤال بالفعل أو تم تخطيه.")
         return TAKING_QUIZ
 
-    if quiz_data["answers"][question_index] is not None:
-        logger.warning(f"[QUIZ LOGIC] Question {question_index} already answered for quiz {quiz_id} user {user_id}. Ignoring.")
-        safe_send_message(context.bot, chat_id, text="لقد أجبت على هذا السؤال بالفعل.")
-        return TAKING_QUIZ
-
-    # --- Process Answer --- 
-    logger.info(f"[QUIZ LOGIC] User {user_id} answered q:{question_index} with opt:{selected_answer_index} for quiz:{quiz_id}")
-
-    # Remove question timer
+    # --- Stop Timer --- 
     timer_job_name = quiz_data.get("question_timer_job_name")
     if timer_job_name:
-        remove_job_if_exists(timer_job_name, context)
-        quiz_data["question_timer_job_name"] = None
+        if remove_job_if_exists(timer_job_name, context):
+            logger.info(f"[QUIZ CB] Removed timer job {timer_job_name} for question {question_index_cb}.")
+        quiz_data["question_timer_job_name"] = None # Clear job name
 
-    question = quiz_data["questions"][question_index]
-    correct_answer_index = question["correct_answer"] # This is the 0-based index from API/transform
-    is_correct = (selected_answer_index == correct_answer_index)
+    # --- Process Answer --- 
+    question = quiz_data["questions"][question_index_cb]
+    correct_answer_index = question.get("correct_option_index")
+    is_correct = (answer_index_cb == correct_answer_index)
 
-    quiz_data["answers"][question_index] = selected_answer_index # Store user's choice index
-
-    # --- Provide Feedback --- 
+    quiz_data["answers"][question_index_cb] = answer_index_cb # Record user's choice
     feedback_text = ""
     if is_correct:
         quiz_data["correct_count"] += 1
         feedback_text = "✅ إجابة صحيحة!"
+        logger.info(f"[QUIZ CB] User {user_id} answered q:{question_index_cb} correctly ({answer_index_cb}). Quiz: {quiz_id_cb}")
     else:
         quiz_data["wrong_count"] += 1
-        feedback_text = f"❌ إجابة خاطئة." 
-        # Provide correct answer text/image indication
-        correct_option_text = question.get(f"option{correct_answer_index + 1}")
-        correct_option_image = question.get(f"option{correct_answer_index + 1}_image")
-        if correct_option_text:
-             feedback_text += f" الإجابة الصحيحة: {correct_option_text}"
-        elif correct_option_image:
-             feedback_text += f" (الإجابة الصحيحة كانت خيار صورة)"
+        feedback_text = f"❌ إجابة خاطئة. الإجابة الصحيحة هي الخيار رقم {correct_answer_index + 1}."
+        logger.info(f"[QUIZ CB] User {user_id} answered q:{question_index_cb} incorrectly ({answer_index_cb}, correct: {correct_answer_index}). Quiz: {quiz_id_cb}")
+
+    # Add explanation if available
+    if question.get("explanation"):
+        feedback_text += f"\n\n*الشرح:* {question['explanation']}"
+
+    # --- Update Message with Feedback --- 
+    # Edit the original question message to show feedback and disable buttons
+    original_message_text = query.message.caption if query.message.photo else query.message.text
+    new_text = original_message_text + "\n\n" + feedback_text
+    try:
+        if query.message.photo:
+            # Can't easily edit caption AND remove keyboard with send_photo, 
+            # maybe send a new message or edit text only?
+            # For simplicity, let's just edit the caption text if possible, keeping photo
+            # Note: Editing media message markup might require specific handling or might not be fully supported.
+            # await query.edit_message_caption(caption=new_text, parse_mode="Markdown") # Might fail to remove keyboard
+            # Alternative: Send feedback as a new message
+            await safe_send_message(context.bot, chat_id, text=feedback_text, parse_mode="Markdown")
+            # Try removing keyboard from original photo message (might fail)
+            try: await query.edit_message_reply_markup(reply_markup=None)
+            except: pass
         else:
-             # Fallback if correct option index is somehow invalid (shouldn't happen)
-             feedback_text += f" (الإجابة الصحيحة: الخيار {correct_answer_index + 1})"
-        
-        # Add explanation if available
-        if question.get("explanation"):
-            feedback_text += f"\n\n*توضيح:* {question['explanation']}" # Corrected f-string
+            await safe_edit_message_text(query.message, text=new_text, reply_markup=None, parse_mode="Markdown")
+    except BadRequest as e:
+        logger.error(f"[QUIZ CB] BadRequest editing message for feedback q:{question_index_cb}: {e}")
+        # If editing fails, send feedback as a new message
+        await safe_send_message(context.bot, chat_id, text=feedback_text, parse_mode="Markdown")
+    except Exception as e:
+        logger.exception(f"[QUIZ CB] Unexpected error editing message for feedback q:{question_index_cb}: {e}")
+        await safe_send_message(context.bot, chat_id, text=feedback_text, parse_mode="Markdown") # Send as new message on error
 
-    # Edit the original question message to show feedback and remove buttons
-    original_message_id = quiz_data.get("last_question_message_id")
-    if original_message_id:
-        try:
-            # Get the original caption/text to append feedback
-            original_caption = query.message.caption # Might be None
-            original_text_body = query.message.text # Might be None
-            
-            # Construct the base text (question text without the header)
-            base_text = ""
-            if original_caption:
-                # Corrected regex pattern
-                base_text = re.sub(r"^\*السؤال \d+ من \d+\*\n\n", "", original_caption, 1)
-            elif original_text_body:
-                # Corrected regex pattern
-                base_text = re.sub(r"^\*السؤال \d+ من \d+\*\n\n", "", original_text_body, 1)
-            
-            # Combine base text and feedback
-            new_content = f"{base_text}\n\n---\n*{feedback_text}*"
-            
-            if query.message.photo:
-                context.bot.edit_message_caption(
-                    chat_id=chat_id,
-                    message_id=original_message_id,
-                    caption=new_content,
-                    parse_mode="Markdown",
-                    reply_markup=None # Remove keyboard
-                )
-            else:
-                # Use safe_edit_message_text with bot, chat_id, message_id
-                safe_edit_message_text(
-                     context.bot,
-                     text=new_content,
-                     chat_id=chat_id,
-                     message_id=original_message_id,
-                     parse_mode="Markdown",
-                     reply_markup=None # Remove keyboard
-                 )
-            logger.debug(f"[QUIZ LOGIC] Edited message {original_message_id} with feedback for q:{question_index}")
-        except BadRequest as e:
-            if "Message is not modified" in str(e):
-                logger.info(f"[QUIZ LOGIC] Feedback message for q:{question_index} not modified.")
-            elif "message can't be edited" in str(e): # Corrected error check string
-                 logger.warning(f"[QUIZ LOGIC] Message for q:{question_index} cannot be edited (likely too old). Sending feedback as new message.")
-                 safe_send_message(context.bot, chat_id, text=feedback_text, parse_mode="Markdown")
-            else:
-                logger.error(f"[QUIZ LOGIC] Error editing message for feedback q:{question_index}: {e}")
-                safe_send_message(context.bot, chat_id, text=feedback_text, parse_mode="Markdown") # Fallback
-        except Exception as e:
-            logger.exception(f"[QUIZ LOGIC] Unexpected error providing feedback for q:{question_index}: {e}")
-            safe_send_message(context.bot, chat_id, text=feedback_text, parse_mode="Markdown") # Fallback
-    else:
-        logger.warning(f"[QUIZ LOGIC] last_question_message_id missing for q:{question_index}. Sending feedback as new message.")
-        safe_send_message(context.bot, chat_id, text=feedback_text, parse_mode="Markdown")
+    # --- Delay and Move to Next Question or End Quiz --- 
+    time.sleep(FEEDBACK_DELAY) # Pause briefly to show feedback
 
-    # --- Proceed to Next Question or Show Results --- 
-    next_question_index = question_index + 1
+    next_question_index = question_index_cb + 1
     if next_question_index < quiz_data["total_questions"]:
-        # Schedule sending the next question after a delay
-        context.job_queue.run_once(
-            lambda ctx: send_question(ctx.bot, chat_id, user_id, quiz_id, next_question_index, ctx),
-            FEEDBACK_DELAY,
-            context=context # Pass the whole context
-        )
-        logger.debug(f"[QUIZ LOGIC] Scheduled next question ({next_question_index}) after {FEEDBACK_DELAY}s delay.")
-        return TAKING_QUIZ # Stay in taking quiz state
+        await send_question(context.bot, chat_id, user_id, quiz_id_cb, next_question_index, context)
+        return TAKING_QUIZ
     else:
         # Quiz finished
-        logger.info(f"[QUIZ LOGIC] Quiz {quiz_id} finished for user {user_id}. Correct: {quiz_data['correct_count']}, Wrong: {quiz_data['wrong_count']}, Skipped: {quiz_data['skipped_count']}")
-        quiz_data["finished"] = True
-        # Schedule showing results after a delay
-        context.job_queue.run_once(
-            lambda ctx: show_results(ctx.bot, chat_id, user_id, quiz_id, ctx),
-            FEEDBACK_DELAY,
-            context=context
-        )
-        logger.debug(f"[QUIZ LOGIC] Scheduled showing results after {FEEDBACK_DELAY}s delay.")
-        return SHOWING_RESULTS # Transition state
+        logger.info(f"[QUIZ CB] Quiz {quiz_id_cb} finished for user {user_id}.")
+        return await end_quiz(context.bot, chat_id, user_id, quiz_id_cb, context)
 
-def handle_quiz_skip(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext, timed_out: bool = False, error: bool = False):
-    """Handles skipping a question (by user, timeout, or error). Does NOT return state."""
+async def handle_quiz_skip(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext, timed_out: bool = False, error_skip: bool = False):
+    """Handles skipping a question, either by user action, timeout, or error."""
     user_data = context.user_data
     quiz_data = user_data.get("current_quiz")
 
-    # --- Validations --- 
+    # --- Validate Quiz State --- 
     if not quiz_data or quiz_data.get("quiz_id") != quiz_id or quiz_data.get("finished"):
-        logger.warning(f"[QUIZ LOGIC] Skip called for inactive/mismatched quiz {quiz_id} user {user_id}")
-        return
-
-    # Check if already processed (e.g., answered just before timeout/skip)
-    if quiz_data["answers"][question_index] is not None:
-        logger.info(f"[QUIZ LOGIC] Question {question_index} already answered/skipped for quiz {quiz_id}. Ignoring skip action.")
-        return
-
-    # Corrected logging f-string
-    logger.info(f"[QUIZ LOGIC] Skipping q:{question_index} for quiz:{quiz_id} user:{user_id} (TimedOut: {timed_out}, Error: {error})")
-
-    # Remove question timer if skip was initiated by user or error (not timeout)
-    if not timed_out:
-        timer_job_name = quiz_data.get("question_timer_job_name")
-        if timer_job_name:
-            remove_job_if_exists(timer_job_name, context)
-            quiz_data["question_timer_job_name"] = None
-
-    # Mark as skipped (-1)
-    quiz_data["answers"][question_index] = -1
-    quiz_data["skipped_count"] += 1
-
-    # --- Provide Feedback (Optional for skip, unless error) --- 
-    feedback_text = "⏭️ تم تخطي السؤال."
-    if error:
-        feedback_text = "⚠️ حدث خطأ، تم تخطي السؤال."
-    elif timed_out:
-        feedback_text = "⏰ انتهى الوقت، تم تخطي السؤال."
-        
-    # Edit the original message to show skip feedback and remove buttons
-    original_message_id = quiz_data.get("last_question_message_id")
-    if original_message_id:
-        try:
-            # Get the original caption/text to append feedback
-            # (Similar logic as in handle_quiz_answer)
-            original_caption = None
-            original_text_body = None
-            # Need to access the message object, which might not be available directly here
-            # If called from callback, query.message exists. If called from timer, it doesn't.
-            # Simplification: Just send a new message for skip feedback.
-            # logger.debug(f"Sending skip feedback as new message for q:{question_index}")
-            # safe_send_message(bot, chat_id, text=feedback_text)
-            
-            # Attempt to edit anyway, might work if context has message
-            message_to_edit = context.effective_message # Try getting message from context
-            if message_to_edit and message_to_edit.message_id == original_message_id:
-                original_caption = message_to_edit.caption
-                original_text_body = message_to_edit.text
-            
-                base_text = ""
-                if original_caption:
-                    base_text = re.sub(r"^\*السؤال \d+ من \d+\*\n\n", "", original_caption, 1)
-                elif original_text_body:
-                    base_text = re.sub(r"^\*السؤال \d+ من \d+\*\n\n", "", original_text_body, 1)
-                
-                new_content = f"{base_text}\n\n---\n*{feedback_text}*"
-                
-                if message_to_edit.photo:
-                    bot.edit_message_caption(chat_id=chat_id, message_id=original_message_id, caption=new_content, parse_mode="Markdown", reply_markup=None)
-                else:
-                    safe_edit_message_text(bot, text=new_content, chat_id=chat_id, message_id=original_message_id, parse_mode="Markdown", reply_markup=None)
-                logger.debug(f"[QUIZ LOGIC] Edited message {original_message_id} with skip feedback for q:{question_index}")
-            else:
-                 logger.warning(f"[QUIZ LOGIC] Could not find original message {original_message_id} to edit for skip feedback q:{question_index}. Sending new message.")
-                 safe_send_message(bot, chat_id, text=feedback_text, parse_mode="Markdown")
-                 
-        except BadRequest as e:
-            if "Message is not modified" in str(e):
-                logger.info(f"[QUIZ LOGIC] Skip feedback message for q:{question_index} not modified.")
-            elif "message can't be edited" in str(e):
-                 logger.warning(f"[QUIZ LOGIC] Message for q:{question_index} cannot be edited for skip feedback. Sending new message.")
-                 safe_send_message(bot, chat_id, text=feedback_text, parse_mode="Markdown")
-            else:
-                logger.error(f"[QUIZ LOGIC] Error editing message for skip feedback q:{question_index}: {e}")
-                safe_send_message(bot, chat_id, text=feedback_text, parse_mode="Markdown") # Fallback
-        except Exception as e:
-            logger.exception(f"[QUIZ LOGIC] Unexpected error providing skip feedback for q:{question_index}: {e}")
-            safe_send_message(bot, chat_id, text=feedback_text, parse_mode="Markdown") # Fallback
-    else:
-        logger.warning(f"[QUIZ LOGIC] last_question_message_id missing for skip q:{question_index}. Sending feedback as new message.")
-        safe_send_message(bot, chat_id, text=feedback_text, parse_mode="Markdown")
-
-    # --- Proceed to Next Question or Show Results --- 
-    next_question_index = question_index + 1
-    if next_question_index < quiz_data["total_questions"]:
-        # Schedule sending the next question after a delay
-        context.job_queue.run_once(
-            lambda ctx: send_question(ctx.bot, chat_id, user_id, quiz_id, next_question_index, ctx),
-            FEEDBACK_DELAY,
-            context=context
-        )
-        logger.debug(f"[QUIZ LOGIC] Scheduled next question ({next_question_index}) after skip/timeout/error.")
-    else:
-        # Quiz finished
-        logger.info(f"[QUIZ LOGIC] Quiz {quiz_id} finished after skip/timeout/error on last question (user {user_id}).")
-        quiz_data["finished"] = True
-        # Schedule showing results after a delay
-        context.job_queue.run_once(
-            lambda ctx: show_results(ctx.bot, chat_id, user_id, quiz_id, ctx),
-            FEEDBACK_DELAY,
-            context=context
-        )
-        logger.debug(f"[QUIZ LOGIC] Scheduled showing results after skip/timeout/error on last question.")
-        # No state transition needed here, the caller (timer or callback handler) handles it
-
-def skip_question_callback(update: Update, context: CallbackContext) -> int:
-    """Handles the user pressing the skip button via callback query."""
-    query = update.callback_query
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    user_id = user.id
-    query.answer("سيتم تخطي السؤال...") # Acknowledge callback
-
-    # --- Parse Callback Data --- 
-    match = re.match(r"quiz_([^_]+)_skip_(\d+)", query.data) # Corrected regex
-    if not match:
-        logger.warning(f"[QUIZ LOGIC] Invalid skip callback data: {query.data}")
-        return TAKING_QUIZ # Ignore invalid callback
-
-    quiz_id = match.group(1)
-    question_index = int(match.group(2))
-
-    # Call the core skip logic
-    handle_quiz_skip(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False)
-
-    # Determine next state based on whether quiz finished
-    quiz_data = context.user_data.get("current_quiz")
-    if quiz_data and quiz_data.get("finished"):
-        return SHOWING_RESULTS
-    else:
+        logger.warning(f"[QUIZ SKIP] Skip called for inactive/mismatched quiz {quiz_id} user {user_id}")
+        # Don't send message if called internally from timer/error
+        # if not timed_out and not error_skip: await safe_send_message(bot, chat_id, text="لا يمكنك تخطي سؤال من اختبار غير نشط.")
+        return TAKING_QUIZ
+    if question_index != quiz_data["current_question_index"]:
+        logger.warning(f"[QUIZ SKIP] Skip called for non-current question (cb:{question_index}, current:{quiz_data["current_question_index"]}) quiz {quiz_id}")
+        # Don't send message if called internally
+        # if not timed_out and not error_skip: await safe_send_message(bot, chat_id, text="لا يمكنك تخطي سؤال تم الرد عليه بالفعل.")
         return TAKING_QUIZ
 
-def show_results(bot, chat_id: int, user_id: int, quiz_id: str, context: CallbackContext) -> int:
-    """Calculates and displays the quiz results, saves them, and returns to the main menu."""
+    # --- Stop Timer --- 
+    timer_job_name = quiz_data.get("question_timer_job_name")
+    if timer_job_name:
+        if remove_job_if_exists(timer_job_name, context):
+            logger.info(f"[QUIZ SKIP] Removed timer job {timer_job_name} for question {question_index}.")
+        quiz_data["question_timer_job_name"] = None
+
+    # --- Process Skip --- 
+    quiz_data["answers"][question_index] = -1 # Mark as skipped
+    quiz_data["skipped_count"] += 1
+    logger.info(f"[QUIZ SKIP] User {user_id} skipped q:{question_index}. Reason: {'Timeout' if timed_out else 'User Action' if not error_skip else 'Error'}. Quiz: {quiz_id}")
+
+    feedback_text = "⏭️ تم تخطي السؤال."
+    if timed_out:
+        feedback_text = "⏰ انتهى وقت السؤال، تم التخطي."
+    elif error_skip:
+         feedback_text = "⚠️ حدث خطأ، تم تخطي السؤال."
+
+    # --- Update Message --- 
+    # Edit the original question message if possible
+    message_id = quiz_data.get("last_question_message_id")
+    if message_id:
+        try:
+            # Get the original message object (might need chat_id as well)
+            # This part is tricky without the original Update/Query object
+            # Let's try editing based on message_id, might fail
+            # await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
+            # Best approach might be to send feedback as a new message if called internally
+            if not timed_out and not error_skip:
+                 # If user clicked skip button, we have the query object
+                 query = context.user_data.get('_last_quiz_skip_query') # Need to store this in callback handler
+                 if query and query.message.message_id == message_id:
+                     original_message_text = query.message.caption if query.message.photo else query.message.text
+                     new_text = original_message_text + "\n\n" + feedback_text
+                     if query.message.photo:
+                         # await query.edit_message_caption(caption=new_text, parse_mode="Markdown")
+                         await safe_send_message(bot, chat_id, text=feedback_text, parse_mode="Markdown")
+                         try: await query.edit_message_reply_markup(reply_markup=None)
+                         except: pass
+                     else:
+                         await safe_edit_message_text(query.message, text=new_text, reply_markup=None, parse_mode="Markdown")
+                 else:
+                      await safe_send_message(bot, chat_id, text=feedback_text) # Send as new if query mismatch
+            else:
+                 # If timed out or error skip, just send feedback as new message
+                 await safe_send_message(bot, chat_id, text=feedback_text)
+        except Exception as e:
+            logger.error(f"[QUIZ SKIP] Failed to edit message {message_id} for skip feedback: {e}")
+            await safe_send_message(bot, chat_id, text=feedback_text) # Send as new message on error
+    else:
+        # If no message_id, just send feedback
+        await safe_send_message(bot, chat_id, text=feedback_text)
+
+    # --- Delay and Move to Next Question or End Quiz --- 
+    time.sleep(FEEDBACK_DELAY if not timed_out else 0.1) # Shorter delay if timed out
+
+    next_question_index = question_index + 1
+    if next_question_index < quiz_data["total_questions"]:
+        await send_question(bot, chat_id, user_id, quiz_id, next_question_index, context)
+        return TAKING_QUIZ
+    else:
+        # Quiz finished
+        logger.info(f"[QUIZ SKIP] Quiz {quiz_id} finished after skip for user {user_id}.")
+        return await end_quiz(bot, chat_id, user_id, quiz_id, context)
+
+async def end_quiz(bot, chat_id: int, user_id: int, quiz_id: str, context: CallbackContext, error: bool = False) -> int:
+    """Ends the current quiz, calculates results, saves them, and shows summary."""
     user_data = context.user_data
     quiz_data = user_data.get("current_quiz")
 
     if not quiz_data or quiz_data.get("quiz_id") != quiz_id:
-        logger.warning(f"[QUIZ LOGIC] show_results called for inactive/mismatched quiz {quiz_id} user {user_id}")
-        # Attempt to return to main menu gracefully
+        logger.warning(f"[QUIZ END] end_quiz called for inactive/mismatched quiz {quiz_id} user {user_id}")
+        # Avoid sending message if called due to error during setup
+        if not error:
+            await safe_send_message(bot, chat_id, text="لا يوجد اختبار نشط لإنهاءه.")
         kb = create_main_menu_keyboard(user_id)
-        safe_send_message(bot, chat_id, text="لا يمكن عرض نتائج اختبار غير نشط. العودة للقائمة الرئيسية.", reply_markup=kb)
+        await safe_send_message(bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
         return MAIN_MENU
 
-    # Ensure quiz is marked finished
+    if quiz_data.get("finished"): # Prevent double ending
+        logger.info(f"[QUIZ END] Quiz {quiz_id} already marked as finished for user {user_id}. Skipping end logic.")
+        return SHOWING_RESULTS # Or MAIN_MENU?
+
     quiz_data["finished"] = True
     end_time = datetime.now()
-    duration = end_time - quiz_data["start_time"]
 
-    # --- Calculate Score --- 
+    # --- Cancel any running timer --- 
+    timer_job_name = quiz_data.get("question_timer_job_name")
+    if timer_job_name:
+        remove_job_if_exists(timer_job_name, context)
+        logger.info(f"[QUIZ END] Removed timer job {timer_job_name} at end of quiz {quiz_id}.")
+
+    # --- Calculate Results --- 
     total = quiz_data["total_questions"]
     correct = quiz_data["correct_count"]
     wrong = quiz_data["wrong_count"]
     skipped = quiz_data["skipped_count"]
-    # Ensure consistency
-    if correct + wrong + skipped != total:
-         logger.warning(f"[QUIZ LOGIC] Result count mismatch for quiz {quiz_id}: C={correct}, W={wrong}, S={skipped}, Total={total}. Recalculating skipped.")
-         skipped = total - correct - wrong
-         quiz_data["skipped_count"] = skipped
-         
+    # Ensure counts add up, adjust skipped if necessary (e.g., if error occurred)
+    calculated_skipped = total - correct - wrong
+    if calculated_skipped != skipped:
+        logger.warning(f"[QUIZ END] Discrepancy in counts for quiz {quiz_id}: total={total}, c={correct}, w={wrong}, s={skipped}. Calculated_skipped={calculated_skipped}. Using calculated.")
+        skipped = calculated_skipped
+        quiz_data["skipped_count"] = skipped # Update data
+
     score_percentage = (correct / total * 100) if total > 0 else 0
+    start_time = quiz_data["start_time"]
+    duration = end_time - start_time
 
-    # --- Format Results Message --- 
-    results_text = f"🏁 *نتائج الاختبار* 🏁\n\n"
-    results_text += f"🔢 إجمالي الأسئلة: {total}\n"
-    results_text += f"✅ الإجابات الصحيحة: {correct}\n"
-    results_text += f"❌ الإجابات الخاطئة: {wrong}\n"
-    results_text += f"⏭️ الأسئلة المتخطاة: {skipped}\n"
-    results_text += f"⏱️ الوقت المستغرق: {str(duration).split('.')[0]} \n"
-    results_text += f"🎯 النسبة المئوية: {score_percentage:.1f}%\n\n"
-
-    # Add some encouragement
-    if score_percentage >= 80:
-        results_text += "🎉 ممتاز! أداء رائع!"
-    elif score_percentage >= 60:
-        results_text += "👍 جيد جداً! استمر في التعلم."
-    elif score_percentage >= 40:
-        results_text += "💪 لا بأس! حاول مرة أخرى لتحسين نتيجتك."
-    else:
-        results_text += "😔 تحتاج إلى المزيد من المراجعة. لا تستسلم!"
+    # --- Prepare Results Summary --- 
+    summary = f"🏁 *نتائج الاختبار* 🏁\n\n"
+    summary += f"🔢 إجمالي الأسئلة: {total}\n"
+    summary += f"✅ الإجابات الصحيحة: {correct}\n"
+    summary += f"❌ الإجابات الخاطئة: {wrong}\n"
+    summary += f"⏭️ الأسئلة المتخطاة: {skipped}\n"
+    summary += f"📊 النسبة المئوية: {score_percentage:.2f}%\n"
+    summary += f"⏱️ الوقت المستغرق: {str(duration).split('.')[0]} (س:د:ث)\n"
 
     # --- Save Results to Database --- 
-    if DB_MANAGER:
-        try:
-            db_success = DB_MANAGER.save_quiz_result(
-                user_id=user_id,
-                quiz_type=quiz_data["quiz_type"],
-                scope_id=quiz_data["quiz_scope_id"],
-                total_questions=total,
-                correct_answers=correct,
-                wrong_answers=wrong,
-                skipped_answers=skipped,
-                score_percentage=score_percentage,
-                duration_seconds=duration.total_seconds(),
-                quiz_timestamp=quiz_data["start_time"]
-            )
-            if db_success:
-                logger.info(f"[DB] Successfully saved quiz results for user {user_id}, quiz {quiz_id}.")
-            else:
-                logger.error(f"[DB] Failed to save quiz results for user {user_id}, quiz {quiz_id}.")
-                results_text += "\n\n*(تحذير: لم يتم حفظ النتيجة في قاعدة البيانات.)*"
-        except Exception as db_e:
-            logger.exception(f"[DB] Error saving quiz results for user {user_id}, quiz {quiz_id}: {db_e}")
-            results_text += "\n\n*(تحذير: حدث خطأ أثناء حفظ النتيجة في قاعدة البيانات.)*"
-    else:
-        logger.warning("[DB] DB_MANAGER not available, skipping saving quiz results.")
-        results_text += "\n\n*(ملاحظة: حفظ النتائج معطل حالياً.)*"
+    # Prepare details JSON (e.g., list of question IDs and user answers)
+    details_to_save = {
+        "questions": [q.get("question_id", None) for q in quiz_data["questions"]],
+        "answers": quiz_data["answers"]
+        # Add more details if needed, e.g., correct answers
+    }
+    try:
+        save_success = await DB_MANAGER.save_quiz_result(
+            user_id=user_id,
+            quiz_type=quiz_data["quiz_type"],
+            quiz_scope_id=quiz_data.get("quiz_scope_id"),
+            total_questions=total,
+            correct_count=correct,
+            wrong_count=wrong,
+            skipped_count=skipped,
+            score_percentage=score_percentage,
+            start_time=start_time,
+            end_time=end_time,
+            details=details_to_save
+        )
+        if save_success:
+            logger.info(f"[DB SAVE] Successfully saved quiz results for quiz {quiz_id}, user {user_id}.")
+        else:
+            logger.error(f"[DB SAVE] Failed to save quiz results for quiz {quiz_id}, user {user_id}.")
+            summary += "\n\n⚠️ *تعذر حفظ نتيجة هذا الاختبار في قاعدة البيانات.*"
+    except Exception as db_e:
+        logger.exception(f"[DB SAVE] Exception saving quiz results for quiz {quiz_id}, user {user_id}: {db_e}")
+        summary += "\n\n⚠️ *حدث خطأ غير متوقع أثناء حفظ نتيجة الاختبار.*"
 
-    # --- Send Results and Return to Main Menu --- 
-    main_menu_keyboard = create_main_menu_keyboard(user_id)
-    safe_send_message(bot, chat_id, text=results_text, reply_markup=main_menu_keyboard, parse_mode="Markdown")
+    # --- Send Summary and Return to Main Menu --- 
+    await safe_send_message(bot, chat_id, text=summary, parse_mode="Markdown")
 
     # Clean up quiz data from user_data
-    user_data.pop("current_quiz", None)
-    user_data.pop("quiz_selection", None) # Clean up selection as well
-    user_data.pop("scope_items", None)
-    user_data.pop("parent_id", None)
-    user_data.pop("current_page", None)
-    user_data.pop("current_unit_id", None)
-    logger.info(f"[QUIZ LOGIC] Cleaned up user_data for user {user_id} after quiz {quiz_id}.")
+    if "current_quiz" in context.user_data:
+        del context.user_data["current_quiz"]
+    if "quiz_selection" in context.user_data:
+         del context.user_data["quiz_selection"]
 
-    return MAIN_MENU # Return to the main menu state
+    # Send main menu keyboard
+    kb = create_main_menu_keyboard(user_id)
+    await safe_send_message(bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
 
-def end_quiz(bot, chat_id: int, user_id: int, quiz_id: str, context: CallbackContext, error: bool = False):
-    """Forcefully ends the quiz, cleans up timers and state. Does not return state."""
-    user_data = context.user_data
-    quiz_data = user_data.get("current_quiz")
-    
-    if not quiz_data or quiz_data.get("quiz_id") != quiz_id:
-        logger.info(f"[QUIZ LOGIC] end_quiz called for already ended/mismatched quiz {quiz_id}")
-        return
-        
-    logger.warning(f"[QUIZ LOGIC] Forcefully ending quiz {quiz_id} for user {user_id}. Error: {error}")
-    quiz_data["finished"] = True
-    
-    # Remove any active timer
-    timer_job_name = quiz_data.get("question_timer_job_name")
-    if timer_job_name:
-        remove_job_if_exists(timer_job_name, context)
-        quiz_data["question_timer_job_name"] = None
-        
-    # Remove keyboard from last question message if possible
-    last_msg_id = quiz_data.get("last_question_message_id")
-    if last_msg_id:
-        try:
-            message = context.bot.edit_message_reply_markup(chat_id=chat_id, message_id=last_msg_id, reply_markup=None)
-            logger.info(f"[QUIZ LOGIC] Removed keyboard from message {last_msg_id} on quiz end.")
-        except BadRequest as e:
-            logger.warning(f"[QUIZ LOGIC] Failed to remove keyboard on quiz end: {e}")
-        except Exception as e:
-            logger.exception(f"[QUIZ LOGIC] Unexpected error removing keyboard on quiz end: {e}")
-            
-    # Clean up user_data
-    user_data.pop("current_quiz", None)
-    user_data.pop("quiz_selection", None)
-    user_data.pop("scope_items", None)
-    user_data.pop("parent_id", None)
-    user_data.pop("current_page", None)
-    user_data.pop("current_unit_id", None)
-    logger.info(f"[QUIZ LOGIC] Cleaned up user_data for user {user_id} after forced quiz end {quiz_id}.")
-    
-    # Send message indicating quiz ended (optional)
-    if error:
-        safe_send_message(bot, chat_id, text="حدث خطأ فادح واضطررنا لإنهاء الاختبار.")
-    # No need to return state, caller handles it
+    logger.info(f"[QUIZ END] Quiz {quiz_id} processing complete for user {user_id}. Returning to main menu.")
+    return MAIN_MENU
 
