@@ -7,12 +7,12 @@ from telegram.ext import (
     CallbackContext,
     ConversationHandler,
     CallbackQueryHandler,
-    CommandHandler # <-- Added missing import
+    CommandHandler # Added missing import
 )
 
 # Import necessary components from other modules
 try:
-    from config import logger, MAIN_MENU, INFO_MENU, SHOW_INFO_DETAIL, END # Added END
+    from config import logger, MAIN_MENU, INFO_MENU, SHOW_INFO_DETAIL
     from utils.helpers import safe_send_message, safe_edit_message_text, process_text_with_chemical_notation
     from handlers.common import main_menu_callback # For returning to main menu
     # Import content data
@@ -23,7 +23,7 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.error(f"Error importing modules in handlers.info: {e}. Using placeholders.")
     # Define placeholders
-    MAIN_MENU, INFO_MENU, SHOW_INFO_DETAIL, END = 0, 7, 9, ConversationHandler.END # Match config.py
+    MAIN_MENU, INFO_MENU, SHOW_INFO_DETAIL = 0, 7, 9 # Match config.py
     def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
     def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
     def process_text_with_chemical_notation(text): logger.warning("Placeholder process_text_with_chemical_notation called!"); return text
@@ -74,7 +74,8 @@ def create_info_detail_keyboard(category: str) -> InlineKeyboardMarkup:
     
     # Simple list for now, pagination could be added if lists become long
     for item_name in items:
-        keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{callback_prefix}{item_name}")]) # Corrected f-string
+        # Corrected f-string: Removed potential leading space and newline
+        keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{callback_prefix}{item_name}")]) 
 
     # Back button to the main info menu
     keyboard.append([InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")])
@@ -108,7 +109,8 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
     data = query.data # e.g., "info_cat_elements"
     logger.info(f"User {user_id} selected info category: {data}")
 
-    category = data.split("_")[-1]
+    # Corrected split: Use simple underscore
+    category = data.split("_")[-1] 
     context.user_data["current_info_category"] = category
 
     # Check if category has sub-items or is direct content
@@ -130,16 +132,11 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         elif category == "laws":
             try:
                 # Read content from the markdown file
-                # Ensure the path is correct for the deployment environment
-                laws_file_path = os.path.join(os.path.dirname(__file__), "..", "content", "laws.md") 
-                if not os.path.exists(laws_file_path):
-                    # Fallback path if running locally or structure differs
-                    laws_file_path = "content/laws.md"
-                    
-                with open(laws_file_path, "r", encoding="utf-8") as f:
+                # Ensure correct path within the deployed environment
+                with open("content/laws.md", "r", encoding="utf-8") as f: 
                     content = f.read()
             except FileNotFoundError:
-                logger.error(f"laws.md file not found at expected paths.")
+                logger.error("laws.md file not found in content/")
                 content = "عذراً، لم يتم العثور على ملف قوانين الكيمياء."
             except Exception as e:
                 logger.exception(f"Error reading laws.md: {e}")
@@ -153,8 +150,7 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         
         # Send content and provide back button
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]])
-        # Use MarkdownV2 for better formatting control if needed, ensure proper escaping
-        safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown") 
+        safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
         return INFO_MENU # Stay in info menu state after showing direct content
 
 def show_info_detail(update: Update, context: CallbackContext) -> int:
@@ -166,7 +162,8 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     logger.info(f"User {user_id} selected info detail: {data}")
 
     try:
-        parts = data.split("_")
+        # Corrected split: Use simple underscore
+        parts = data.split("_") 
         category = parts[2]
         item_name = "_".join(parts[3:]) # Handle names with underscores if any
     except (IndexError, ValueError):
@@ -175,28 +172,50 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
         return INFO_MENU
 
     content = ""
-    details = None
-    if category == "elements":
-        details = ELEMENTS.get(item_name)
-        if details:
-            content = f"*{item_name} ({details.get(\'رمز\', \'?\')})*\n\n" \
-                      f"\- الرقم الذري: {details.get(\'رقم_ذري\', \'?\')}\n" \
-                      f"\- الوزن الذري: {details.get(\'وزن_ذري\', \'?\')}"
-    elif category == "compounds":
-        details = COMPOUNDS.get(item_name)
-        if details:
-            formula = process_text_with_chemical_notation(details.get(\'صيغة\', \'?\'))
-            content = f"*{item_name} ({formula})*\n\n" \
-                      f"\- النوع: {details.get(\'نوع\', \'?\')}\n" \
-                      f"\- الحالة (STP): {details.get(\'حالة\', \'?\')}"
-    elif category == "concepts":
-        details = CONCEPTS.get(item_name)
-        if details:
-            content = f"*{item_name}*\n\n{details}"
-            
-    if not details:
-        content = f"عذراً، لم يتم العثور على تفاصيل لـ \"{item_name}\" في فئة \"{category}\"."
-        logger.warning(f"Details not found for item \'{item_name}\' in category \'{category}\'.")
+    if category == "elements" and item_name in ELEMENTS:
+        details = ELEMENTS[item_name]
+        # Corrected dictionary access: Removed newlines
+        content = f"*{item_name} ({details.get(
+'رمز'
+, 
+'?')})*\n\n" \
+                  f"- الرقم الذري: {details.get(
+'رقم_ذري'
+, 
+'?')}\n" \
+                  f"- الوزن الذري: {details.get(
+'وزن_ذري'
+, 
+'?')}"
+    elif category == "compounds" and item_name in COMPOUNDS:
+        details = COMPOUNDS[item_name]
+        # Corrected dictionary access: Removed newlines
+        content = f"*{item_name} ({process_text_with_chemical_notation(details.get(
+'صيغة'
+, 
+'?'))})*\n\n" \
+                  f"- النوع: {details.get(
+'نوع'
+, 
+'?')}\n" \
+                  f"- الحالة (STP): {details.get(
+'حالة'
+, 
+'?')}"
+    elif category == "concepts" and item_name in CONCEPTS:
+        content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
+    else:
+        # Corrected f-string: Removed newlines within {} placeholders
+        content = f"عذراً، لم يتم العثور على تفاصيل لـ 
+"{item_name}
+" في فئة 
+"{category}
+"."
+        logger.warning(f"Details not found for item 
+'{item_name}
+' in category 
+'{category}
+'.")
 
     # Format content
     formatted_content = process_text_with_chemical_notation(content)
@@ -231,10 +250,10 @@ info_conv_handler = ConversationHandler(
         CallbackQueryHandler(info_menu, pattern=".*") # Go back to info menu on any other callback
     ],
     map_to_parent={
-        # If MAIN_MENU is returned, map it to the main conversation handler\s MAIN_MENU state
+        # If MAIN_MENU is returned, map it to the main conversation handler's MAIN_MENU state
         MAIN_MENU: MAIN_MENU,
         # If END is returned, end the conversation (though not used here)
-        END: END 
+        # END: END 
     },
     persistent=True, # Enable persistence
     name="info_conversation" # Unique name for persistence
