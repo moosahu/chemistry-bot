@@ -14,7 +14,7 @@ from telegram.ext import (
 try:
     from config import logger, MAIN_MENU, INFO_MENU, SHOW_INFO_DETAIL
     from utils.helpers import safe_send_message, safe_edit_message_text, process_text_with_chemical_notation
-    from handlers.common import main_menu_callback # For returning to main menu
+    from handlers.common import main_menu_callback # For returning to main menu (ensure it's async)
     # Import content data
     from content.data import ELEMENTS, COMPOUNDS, CONCEPTS, PERIODIC_TABLE_INFO, CHEMICAL_CALCULATIONS_INFO, CHEMICAL_BONDS_INFO
 except ImportError as e:
@@ -24,10 +24,10 @@ except ImportError as e:
     logger.error(f"Error importing modules in handlers.info: {e}. Using placeholders.")
     # Define placeholders
     MAIN_MENU, INFO_MENU, SHOW_INFO_DETAIL = 0, 7, 9 # Match config.py
-    def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
-    def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
+    async def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
+    async def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
     def process_text_with_chemical_notation(text): logger.warning("Placeholder process_text_with_chemical_notation called!"); return text
-    def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
+    async def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
     ELEMENTS, COMPOUNDS, CONCEPTS = {}, {}, {}
     PERIODIC_TABLE_INFO, CHEMICAL_CALCULATIONS_INFO, CHEMICAL_BONDS_INFO = "", "", ""
 
@@ -74,41 +74,42 @@ def create_info_detail_keyboard(category: str) -> InlineKeyboardMarkup:
     
     # Simple list for now, pagination could be added if lists become long
     for item_name in items:
-        keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{callback_prefix}{item_name}")]) 
+        # Corrected: Ensure no newlines in callback_data
+        keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{callback_prefix}{item_name}")])
 
     # Back button to the main info menu
     keyboard.append([InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")])
     return InlineKeyboardMarkup(keyboard)
 
-# --- Conversation Steps --- 
+# --- Conversation Steps (Converted to async) --- 
 
-def info_menu(update: Update, context: CallbackContext) -> int:
+async def info_menu(update: Update, context: CallbackContext) -> int:
     """Displays the main information categories menu."""
     query = update.callback_query
     user_id = update.effective_user.id
     
     if query:
-        query.answer()
+        await query.answer()
         logger.info(f"User {user_id} entered info menu.")
         text = "📚 اختر فئة المعلومات التي تريد استعراضها:"
         keyboard = create_info_menu_keyboard()
-        safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        await safe_edit_message_text(query, text=text, reply_markup=keyboard)
     else:
         logger.warning("info_menu called without callback query.")
-        safe_send_message(context.bot, update.effective_chat.id, text="يرجى استخدام القائمة الرئيسية.")
+        await safe_send_message(context.bot, update.effective_chat.id, text="يرجى استخدام القائمة الرئيسية.")
         return MAIN_MENU
         
     return INFO_MENU # Stay in info menu state
 
-def select_info_category(update: Update, context: CallbackContext) -> int:
+async def select_info_category(update: Update, context: CallbackContext) -> int:
     """Handles selection of an information category."""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     user_id = update.effective_user.id
     data = query.data # e.g., "info_cat_elements"
     logger.info(f"User {user_id} selected info category: {data}")
 
-    category = data.split("_")[-1] 
+    category = data.split("_")[-1]
     context.user_data["current_info_category"] = category
 
     # Check if category has sub-items or is direct content
@@ -116,7 +117,7 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         # Show list of items in this category
         text = f"اختر {INFO_CATEGORIES.get(category, category)}:"
         keyboard = create_info_detail_keyboard(category)
-        safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        await safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return SHOW_INFO_DETAIL # Move to detail selection state
     else:
         # Show content directly for categories like periodic_table, calculations, bonds, laws
@@ -129,11 +130,11 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
             content = CHEMICAL_BONDS_INFO
         elif category == "laws":
             try:
-                # Read content from the markdown file
-                with open("content/laws.md", "r", encoding="utf-8") as f: 
+                # Read content from the markdown file (synchronous)
+                with open("/home/ubuntu/content/laws.md", "r", encoding="utf-8") as f:
                     content = f.read()
             except FileNotFoundError:
-                logger.error("laws.md file not found in content/")
+                logger.error("laws.md file not found in /home/ubuntu/content/")
                 content = "عذراً، لم يتم العثور على ملف قوانين الكيمياء."
             except Exception as e:
                 logger.exception(f"Error reading laws.md: {e}")
@@ -146,82 +147,54 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         formatted_content = process_text_with_chemical_notation(content)
         
         # Send content and provide back button
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]]) 
-        safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]])
+        await safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
         return INFO_MENU # Stay in info menu state after showing direct content
 
-def show_info_detail(update: Update, context: CallbackContext) -> int:
+async def show_info_detail(update: Update, context: CallbackContext) -> int:
     """Handles selection of a specific item (element, compound, concept)."""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     user_id = update.effective_user.id
     data = query.data # e.g., "info_detail_elements_هيدروجين"
     logger.info(f"User {user_id} selected info detail: {data}")
 
     try:
-        parts = data.split("_") 
+        parts = data.split("_")
         category = parts[2]
         item_name = "_".join(parts[3:]) # Handle names with underscores if any
     except (IndexError, ValueError):
         logger.error(f"Invalid info detail callback data format: {data}")
-        safe_edit_message_text(query, text="حدث خطأ في البيانات. الرجاء المحاولة مرة أخرى.", reply_markup=create_info_menu_keyboard())
+        await safe_edit_message_text(query, text="حدث خطأ في البيانات. الرجاء المحاولة مرة أخرى.", reply_markup=create_info_menu_keyboard())
         return INFO_MENU
 
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
-        symbol = details.get(
-'رمز'
-, 
-'?'
-)
-        atomic_num = details.get(
-'رقم_ذري'
-, 
-'?'
-)
-        atomic_weight = details.get(
-'وزن_ذري'
-, 
-'?'
-)
-        content = f"*{item_name} ({symbol})*\n\n" \
-                  f"- الرقم الذري: {atomic_num}\n" \
-                  f"- الوزن الذري: {atomic_weight}"
+        # Corrected: Ensure no newlines within f-string placeholders
+        content = f"*{item_name} ({details['رمز']})*\n\n" \
+                  f"- الرقم الذري: {details['رقم_ذري']}\n" \
+                  f"- الوزن الذري: {details['وزن_ذري']}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
-        formula = details.get(
-'صيغة'
-, 
-'?'
-)
-        compound_type = details.get(
-'نوع'
-, 
-'?'
-)
-        state = details.get(
-'حالة'
-, 
-'?'
-)
-        content = f"*{item_name} ({process_text_with_chemical_notation(formula)})*\n\n" \
-                  f"- النوع: {compound_type}\n" \
-                  f"- الحالة (STP): {state}"
+        # Corrected: Ensure no newlines within f-string placeholders
+        content = f"*{item_name} ({process_text_with_chemical_notation(details['صيغة'])})*\n\n" \
+                  f"- النوع: {details['نوع']}\n" \
+                  f"- الحالة (STP): {details['حالة']}"
     elif category == "concepts" and item_name in CONCEPTS:
         content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
     else:
-        # Corrected: Removed \n from inside {} placeholders
-        content = f"عذراً، لم يتم العثور على تفاصيل لـ \"{item_name}\" في فئة \"{category}\"."
-        # Corrected: Removed \n from inside {} placeholders
-        logger.warning(f"Details not found for item \'{item_name}\' in category \'{category}\'.")
+        # Corrected: Ensure no newlines within f-string placeholders
+        content = f"عذراً، لم يتم العثور على تفاصيل لـ '{item_name}' في فئة '{category}'."
+        logger.warning(f"Details not found for item '{item_name}' in category '{category}'.")
 
     # Format content
     formatted_content = process_text_with_chemical_notation(content)
 
     # Send content and provide back button to the item list
+    # Corrected: Ensure no newlines in callback_data
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"🔙 رجوع إلى {INFO_CATEGORIES.get(category, category)}", callback_data=f"info_cat_{category}")]])
-    safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
+    await safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
     
     return SHOW_INFO_DETAIL # Stay in detail state, allowing further selections from the list
 
