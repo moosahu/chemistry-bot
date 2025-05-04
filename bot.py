@@ -11,7 +11,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ConversationHandler,
     MessageHandler,
-    Filters,
+    filters, # Import filters (lowercase) instead of Filters
     PicklePersistence # For storing conversation state across restarts
 )
 
@@ -104,7 +104,7 @@ def main() -> None:
         fallbacks=[
             start_handler, # Allow restarting with /start
             # Add a generic fallback message for the main conversation?
-            MessageHandler(Filters.all, lambda u, c: main_fallback(u, c))
+            MessageHandler(filters.ALL, lambda u, c: main_fallback(u, c))
         ],
         # Use persistence for conversation state
         persistent=True,
