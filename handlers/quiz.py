@@ -72,17 +72,15 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
 
     # Determine prefix and ID key based on scope_type
     prefix = ""
-    id_key = ""
+    # Corrected: API always returns 'id' for course, unit, lesson
+    id_key = "id" 
     name_key = "name"
     if scope_type == "course":
         prefix = "quiz_scope_course_"
-        id_key = "course_id"
     elif scope_type == "unit":
         prefix = "quiz_scope_unit_"
-        id_key = "unit_id"
     elif scope_type == "lesson":
         prefix = "quiz_scope_lesson_"
-        id_key = "lesson_id"
 
     # Create buttons for items on the current page
     for item in current_items:
@@ -175,7 +173,8 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
         else:
             total_count = 0
             for course in courses:
-                course_id = course.get("course_id")
+                # Corrected: Use 'id' from API response
+                course_id = course.get("id") 
                 if course_id:
                     # Call synchronous helper function
                     count = get_question_count_from_api(f"/api/v1/courses/{course_id}/questions")
@@ -183,7 +182,7 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
             max_questions = total_count
 
         if max_questions == 0 and not error_message:
-             error_message = "⚠️ لم يتم العثور على أسئلة متاحة للاختبار العشوائي."
+             error_message = "⚠️ لم يتم العثور على أسئلة متاحة للاختبار العشوائي (قد تحتاج لإضافة أسئلة للمقررات في الـ API)."
 
         if error_message:
             await safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_type_keyboard())
@@ -283,7 +282,7 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         # Decide whether to ask for count for current level or show error
         # Let's show an error and go back for now
         # Corrected f-string using single quotes for split
-        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(' ')[-1]}. يرجى المحاولة مرة أخرى."
+        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(\' \')[-1]}. يرجى المحاولة مرة أخرى."
         await safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_type_keyboard()) # Go back to type selection
         return SELECT_QUIZ_TYPE
 
@@ -390,7 +389,8 @@ async def handle_scope_back(update: Update, context: CallbackContext) -> int:
         try:
             unit_id = int(data.split("_")[-1])
             # We need the course_id. It should be stored as parent_id when units were listed.
-            course_id = context.user_data.get("parent_id") # This should be the course_id
+            # Corrected: API returns 'id', so parent_id should be the course 'id'
+            course_id = context.user_data.get("parent_id") 
             
             if course_id is None:
                  logger.error(f"Cannot go back to unit list: course_id not found for unit {unit_id}.")
