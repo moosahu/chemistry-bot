@@ -149,7 +149,8 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         formatted_content = process_text_with_chemical_notation(content)
         
         # Send content and provide back button
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]])
+        # Corrected callback_data: Removed newline
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]]) 
         safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
         return INFO_MENU # Stay in info menu state after showing direct content
 
@@ -174,34 +175,46 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
-        # Corrected dictionary access: Removed newlines
-        content = f"*{item_name} ({details.get(
+        # Corrected dictionary access and f-string: Removed newlines, used .get()
+        symbol = details.get(
 'رمز'
 , 
-'?')})*\n\n" \
-                  f"- الرقم الذري: {details.get(
+'?'
+)
+        atomic_num = details.get(
 'رقم_ذري'
 , 
-'?')}\n" \
-                  f"- الوزن الذري: {details.get(
+'?'
+)
+        atomic_weight = details.get(
 'وزن_ذري'
 , 
-'?')}"
+'?'
+)
+        content = f"*{item_name} ({symbol})*\n\n" \
+                  f"- الرقم الذري: {atomic_num}\n" \
+                  f"- الوزن الذري: {atomic_weight}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
-        # Corrected dictionary access: Removed newlines
-        content = f"*{item_name} ({process_text_with_chemical_notation(details.get(
+        # Corrected dictionary access and f-string: Removed newlines, used .get()
+        formula = details.get(
 'صيغة'
 , 
-'?'))})*\n\n" \
-                  f"- النوع: {details.get(
+'?'
+)
+        compound_type = details.get(
 'نوع'
 , 
-'?')}\n" \
-                  f"- الحالة (STP): {details.get(
+'?'
+)
+        state = details.get(
 'حالة'
 , 
-'?')}"
+'?'
+)
+        content = f"*{item_name} ({process_text_with_chemical_notation(formula)})*\n\n" \
+                  f"- النوع: {compound_type}\n" \
+                  f"- الحالة (STP): {state}"
     elif category == "concepts" and item_name in CONCEPTS:
         content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
     else:
