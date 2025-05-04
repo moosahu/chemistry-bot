@@ -261,7 +261,7 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         # Fetch question count for this lesson from API by getting the list (Synchronous)
         await safe_edit_message_text(query, text="⏳ جارٍ حساب عدد الأسئلة للدرس...", reply_markup=None)
         questions_endpoint = f"/api/v1/lessons/{scope_id}/questions"
-        # Removed await
+        # Removed await from helper call
         max_questions = get_question_count_from_api(questions_endpoint) 
              
         if max_questions == 0:
@@ -282,7 +282,8 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         logger.error(f"Failed to fetch {next_scope_type}s from API ({api_endpoint}) or invalid format.")
         # Decide whether to ask for count for current level or show error
         # Let's show an error and go back for now
-        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(\' \')[-1]}. يرجى المحاولة مرة أخرى."
+        # Corrected f-string using single quotes for split
+        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(' ')[-1]}. يرجى المحاولة مرة أخرى."
         await safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_type_keyboard()) # Go back to type selection
         return SELECT_QUIZ_TYPE
 
@@ -297,7 +298,7 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         # Ask for question count for the current level (e.g., whole course/unit) (Synchronous)
         await safe_edit_message_text(query, text=f"⏳ جارٍ حساب عدد الأسئلة لـ {scope_level}...", reply_markup=None)
         questions_endpoint = f"/api/v1/{scope_level}s/{scope_id}/questions" # e.g., /api/v1/courses/1/questions
-        # Removed await
+        # Removed await from helper call
         max_questions = get_question_count_from_api(questions_endpoint) 
 
         if max_questions == 0:
