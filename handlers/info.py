@@ -6,7 +6,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CallbackContext,
     ConversationHandler,
-    CallbackQueryHandler
+    CallbackQueryHandler,
+    CommandHandler # <-- Added CommandHandler import
 )
 
 # Import necessary components from other modules
@@ -46,30 +47,14 @@ INFO_CATEGORIES = {
 def create_info_menu_keyboard() -> InlineKeyboardMarkup:
     """Creates the main keyboard for the information section."""
     keyboard = [
-        [InlineKeyboardButton(INFO_CATEGORIES["elements"], callback_data=
-"info_cat_elements
-")],
-        [InlineKeyboardButton(INFO_CATEGORIES["compounds"], callback_data=
-"info_cat_compounds
-")],
-        [InlineKeyboardButton(INFO_CATEGORIES["concepts"], callback_data=
-"info_cat_concepts
-")],
-        [InlineKeyboardButton(INFO_CATEGORIES["laws"], callback_data=
-"info_cat_laws
-")],
-        [InlineKeyboardButton(INFO_CATEGORIES["periodic_table"], callback_data=
-"info_cat_periodic_table
-")],
-        [InlineKeyboardButton(INFO_CATEGORIES["calculations"], callback_data=
-"info_cat_calculations
-")],
-        [InlineKeyboardButton(INFO_CATEGORIES["bonds"], callback_data=
-"info_cat_bonds
-")],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=
-"main_menu
-")]
+        [InlineKeyboardButton(INFO_CATEGORIES["elements"], callback_data="info_cat_elements")],
+        [InlineKeyboardButton(INFO_CATEGORIES["compounds"], callback_data="info_cat_compounds")],
+        [InlineKeyboardButton(INFO_CATEGORIES["concepts"], callback_data="info_cat_concepts")],
+        [InlineKeyboardButton(INFO_CATEGORIES["laws"], callback_data="info_cat_laws")],
+        [InlineKeyboardButton(INFO_CATEGORIES["periodic_table"], callback_data="info_cat_periodic_table")],
+        [InlineKeyboardButton(INFO_CATEGORIES["calculations"], callback_data="info_cat_calculations")],
+        [InlineKeyboardButton(INFO_CATEGORIES["bonds"], callback_data="info_cat_bonds")],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -89,13 +74,10 @@ def create_info_detail_keyboard(category: str) -> InlineKeyboardMarkup:
     
     # Simple list for now, pagination could be added if lists become long
     for item_name in items:
-        keyboard.append([InlineKeyboardButton(item_name, callback_data=f" {callback_prefix}{item_name}
-")])
+        keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{callback_prefix}{item_name}")])
 
     # Back button to the main info menu
-    keyboard.append([InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data=
-"info_menu
-")])
+    keyboard.append([InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 # --- Conversation Steps --- 
@@ -126,9 +108,7 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
     data = query.data # e.g., "info_cat_elements"
     logger.info(f"User {user_id} selected info category: {data}")
 
-    category = data.split(
-"_"
-)[-1]
+    category = data.split("_")[-1]
     context.user_data["current_info_category"] = category
 
     # Check if category has sub-items or is direct content
@@ -166,9 +146,7 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         formatted_content = process_text_with_chemical_notation(content)
         
         # Send content and provide back button
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data=
-"info_menu
-")]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]])
         safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
         return INFO_MENU # Stay in info menu state after showing direct content
 
@@ -181,9 +159,7 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     logger.info(f"User {user_id} selected info detail: {data}")
 
     try:
-        parts = data.split(
-"_"
-)
+        parts = data.split("_")
         category = parts[2]
         item_name = "_".join(parts[3:]) # Handle names with underscores if any
     except (IndexError, ValueError):
@@ -194,39 +170,20 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
-        content = f"*{item_name} ({details[
-'رمز'
-]})*\n\n" \
-                  f"- الرقم الذري: {details[
-'رقم_ذري'
-]}\n" \
-                  f"- الوزن الذري: {details[
-'وزن_ذري'
-]}"
+        content = f"*{item_name} ({details["رمز"]})*\n\n" \
+                  f"- الرقم الذري: {details["رقم_ذري"]}\n" \
+                  f"- الوزن الذري: {details["وزن_ذري"]}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
-        content = f"*{item_name} ({process_text_with_chemical_notation(details[
-'صيغة'
-])})*\n\n" \
-                  f"- النوع: {details[
-'نوع'
-]}\n" \
-                  f"- الحالة (STP): {details[
-'حالة'
-]}"
+        content = f"*{item_name} ({process_text_with_chemical_notation(details["صيغة"])})*\n\n" \
+                  f"- النوع: {details["نوع"]}\n" \
+                  f"- الحالة (STP): {details["حالة"]}"
     elif category == "concepts" and item_name in CONCEPTS:
         content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
     else:
-        content = f"عذراً، لم يتم العثور على تفاصيل لـ 
-"{item_name}
-" في فئة 
-"{category}
-"."
+        content = f"عذراً، لم يتم العثور على تفاصيل لـ \"{item_name}\" في فئة \"{category}\"."
         logger.warning(f"Details not found for item 
-'{item_name}
-' in category 
-'{category}
-'.")
+'{item_name}' in category '{category}'.")
 
     # Format content
     formatted_content = process_text_with_chemical_notation(content)
@@ -240,43 +197,25 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
 # --- Conversation Handler Definition --- 
 
 info_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(info_menu, pattern=
-"^menu_info$
-")],
+    entry_points=[CallbackQueryHandler(info_menu, pattern="^menu_info$")],
     states={
         INFO_MENU: [
-            CallbackQueryHandler(select_info_category, pattern=
-"^info_cat_"
-),
-            CallbackQueryHandler(main_menu_callback, pattern=
-"^main_menu$
-") # Allow returning to main menu
+            CallbackQueryHandler(select_info_category, pattern="^info_cat_"),
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Allow returning to main menu
         ],
         SHOW_INFO_DETAIL: [
-            CallbackQueryHandler(show_info_detail, pattern=
-"^info_detail_"
-),
+            CallbackQueryHandler(show_info_detail, pattern="^info_detail_"),
             # Go back to category list (which is handled by select_info_category)
-            CallbackQueryHandler(select_info_category, pattern=
-"^info_cat_"
-),
+            CallbackQueryHandler(select_info_category, pattern="^info_cat_"),
             # Go back to main info menu
-            CallbackQueryHandler(info_menu, pattern=
-"^info_menu$
-")
+            CallbackQueryHandler(info_menu, pattern="^info_menu$")
         ],
     },
     fallbacks=[
-        CommandHandler(
-"start"
-, main_menu_callback), # Go to main menu on /start
-        CallbackQueryHandler(main_menu_callback, pattern=
-"^main_menu$
-"), # Handle explicit main menu return
+        CommandHandler("start", main_menu_callback), # Go to main menu on /start
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Handle explicit main menu return
         # Fallback within info conversation
-        CallbackQueryHandler(info_menu, pattern=
-".*"
-) # Go back to info menu on any other callback
+        CallbackQueryHandler(info_menu, pattern=".*") # Go back to info menu on any other callback
     ],
     map_to_parent={
         # If MAIN_MENU is returned, map it to the main conversation handler's MAIN_MENU state
