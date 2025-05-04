@@ -6,7 +6,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CallbackContext,
     ConversationHandler,
-    CallbackQueryHandler
+    CallbackQueryHandler,
+    CommandHandler # <-- Added CommandHandler import
 )
 
 # Import necessary components from other modules
@@ -45,15 +46,9 @@ LEADERBOARD_LIMIT = 10
 def create_stats_menu_keyboard() -> InlineKeyboardMarkup:
     """Creates the keyboard for the statistics section."""
     keyboard = [
-        [InlineKeyboardButton("📊 إحصائياتي الشخصية", callback_data=
-"stats_my_stats
-")],
-        [InlineKeyboardButton("🏆 لوحة الصدارة", callback_data=
-"stats_leaderboard
-")],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=
-"main_menu
-")]
+        [InlineKeyboardButton("📊 إحصائياتي الشخصية", callback_data="stats_my_stats")],
+        [InlineKeyboardButton("🏆 لوحة الصدارة", callback_data="stats_leaderboard")],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -100,9 +95,7 @@ def show_my_stats(update: Update, context: CallbackContext) -> int:
     else:
         stats_text += "عذراً، لا يمكن استرجاع الإحصائيات حالياً (مشكلة في قاعدة البيانات)."
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data=
-"stats_menu
-")]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
     safe_edit_message_text(query, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
     
     return STATS_MENU # Stay in stats menu state
@@ -122,9 +115,7 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
-                display_name = entry.get("user_display_name", f"User {entry[
-'user_id'
-]}")
+                display_name = entry.get("user_display_name", f"User {entry["user_id"]}")
                 # Escape markdown characters in username
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
                 avg_score = entry.get("average_score", 0.0)
@@ -135,9 +126,7 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
     else:
         leaderboard_text += "عذراً، لا يمكن استرجاع لوحة الصدارة حالياً (مشكلة في قاعدة البيانات)."
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data=
-"stats_menu
-")]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
     safe_edit_message_text(query, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
     
     return STATS_MENU # Stay in stats menu state
@@ -146,38 +135,22 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
 
 stats_conv_handler = ConversationHandler(
     # Entry point is from the main menu handler when 'menu_stats' is chosen
-    entry_points=[CallbackQueryHandler(stats_menu, pattern=
-"^menu_stats$
-")], 
+    entry_points=[CallbackQueryHandler(stats_menu, pattern="^menu_stats$")], 
     states={
         STATS_MENU: [
-            CallbackQueryHandler(show_my_stats, pattern=
-"^stats_my_stats$
-"),
-            CallbackQueryHandler(show_leaderboard, pattern=
-"^stats_leaderboard$
-"),
+            CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
+            CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
             # Handler to go back to the stats menu itself (e.g., from leaderboard view)
-            CallbackQueryHandler(stats_menu, pattern=
-"^stats_menu$
-"),
-            CallbackQueryHandler(main_menu_callback, pattern=
-"^main_menu$
-") # Allow returning to main menu
+            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"),
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Allow returning to main menu
         ],
         # No other states needed for simple stats display
     },
     fallbacks=[
-        CommandHandler(
-"start"
-, main_menu_callback), # Go to main menu on /start
-        CallbackQueryHandler(main_menu_callback, pattern=
-"^main_menu$
-"), # Handle explicit main menu return
+        CommandHandler("start", main_menu_callback), # Go to main menu on /start
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Handle explicit main menu return
         # Fallback within stats conversation
-        CallbackQueryHandler(stats_menu, pattern=
-".*"
-) # Go back to stats menu on any other callback
+        CallbackQueryHandler(stats_menu, pattern=".*") # Go back to stats menu on any other callback
     ],
     map_to_parent={
         # If MAIN_MENU is returned, map it to the main conversation handler's MAIN_MENU state
