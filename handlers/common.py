@@ -82,9 +82,8 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     if query:
         await query.answer() # Answer callback query
         data = query.data
-        logger.info(f"Main menu callback: User {user.id} chose 
-'{data}
-'.")
+        # Corrected: Removed newline characters from f-strings
+        logger.info(f"Main menu callback: User {user.id} chose 	'{data}'.") # Line 85 according to original error
 
         # Determine next state based on callback data
         # Corrected: Compare with clean callback_data values
@@ -100,9 +99,8 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         elif data == "main_menu": # Explicitly handle returning to main menu
             state_to_return = MAIN_MENU
         else:
-            logger.warning(f"Unknown main menu callback data: 
-'{data}
-'")
+            # Corrected: Removed newline characters from f-strings
+            logger.warning(f"Unknown main menu callback data: '{data}'")
             state_to_return = MAIN_MENU # Stay in main menu on unknown data
 
     # If returning to the main menu (or staying), edit the message
