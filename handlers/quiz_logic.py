@@ -223,7 +223,8 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
     quiz_data["current_question_index"] = question_index # Update current index
 
     # --- Prepare Question Text and Media --- 
-    question_text = f"*السؤال {question_index + 1} من {quiz_data["total_questions"]}*\n\n" # Corrected f-string
+    # CORRECTED LINE: Use single quotes inside the f-string expression
+    question_text = f"*السؤال {question_index + 1} من {quiz_data['total_questions']}*\n\n"
     if question.get("question_text"):
         question_text += question["question_text"]
     
@@ -466,7 +467,7 @@ async def handle_quiz_skip(bot, chat_id: int, user_id: int, quiz_id: str, questi
     # --- Process Skip --- 
     quiz_data["answers"][question_index] = -1 # Mark as skipped
     quiz_data["skipped_count"] += 1
-    logger.info(f"[QUIZ SKIP] User {user_id} skipped q:{question_index}. Reason: {'Timeout' if timed_out else 'User Action' if not error_skip else 'Error'}. Quiz: {quiz_id}")
+    logger.info(f"[QUIZ SKIP] User {user_id} skipped q:{question_index}. Reason: {"Timeout" if timed_out else "User Action" if not error_skip else "Error"}. Quiz: {quiz_id}")
 
     feedback_text = "⏭️ تم تخطي السؤال."
     if timed_out:
@@ -486,7 +487,7 @@ async def handle_quiz_skip(bot, chat_id: int, user_id: int, quiz_id: str, questi
             # Best approach might be to send feedback as a new message if called internally
             if not timed_out and not error_skip:
                  # If user clicked skip button, we have the query object
-                 query = context.user_data.get('_last_quiz_skip_query') # Need to store this in callback handler
+                 query = context.user_data.get("_last_quiz_skip_query") # Need to store this in callback handler
                  if query and query.message.message_id == message_id:
                      original_message_text = query.message.caption if query.message.photo else query.message.text
                      new_text = original_message_text + "\n\n" + feedback_text
