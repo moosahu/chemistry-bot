@@ -3,7 +3,8 @@
 
 import logging
 import math
-import asyncio # Needed for gathering questions for random quiz
+# asyncio is no longer needed here as fetch_from_api is synchronous
+# import asyncio 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CallbackContext,
@@ -39,7 +40,8 @@ except ImportError as e:
     MAIN_MENU, QUIZ_MENU, SELECT_QUIZ_TYPE, SELECT_QUIZ_SCOPE, ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, END = 0, 1, 2, 3, 4, 5, 6, ConversationHandler.END
     async def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
     async def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
-    async def fetch_from_api(*args, **kwargs): logger.error("Placeholder fetch_from_api called!"); return None # Simulate API failure
+    # Simulate synchronous fetch_from_api
+    def fetch_from_api(*args, **kwargs): logger.error("Placeholder fetch_from_api called!"); return None # Simulate API failure
     def create_main_menu_keyboard(*args, **kwargs): logger.error("Placeholder create_main_menu_keyboard called!"); return None
     async def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
     async def start_quiz_logic(*args, **kwargs): logger.error("Placeholder start_quiz_logic called!"); return SHOWING_RESULTS # End quiz immediately
@@ -111,18 +113,19 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
 
     return InlineKeyboardMarkup(keyboard)
 
-# --- Helper function to get question count by fetching list --- 
-async def get_question_count_from_api(endpoint: str) -> int:
+# --- Helper function to get question count by fetching list (Synchronous) --- 
+def get_question_count_from_api(endpoint: str) -> int:
     """Fetches questions from an endpoint and returns the count."""
     logger.debug(f"Fetching questions from {endpoint} to get count.")
-    questions = await fetch_from_api(endpoint)
+    # Removed await as fetch_from_api is assumed synchronous
+    questions = fetch_from_api(endpoint) 
     if questions is None or not isinstance(questions, list):
         logger.error(f"Failed to fetch questions from {endpoint} or invalid format.")
         return 0 # Return 0 if fetch fails or format is wrong
     logger.debug(f"Found {len(questions)} questions at {endpoint}.")
     return len(questions)
 
-# --- Conversation Steps (Modified for API v1 and Count Logic) --- 
+# --- Conversation Steps (Modified for Synchronous API Calls) --- 
 
 async def quiz_menu(update: Update, context: CallbackContext) -> int:
     """Displays the quiz type selection menu."""
@@ -162,24 +165,22 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
     error_message = ""
 
     if quiz_type == "random":
-        # Fetch total random question count from API (complex way as per docs)
+        # Fetch total random question count from API (Synchronous iteration)
         await safe_edit_message_text(query, text="⏳ جارٍ حساب عدد الأسئلة العشوائية...", reply_markup=None)
-        courses = await fetch_from_api("/api/v1/courses")
+        # Removed await
+        courses = fetch_from_api("/api/v1/courses") 
         if courses is None or not isinstance(courses, list):
             logger.error("Failed to fetch courses for random count.")
             error_message = "⚠️ حدث خطأ أثناء جلب المقررات لحساب الأسئلة العشوائية." 
         else:
-            tasks = []
+            total_count = 0
             for course in courses:
                 course_id = course.get("course_id")
                 if course_id:
-                    tasks.append(get_question_count_from_api(f"/api/v1/courses/{course_id}/questions"))
-            
-            if tasks:
-                results = await asyncio.gather(*tasks)
-                max_questions = sum(results)
-            else:
-                 max_questions = 0 # No courses found
+                    # Call synchronous helper function
+                    count = get_question_count_from_api(f"/api/v1/courses/{course_id}/questions")
+                    total_count += count
+            max_questions = total_count
 
         if max_questions == 0 and not error_message:
              error_message = "⚠️ لم يتم العثور على أسئلة متاحة للاختبار العشوائي."
@@ -195,8 +196,9 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
         return ENTER_QUESTION_COUNT
         
     elif quiz_type == "course":
-        # Fetch courses from API (asynchronous)
-        courses = await fetch_from_api("/api/v1/courses")
+        # Fetch courses from API (Synchronous)
+        # Removed await
+        courses = fetch_from_api("/api/v1/courses") 
         if courses is None or not isinstance(courses, list):
             logger.error("Failed to fetch courses from API or invalid format.")
             await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء جلب المقررات الدراسية. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
@@ -239,25 +241,28 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
     error_message = ""
 
     if scope_level == "course":
-        # Fetch units for the selected course from API (asynchronous)
+        # Fetch units for the selected course from API (Synchronous)
         api_endpoint = f"/api/v1/courses/{scope_id}/units"
-        next_level_items = await fetch_from_api(api_endpoint)
+        # Removed await
+        next_level_items = fetch_from_api(api_endpoint) 
         next_scope_type = "unit"
         prompt_text = "📖 اختر الوحدة الدراسية:"
         context.user_data["parent_id"] = scope_id # Store course_id for back button
     elif scope_level == "unit":
-        # Fetch lessons for the selected unit from API (asynchronous)
+        # Fetch lessons for the selected unit from API (Synchronous)
         api_endpoint = f"/api/v1/units/{scope_id}/lessons"
-        next_level_items = await fetch_from_api(api_endpoint)
+        # Removed await
+        next_level_items = fetch_from_api(api_endpoint) 
         next_scope_type = "lesson"
         prompt_text = "📄 اختر الدرس:"
         context.user_data["parent_id"] = scope_id # Store unit_id for back button
     elif scope_level == "lesson":
         # Final level selected, ask for question count
-        # Fetch question count for this lesson from API by getting the list
+        # Fetch question count for this lesson from API by getting the list (Synchronous)
         await safe_edit_message_text(query, text="⏳ جارٍ حساب عدد الأسئلة للدرس...", reply_markup=None)
         questions_endpoint = f"/api/v1/lessons/{scope_id}/questions"
-        max_questions = await get_question_count_from_api(questions_endpoint)
+        # Removed await
+        max_questions = get_question_count_from_api(questions_endpoint) 
              
         if max_questions == 0:
              error_message = "⚠️ لم يتم العثور على أسئلة لهذا الدرس أو حدث خطأ." 
@@ -277,7 +282,7 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         logger.error(f"Failed to fetch {next_scope_type}s from API ({api_endpoint}) or invalid format.")
         # Decide whether to ask for count for current level or show error
         # Let's show an error and go back for now
-        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(' ')[-1]}. يرجى المحاولة مرة أخرى."
+        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(" ")[-1]}. يرجى المحاولة مرة أخرى."
         await safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_type_keyboard()) # Go back to type selection
         return SELECT_QUIZ_TYPE
 
@@ -289,10 +294,11 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         return SELECT_QUIZ_SCOPE # Stay in this state for next level selection
     else:
         # No items found for the next level (e.g., course has no units)
-        # Ask for question count for the current level (e.g., whole course/unit)
+        # Ask for question count for the current level (e.g., whole course/unit) (Synchronous)
         await safe_edit_message_text(query, text=f"⏳ جارٍ حساب عدد الأسئلة لـ {scope_level}...", reply_markup=None)
         questions_endpoint = f"/api/v1/{scope_level}s/{scope_id}/questions" # e.g., /api/v1/courses/1/questions
-        max_questions = await get_question_count_from_api(questions_endpoint)
+        # Removed await
+        max_questions = get_question_count_from_api(questions_endpoint) 
 
         if max_questions == 0:
              error_message = f"⚠️ لم يتم العثور على أسئلة لـ {scope_level} {scope_id} أو حدث خطأ." 
@@ -357,14 +363,19 @@ async def handle_scope_back(update: Update, context: CallbackContext) -> int:
         return SELECT_QUIZ_TYPE
         
     elif data == "quiz_back_to_course": # Back from unit list to course list
-        courses = await fetch_from_api("/api/v1/courses")
+        # Removed await
+        courses = fetch_from_api("/api/v1/courses") 
         if courses is None or not isinstance(courses, list):
             logger.error("Failed to fetch courses from API on back button.")
             await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء الرجوع. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
             
         if not courses:
-            return await quiz_menu(update, context)
+            # If no courses, go back to quiz menu
+            text = "🧠 اختر نوع الاختبار الذي تريده:"
+            keyboard = create_quiz_type_keyboard()
+            await safe_edit_message_text(query, text=text, reply_markup=keyboard)
+            return SELECT_QUIZ_TYPE
             
         context.user_data["scope_items"] = courses
         context.user_data["current_page"] = 0
@@ -377,7 +388,7 @@ async def handle_scope_back(update: Update, context: CallbackContext) -> int:
     elif data.startswith("quiz_back_to_unit_"): # Back from lesson list to unit list
         try:
             unit_id = int(data.split("_")[-1])
-            # We need the course_id. Let's assume it was stored as parent_id when units were listed.
+            # We need the course_id. It should be stored as parent_id when units were listed.
             course_id = context.user_data.get("parent_id") # This should be the course_id
             
             if course_id is None:
@@ -387,7 +398,8 @@ async def handle_scope_back(update: Update, context: CallbackContext) -> int:
                  return await handle_scope_back(update, context)
 
             units_endpoint = f"/api/v1/courses/{course_id}/units"
-            units = await fetch_from_api(units_endpoint)
+            # Removed await
+            units = fetch_from_api(units_endpoint) 
             if units is None or not isinstance(units, list):
                 logger.error(f"Failed to fetch units from API ({units_endpoint}) on back button.")
                 await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء الرجوع. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
@@ -403,24 +415,25 @@ async def handle_scope_back(update: Update, context: CallbackContext) -> int:
             context.user_data["current_page"] = 0 # Reset page
             context.user_data["parent_id"] = course_id # Parent is now course
             text = "📖 اختر الوحدة الدراسية:"
-            # Find the page the previous unit_id might have been on (optional)
-            # page = 0
-            # try:
-            #     unit_index = next(i for i, u in enumerate(units) if u.get("unit_id") == unit_id)
-            #     page = unit_index // ITEMS_PER_PAGE
-            # except StopIteration:
-            #     pass 
             keyboard = create_scope_keyboard("unit", units, page=0, parent_id=course_id)
             await safe_edit_message_text(query, text=text, reply_markup=keyboard)
             return SELECT_QUIZ_SCOPE
 
         except (ValueError, IndexError, TypeError) as e:
              logger.error(f"Error parsing unit_id or getting course_id from back callback: {data}, Error: {e}")
-             return await quiz_menu(update, context) # Fallback
+             # Fallback to quiz menu
+             text = "🧠 اختر نوع الاختبار الذي تريده:"
+             keyboard = create_quiz_type_keyboard()
+             await safe_edit_message_text(query, text=text, reply_markup=keyboard)
+             return SELECT_QUIZ_TYPE
 
     else:
         logger.warning(f"Unknown back button data: {data}")
-        return await quiz_menu(update, context) # Fallback to quiz menu
+        # Fallback to quiz menu
+        text = "🧠 اختر نوع الاختبار الذي تريده:"
+        keyboard = create_quiz_type_keyboard()
+        await safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        return SELECT_QUIZ_TYPE
 
 async def enter_question_count(update: Update, context: CallbackContext) -> int:
     """Handles the user entering the desired number of questions."""
@@ -434,9 +447,6 @@ async def enter_question_count(update: Update, context: CallbackContext) -> int:
         if not selection:
             logger.error("ENTER_QUESTION_COUNT state reached without quiz_selection.")
             await safe_send_message(context.bot, user_id, text="حدث خطأ، يرجى البدء من جديد.")
-            # Go back to main menu using the callback function
-            # Need to simulate an update for main_menu_callback
-            # Simplest: Send main menu again
             keyboard = create_main_menu_keyboard(user_id)
             await safe_send_message(context.bot, user_id, text="القائمة الرئيسية:", reply_markup=keyboard)
             return MAIN_MENU
@@ -445,18 +455,16 @@ async def enter_question_count(update: Update, context: CallbackContext) -> int:
 
         if max_questions == 0:
              await safe_send_message(context.bot, user_id, text="⚠️ لا توجد أسئلة متاحة لهذا الاختيار. يرجى اختيار نطاق آخر.")
-             # Go back to quiz type selection
              text = "🧠 اختر نوع الاختبار الذي تريده:"
              keyboard = create_quiz_type_keyboard()
-             # Need query object to edit message, but we are in message handler
-             # Send a new message instead
              await safe_send_message(context.bot, user_id, text=text, reply_markup=keyboard)
              return SELECT_QUIZ_TYPE
 
         if 1 <= requested_count <= max_questions:
             selection["count"] = requested_count
             logger.info(f"Starting quiz for user {user_id} with selection: {selection}")
-            return await start_quiz_logic(update, context)
+            # start_quiz_logic is async, so await is needed here
+            return await start_quiz_logic(update, context) 
         else:
             await safe_send_message(context.bot, user_id, text=f"❌ عدد غير صالح. يرجى إدخال رقم بين 1 و {max_questions}.")
             return ENTER_QUESTION_COUNT # Stay in this state
@@ -473,7 +481,6 @@ async def cancel_quiz_setup(update: Update, context: CallbackContext) -> int:
     """Cancels the quiz setup process and returns to the main menu."""
     user_id = update.effective_user.id
     logger.info(f"User {user_id} cancelled quiz setup.")
-    # Check if called via query or command
     query = update.callback_query
     message_func = safe_edit_message_text if query else safe_send_message
     target = query if query else context.bot
@@ -490,7 +497,6 @@ async def cancel_quiz_setup(update: Update, context: CallbackContext) -> int:
     context.user_data.pop("parent_id", None)
     context.user_data.pop("current_page", None)
     
-    # Show main menu
     keyboard = create_main_menu_keyboard(user_id)
     await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=keyboard)
     return MAIN_MENU
@@ -525,8 +531,7 @@ quiz_conv_handler = ConversationHandler(
         CommandHandler("cancel", cancel_quiz_setup), 
         CommandHandler("start", main_menu_callback), 
         CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), 
-        # Add a fallback for cancel during setup via callback
-        CallbackQueryHandler(cancel_quiz_setup, pattern="^cancel_setup$") # Assuming a cancel button might be added
+        CallbackQueryHandler(cancel_quiz_setup, pattern="^cancel_setup$")
     ],
     map_to_parent={
         MAIN_MENU: MAIN_MENU,
