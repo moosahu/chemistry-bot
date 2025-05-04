@@ -74,7 +74,6 @@ def create_info_detail_keyboard(category: str) -> InlineKeyboardMarkup:
     
     # Simple list for now, pagination could be added if lists become long
     for item_name in items:
-        # Corrected f-string: Removed potential leading space and newline
         keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{callback_prefix}{item_name}")]) 
 
     # Back button to the main info menu
@@ -109,7 +108,6 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
     data = query.data # e.g., "info_cat_elements"
     logger.info(f"User {user_id} selected info category: {data}")
 
-    # Corrected split: Use simple underscore
     category = data.split("_")[-1] 
     context.user_data["current_info_category"] = category
 
@@ -132,7 +130,6 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         elif category == "laws":
             try:
                 # Read content from the markdown file
-                # Ensure correct path within the deployed environment
                 with open("content/laws.md", "r", encoding="utf-8") as f: 
                     content = f.read()
             except FileNotFoundError:
@@ -149,7 +146,6 @@ def select_info_category(update: Update, context: CallbackContext) -> int:
         formatted_content = process_text_with_chemical_notation(content)
         
         # Send content and provide back button
-        # Corrected callback_data: Removed newline
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]]) 
         safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
         return INFO_MENU # Stay in info menu state after showing direct content
@@ -163,7 +159,6 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     logger.info(f"User {user_id} selected info detail: {data}")
 
     try:
-        # Corrected split: Use simple underscore
         parts = data.split("_") 
         category = parts[2]
         item_name = "_".join(parts[3:]) # Handle names with underscores if any
@@ -175,7 +170,6 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
-        # Corrected dictionary access and f-string: Removed newlines, used .get()
         symbol = details.get(
 'رمز'
 , 
@@ -196,7 +190,6 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
                   f"- الوزن الذري: {atomic_weight}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
-        # Corrected dictionary access and f-string: Removed newlines, used .get()
         formula = details.get(
 'صيغة'
 , 
@@ -218,7 +211,6 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     elif category == "concepts" and item_name in CONCEPTS:
         content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
     else:
-        # Corrected f-string: Removed newlines within {} placeholders
         content = f"عذراً، لم يتم العثور على تفاصيل لـ 
 "{item_name}
 " في فئة 
