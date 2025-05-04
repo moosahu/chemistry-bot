@@ -371,7 +371,8 @@ async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
         await safe_edit_message_text(query.message, text="انتهى هذا الاختبار أو أنك في اختبار آخر.")
         return TAKING_QUIZ # Or maybe MAIN_MENU?
     if question_index_cb != quiz_data["current_question_index"]:
-        logger.warning(f"[QUIZ CB] Answer received for non-current question (cb:{question_index_cb}, current:{quiz_data["current_question_index"]}) quiz {quiz_id_cb}")
+        # CORRECTED LINE: Use single quotes inside the f-string expression
+        logger.warning(f"[QUIZ CB] Answer received for non-current question (cb:{question_index_cb}, current:{quiz_data['current_question_index']}) quiz {quiz_id_cb}")
         await safe_edit_message_text(query.message, text="لقد تم الرد على هذا السؤال بالفعل أو تم تخطيه.")
         return TAKING_QUIZ
 
@@ -400,6 +401,7 @@ async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
 
     # Add explanation if available
     if question.get("explanation"):
+        # CORRECTED LINE: Use single quotes inside the f-string expression
         feedback_text += f"\n\n*الشرح:* {question['explanation']}"
 
     # --- Update Message with Feedback --- 
@@ -452,7 +454,8 @@ async def handle_quiz_skip(bot, chat_id: int, user_id: int, quiz_id: str, questi
         # if not timed_out and not error_skip: await safe_send_message(bot, chat_id, text="لا يمكنك تخطي سؤال من اختبار غير نشط.")
         return TAKING_QUIZ
     if question_index != quiz_data["current_question_index"]:
-        logger.warning(f"[QUIZ SKIP] Skip called for non-current question (cb:{question_index}, current:{quiz_data["current_question_index"]}) quiz {quiz_id}")
+        # CORRECTED LINE: Use single quotes inside the f-string expression
+        logger.warning(f"[QUIZ SKIP] Skip called for non-current question (cb:{question_index}, current:{quiz_data['current_question_index']}) quiz {quiz_id}")
         # Don't send message if called internally
         # if not timed_out and not error_skip: await safe_send_message(bot, chat_id, text="لا يمكنك تخطي سؤال تم الرد عليه بالفعل.")
         return TAKING_QUIZ
@@ -467,7 +470,7 @@ async def handle_quiz_skip(bot, chat_id: int, user_id: int, quiz_id: str, questi
     # --- Process Skip --- 
     quiz_data["answers"][question_index] = -1 # Mark as skipped
     quiz_data["skipped_count"] += 1
-    logger.info(f"[QUIZ SKIP] User {user_id} skipped q:{question_index}. Reason: {"Timeout" if timed_out else "User Action" if not error_skip else "Error"}. Quiz: {quiz_id}")
+    logger.info(f"[QUIZ SKIP] User {user_id} skipped q:{question_index}. Reason: {'Timeout' if timed_out else 'User Action' if not error_skip else 'Error'}. Quiz: {quiz_id}")
 
     feedback_text = "⏭️ تم تخطي السؤال."
     if timed_out:
