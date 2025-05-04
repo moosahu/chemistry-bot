@@ -7,13 +7,14 @@ from telegram.ext import (
     CallbackContext,
     ConversationHandler,
     CallbackQueryHandler,
-    CommandHandler # <-- Added CommandHandler import
+    CommandHandler # Added missing import
 )
 
 # Import necessary components from other modules
 try:
-    from config import logger, MAIN_MENU, STATS_MENU
-    from utils.helpers import safe_send_message, safe_edit_message_text, format_duration
+    from config import logger, MAIN_MENU, STATS_MENU, END # Added END
+    # Ensure format_duration is imported correctly
+    from utils.helpers import safe_send_message, safe_edit_message_text, format_duration 
     from database.manager import DB_MANAGER # Import the initialized DB_MANAGER instance
     from handlers.common import main_menu_callback # For returning to main menu
 except ImportError as e:
@@ -22,10 +23,10 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.error(f"Error importing modules in handlers.stats: {e}. Using placeholders.")
     # Define placeholders
-    MAIN_MENU, STATS_MENU = 0, 8 # Match config.py
+    MAIN_MENU, STATS_MENU, END = 0, 8, ConversationHandler.END # Match config.py
     def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
     def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
-    def format_duration(seconds): return f"{seconds}s"
+    def format_duration(seconds): logger.warning("Placeholder format_duration called!"); return f"{seconds}s"
     # Dummy DB_MANAGER
     class DummyDBManager:
         def get_user_stats(*args, **kwargs): 
@@ -82,14 +83,13 @@ def show_my_stats(update: Update, context: CallbackContext) -> int:
     stats_text = "📊 *إحصائياتي الشخصية*\n\n"
     if DB_MANAGER:
         user_stats = DB_MANAGER.get_user_stats(user_id)
-        if user_stats and user_stats.get("total_quizzes_taken", 0) > 0: # Use .get for safety
+        if user_stats and user_stats.get("total_quizzes_taken", 0) > 0:
             total_time_str = format_duration(user_stats.get("total_time_seconds", 0))
-            # Corrected f-strings using single quotes for dictionary keys
-            stats_text += f"📝 إجمالي الاختبارات: {user_stats.get('total_quizzes_taken', 0)}\n"
-            stats_text += f"✅ مجموع الإجابات الصحيحة: {user_stats.get('total_correct', 0)}\n"
-            stats_text += f"❌ مجموع الإجابات الخاطئة: {user_stats.get('total_wrong', 0)}\n"
-            stats_text += f"⏭️ مجموع الأسئلة المتخطاة: {user_stats.get('total_skipped', 0)}\n"
-            stats_text += f"💯 متوسط النتيجة: {user_stats.get('average_score', 0.0):.1f}%\n"
+            stats_text += f"📝 إجمالي الاختبارات: {user_stats.get(\"total_quizzes_taken\")}\n"
+            stats_text += f"✅ مجموع الإجابات الصحيحة: {user_stats.get(\"total_correct\")}\n"
+            stats_text += f"❌ مجموع الإجابات الخاطئة: {user_stats.get(\"total_wrong\")}\n"
+            stats_text += f"⏭️ مجموع الأسئلة المتخطاة: {user_stats.get(\"total_skipped\")}\n"
+            stats_text += f"💯 متوسط النتيجة: {user_stats.get(\"average_score\", 0.0):.1f}%\n"
             stats_text += f"⏱️ إجمالي وقت اللعب: {total_time_str}"
         else:
             stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
@@ -116,13 +116,12 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
-                # Use .get for safety and provide default values
-                display_name = entry.get("user_display_name", f"User {entry.get('user_id', 'N/A')}")
+                # Use .get() for safer access
+                display_name = entry.get("user_display_name", f"User {entry.get(\"user_id\")}") 
                 # Escape markdown characters in username
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
                 avg_score = entry.get("average_score", 0.0)
                 quizzes_taken = entry.get("quizzes_taken", 0)
-                # Corrected f-string using single quotes for dictionary keys
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
@@ -137,7 +136,7 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
 # --- Conversation Handler Definition --- 
 
 stats_conv_handler = ConversationHandler(
-    # Entry point is from the main menu handler when 'menu_stats' is chosen
+    # Entry point is from the main menu handler when \menu_stats\ is chosen
     entry_points=[CallbackQueryHandler(stats_menu, pattern="^menu_stats$")], 
     states={
         STATS_MENU: [
@@ -156,11 +155,12 @@ stats_conv_handler = ConversationHandler(
         CallbackQueryHandler(stats_menu, pattern=".*") # Go back to stats menu on any other callback
     ],
     map_to_parent={
-        # If MAIN_MENU is returned, map it to the main conversation handler's MAIN_MENU state
+        # If MAIN_MENU is returned, map it to the main conversation handler\s MAIN_MENU state
         MAIN_MENU: MAIN_MENU,
-        # If END is returned, end the conversation (though not used here)
-        # END: END 
+        # If END is returned, end the conversation
+        END: END 
     },
-    allow_reentry=True
+    persistent=True, # Enable persistence
+    name="stats_conversation" # Unique name for persistence
 )
 

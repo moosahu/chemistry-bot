@@ -95,12 +95,12 @@ def setup_database_schema():
                     lesson_id INTEGER REFERENCES lessons(lesson_id) ON DELETE SET NULL, -- Keep question if lesson deleted?
                     question_text TEXT NOT NULL,
                     image_url VARCHAR(512), -- Optional image URL for the question
-                    # Correct answer info is expected from API, not stored directly here?
-                    # If storing, add correct_option_index INTEGER NOT NULL CHECK (...)
+                    -- Correct answer info is expected from API, not stored directly here?
+                    -- If storing, add correct_option_index INTEGER NOT NULL CHECK (...)
                     explanation TEXT, -- Optional explanation
                     difficulty INTEGER, -- Optional difficulty level
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    # Removed quiz_id, chapter_id, grade_level_id - link via lesson_id
+                    -- Removed quiz_id, chapter_id, grade_level_id - link via lesson_id
                 );
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_lesson_id ON questions(lesson_id);")

@@ -9,8 +9,8 @@ from telegram.ext import (
     ConversationHandler,
     CallbackQueryHandler,
     MessageHandler,
-    CommandHandler, # <-- Added CommandHandler import
-    filters # Import filters (lowercase) instead of Filters
+    filters, # Import filters (lowercase) instead of Filters
+    CommandHandler # Added missing CommandHandler import
 )
 
 # Import necessary components from other modules
@@ -94,18 +94,15 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
         item_id = item.get(id_key)
         item_name = item.get(name_key, f"Item {item_id}")
         if item_id is not None:
-            # Corrected f-string for callback_data
-            keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{prefix}{item_id}")])
+            keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{prefix}{item_id}")]) # Corrected f-string
 
     # Pagination controls
     pagination_row = []
     total_pages = math.ceil(len(items) / ITEMS_PER_PAGE)
     if page > 0:
-        # Corrected f-string for callback_data
-        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id or ''}"))
+        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id or \'\'}")) # Corrected f-string
     if end_index < len(items):
-        # Corrected f-string for callback_data
-        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id or ''}"))
+        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id or \'\'}")) # Corrected f-string
     if pagination_row:
         keyboard.append(pagination_row)
 
@@ -114,7 +111,10 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
     if scope_type == "unit" and parent_id is not None:
         back_callback = f"quiz_back_to_course"
     elif scope_type == "lesson" and parent_id is not None:
-        back_callback = f"quiz_back_to_unit_{parent_id}" # Need parent unit ID
+        # Find the unit_id for the current lesson_id to go back correctly
+        # This might require storing the unit_id in user_data when selecting a unit
+        # For now, let's assume parent_id passed here is the unit_id
+        back_callback = f"quiz_back_to_unit_{parent_id}" 
     
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
 
@@ -143,6 +143,8 @@ def quiz_menu(update: Update, context: CallbackContext) -> int:
     context.user_data.pop("quiz_selection", None)
     context.user_data.pop("current_page", None)
     context.user_data.pop("parent_id", None)
+    context.user_data.pop("scope_items", None) # Clear items cache
+    context.user_data.pop("current_unit_id", None) # Clear unit id cache
     
     return SELECT_QUIZ_TYPE
 
@@ -154,7 +156,6 @@ def select_quiz_type(update: Update, context: CallbackContext) -> int:
     data = query.data
     logger.info(f"User {user_id} selected quiz type: {data}")
 
-    # Corrected split character
     quiz_type = data.split("_")[-1] # e.g., "random", "course"
     context.user_data["quiz_selection"] = {"type": quiz_type}
     context.user_data["current_page"] = 0 # Reset page for scope selection
@@ -198,7 +199,6 @@ def select_quiz_scope(update: Update, context: CallbackContext) -> int:
     data = query.data
     logger.info(f"User {user_id} selected quiz scope: {data}")
 
-    # Corrected split character
     parts = data.split("_")
     scope_level = parts[2] # course, unit, lesson
     scope_id = int(parts[3])
@@ -221,10 +221,9 @@ def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         next_level_items = DB_MANAGER.get_lessons_by_unit(scope_id) if DB_MANAGER else []
         next_scope_type = "lesson"
         prompt_text = "📄 اختر الدرس:"
-        # Need parent course ID if going back from lesson -> unit -> course
-        # Assuming parent_id (course_id) is still in user_data
-        # We need unit_id for back button from lesson list
-        context.user_data["parent_id"] = scope_id # Store unit_id for back button
+        # Store unit_id for back button from lesson list
+        context.user_data["current_unit_id"] = scope_id 
+        # parent_id should still hold the course_id from the previous step
     elif scope_level == "lesson":
         # Final level selected, ask for question count
         # Fetch question count for this lesson from API
@@ -262,7 +261,6 @@ def handle_scope_pagination(update: Update, context: CallbackContext) -> int:
     data = query.data
     logger.debug(f"User {user_id} requested scope pagination: {data}")
 
-    # Corrected split character
     parts = data.split("_")
     scope_type = parts[2]
     page = int(parts[3])
@@ -279,7 +277,7 @@ def handle_scope_pagination(update: Update, context: CallbackContext) -> int:
         
     # Store current page and parent_id
     context.user_data["current_page"] = page
-    context.user_data["parent_id"] = parent_id
+    context.user_data["parent_id"] = parent_id # May be None for course list
 
     # Create and send the keyboard for the requested page
     prompt_map = {"course": "📚 اختر المقرر الدراسي:", "unit": "📖 اختر الوحدة الدراسية:", "lesson": "📄 اختر الدرس:"}
@@ -307,16 +305,18 @@ def handle_scope_back(update: Update, context: CallbackContext) -> int:
         context.user_data.pop("parent_id", None)
         context.user_data.pop("current_page", None)
         context.user_data.pop("quiz_selection", None)
+        context.user_data.pop("current_unit_id", None)
         return SELECT_QUIZ_TYPE
         
     elif data == "quiz_back_to_course": # Back from unit list to course list
         courses = DB_MANAGER.get_all_courses() if DB_MANAGER else []
         if not courses:
-            # Fallback if courses can't be fetched
+            # Fallback if courses can\t be fetched
             return quiz_menu(update, context) 
         context.user_data["scope_items"] = courses
         context.user_data["current_page"] = 0 # Reset page
         context.user_data.pop("parent_id", None) # Clear parent_id (was course_id)
+        context.user_data.pop("current_unit_id", None)
         text = "📚 اختر المقرر الدراسي:"
         keyboard = create_scope_keyboard("course", courses, page=0)
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
@@ -324,80 +324,71 @@ def handle_scope_back(update: Update, context: CallbackContext) -> int:
         
     elif data.startswith("quiz_back_to_unit_"): # Back from lesson list to unit list
         try:
-            # Corrected split character
             unit_id = int(data.split("_")[-1])
-            # We need the course_id to fetch units for that course
-            # Find the course_id associated with this unit_id (requires DB query or stored data)
-            # This is complex - simpler approach: Assume course_id is stored in parent_id when viewing units
-            course_id = context.user_data.get("parent_id") # This should be the course_id
+            # Fetch units for the parent course
+            course_id = context.user_data.get("parent_id") # Should be course_id
             if course_id is None:
-                 logger.error("Cannot go back to unit list: course_id not found in user_data.")
+                 logger.error("Cannot go back to unit list: parent course_id not found in user_data.")
                  return quiz_menu(update, context) # Fallback to main quiz menu
                  
             units = DB_MANAGER.get_units_by_course(course_id) if DB_MANAGER else []
             if not units:
-                # Fallback if units can't be fetched
-                return quiz_menu(update, context) 
+                logger.error(f"Cannot go back to unit list: No units found for course {course_id}.")
+                return quiz_menu(update, context) # Fallback
                 
             context.user_data["scope_items"] = units
             context.user_data["current_page"] = 0 # Reset page
-            # parent_id remains course_id for back button from unit list
+            # parent_id remains the course_id
+            context.user_data.pop("current_unit_id", None)
             text = "📖 اختر الوحدة الدراسية:"
             keyboard = create_scope_keyboard("unit", units, page=0, parent_id=course_id)
             safe_edit_message_text(query, text=text, reply_markup=keyboard)
             return SELECT_QUIZ_SCOPE
             
-        except (IndexError, ValueError, TypeError) as e:
-            logger.error(f"Error parsing unit_id from back callback {data}: {e}")
+        except (ValueError, IndexError, TypeError) as e:
+            logger.error(f"Error parsing unit_id for back button: {e}, data: {data}")
             return quiz_menu(update, context) # Fallback
-            
+
     else:
         logger.warning(f"Unknown back button data: {data}")
         return quiz_menu(update, context) # Fallback to main quiz menu
 
 def enter_question_count(update: Update, context: CallbackContext) -> int:
     """Handles the user entering the desired number of questions."""
-    message = update.message
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    
     try:
-        count = int(message.text)
-        max_questions = context.user_data.get("quiz_selection", {}).get("max_questions", 1) # Default to 1 if missing
-        
+        count_text = update.message.text
+        count = int(count_text)
+        logger.info(f"User {user_id} entered question count: {count}")
+
+        quiz_selection = context.user_data.get("quiz_selection", {})
+        max_questions = quiz_selection.get("max_questions", 1) # Default to 1 if missing
+
         if 1 <= count <= max_questions:
-            logger.info(f"User {user_id} entered question count: {count}")
-            context.user_data["quiz_selection"]["count"] = count
-            
-            # Clean up intermediate data before starting quiz
-            context.user_data.pop("scope_items", None)
-            context.user_data.pop("parent_id", None)
-            context.user_data.pop("current_page", None)
-            
-            # Call the logic function to start the quiz
-            # This function will handle fetching questions and sending the first one
-            # It returns the next state (TAKING_QUIZ)
+            quiz_selection["count"] = count
+            logger.info(f"Starting quiz for user {user_id} with selection: {quiz_selection}")
+            # Call the function from quiz_logic to start the quiz
             return start_quiz_logic(update, context)
-            
         else:
             logger.warning(f"User {user_id} entered invalid count: {count} (max: {max_questions})")
-            safe_send_message(context.bot, chat_id, text=f"الرجاء إدخال رقم صحيح بين 1 و {max_questions}.")
-            return ENTER_QUESTION_COUNT # Ask again
-            
-    except (ValueError, TypeError):
-        logger.warning(f"User {user_id} entered non-integer count: {message.text}")
-        safe_send_message(context.bot, chat_id, text="الرجاء إدخال رقم صحيح لعدد الأسئلة.")
-        return ENTER_QUESTION_COUNT # Ask again
+            safe_send_message(context.bot, user_id, text=f"❌ العدد غير صالح. الرجاء إدخال رقم بين 1 و {max_questions}.")
+            # Ask again
+            text = f"أدخل عدد الأسئلة التي تريدها (1-{max_questions}):"
+            safe_send_message(context.bot, user_id, text=text)
+            return ENTER_QUESTION_COUNT # Stay in this state
 
-def quiz_fallback(update: Update, context: CallbackContext) -> int:
-    """Handles unexpected input during the quiz setup conversation."""
-    logger.warning(f"Quiz fallback triggered for update: {update}")
-    safe_send_message(context.bot, update.effective_chat.id, text="إدخال غير متوقع. يرجى استخدام الأزرار أو إدخال رقم عند الطلب.")
-    # Try to return to the quiz type selection menu gracefully
-    text = "🧠 اختر نوع الاختبار الذي تريده:"
-    keyboard = create_quiz_type_keyboard()
-    safe_send_message(context.bot, update.effective_chat.id, text=text, reply_markup=keyboard)
-    return SELECT_QUIZ_TYPE
+    except ValueError:
+        logger.warning(f"User {user_id} entered non-integer count: {update.message.text}")
+        safe_send_message(context.bot, user_id, text="❌ إدخال غير صالح. الرجاء إدخال رقم.")
+        # Ask again (get max_questions safely)
+        max_q = context.user_data.get("quiz_selection", {}).get("max_questions", 1)
+        text = f"أدخل عدد الأسئلة التي تريدها (1-{max_q}):"
+        safe_send_message(context.bot, user_id, text=text)
+        return ENTER_QUESTION_COUNT # Stay in this state
+    except Exception as e:
+        logger.exception(f"Error processing question count for user {user_id}: {e}")
+        safe_send_message(context.bot, user_id, text="حدث خطأ أثناء معالجة طلبك. العودة إلى القائمة الرئيسية.")
+        return main_menu_callback(update, context)
 
 # --- Conversation Handler Definition --- 
 
@@ -405,42 +396,51 @@ quiz_conv_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(quiz_menu, pattern="^menu_quiz$")],
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_"),
-            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Back to main menu
+            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_")
         ],
         SELECT_QUIZ_SCOPE: [
             CallbackQueryHandler(select_quiz_scope, pattern="^quiz_scope_"),
             CallbackQueryHandler(handle_scope_pagination, pattern="^quiz_page_"),
             CallbackQueryHandler(handle_scope_back, pattern="^quiz_back_to_"),
-            CallbackQueryHandler(handle_scope_back, pattern="^quiz_menu$") # Back to type selection
+            CallbackQueryHandler(quiz_menu, pattern="^quiz_menu$") # Back to type selection
         ],
         ENTER_QUESTION_COUNT: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, enter_question_count)
         ],
         TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer, pattern="^quiz_.*_ans_"),
-            CallbackQueryHandler(skip_question_callback, pattern="^quiz_.*_skip_")
-            # No MessageHandler here, only button presses expected
+            CallbackQueryHandler(handle_quiz_answer, pattern="^quiz_ans_"),
+            CallbackQueryHandler(skip_question_callback, pattern="^quiz_skip$")
+            # Timeout handled by job in quiz_logic
         ],
         SHOWING_RESULTS: [
-            # This state is usually brief, just for showing results before returning to MAIN_MENU
-            # The show_results function handles sending the message and returning MAIN_MENU
-            # Add a fallback just in case?
-            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
-        ]
+            # Handled by show_results in quiz_logic, which returns MAIN_MENU or END
+            # Add a fallback or specific handler if needed here
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Allow going to main menu
+        ],
     },
     fallbacks=[
-        CommandHandler("start", main_menu_callback), # Go to main menu on /start
-        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Handle explicit main menu return
-        # Fallback for quiz setup states
-        MessageHandler(filters.ALL, quiz_fallback)
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
+        CommandHandler("start", main_menu_callback) # Allow restarting with /start
+        # Add a fallback within the quiz conversation?
+        # MessageHandler(filters.ALL, lambda u, c: quiz_fallback(u, c))
     ],
     map_to_parent={
-        # If MAIN_MENU is returned by a state, map it to the main conversation handler's MAIN_MENU state
+        # If MAIN_MENU is returned, map it to the main conversation handler\s MAIN_MENU state
         MAIN_MENU: MAIN_MENU,
         # If END is returned, end the conversation
         END: END 
     },
-    allow_reentry=True
+    persistent=True, # Enable persistence for this handler
+    name="quiz_conversation" # Unique name for persistence
 )
+
+# Fallback function within quiz (optional)
+# def quiz_fallback(update: Update, context: CallbackContext):
+#     logger.warning(f"Quiz fallback triggered for update: {update}")
+#     # Decide where to send the user - back to quiz menu?
+#     if update.effective_chat:
+#         context.bot.send_message(update.effective_chat.id, "أمر غير معروف في سياق الاختبار. العودة إلى قائمة الاختبار.")
+#     # Need to call quiz_menu with appropriate arguments (likely needs query simulation)
+#     # For simplicity, maybe just end the quiz conversation or go to main menu
+#     return main_menu_callback(update, context)
 
