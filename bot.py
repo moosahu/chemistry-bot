@@ -8,8 +8,8 @@ import sys
 import os
 
 # --- Debugging Prints --- 
-print(f"DEBUG: Current Working Directory: {os.getcwd()}")
-print(f"DEBUG: sys.path before modification: {sys.path}")
+# print(f"DEBUG: Current Working Directory: {os.getcwd()}")
+# print(f"DEBUG: sys.path before modification: {sys.path}")
 
 # --- Add project root to sys.path --- 
 # This ensures modules in subdirectories (database, handlers, etc.) can be imported correctly
@@ -17,8 +17,8 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 # Check if project_root is already in sys.path to avoid duplicates
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-print(f"DEBUG: Project Root added: {project_root}")
-print(f"DEBUG: sys.path after modification: {sys.path}")
+# print(f"DEBUG: Project Root added: {project_root}")
+# print(f"DEBUG: sys.path after modification: {sys.path}")
 # --- End Debugging Prints ---
 
 from telegram.ext import (
@@ -28,12 +28,13 @@ from telegram.ext import (
     ConversationHandler,
     MessageHandler,
     filters, # Import filters (lowercase) instead of Filters
-    PicklePersistence # For storing conversation state across restarts
+    PicklePersistence, # For storing conversation state across restarts
+    CallbackContext # <-- Added missing import
 )
 
 # --- Import Configuration and Core Components --- 
 try:
-    print("DEBUG: Attempting to import config...")
+    # print("DEBUG: Attempting to import config...")
     from config import (
         TELEGRAM_BOT_TOKEN, API_BASE_URL, DATABASE_URL, # Core config
         logger, # Logger instance
@@ -41,18 +42,18 @@ try:
         ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, 
         INFO_MENU, STATS_MENU, SHOW_INFO_DETAIL, END # Conversation states
     )
-    print("DEBUG: Imported config successfully.")
+    # print("DEBUG: Imported config successfully.")
     
-    print("DEBUG: Attempting to import database.schema...")
+    # print("DEBUG: Attempting to import database.schema...")
     from database.schema import setup_database_schema, apply_schema_updates
-    print("DEBUG: Imported database.schema successfully.")
+    # print("DEBUG: Imported database.schema successfully.")
 
-    print("DEBUG: Attempting to import handlers...")
+    # print("DEBUG: Attempting to import handlers...")
     from handlers.common import start_handler, main_menu_handler, main_menu_callback
     from handlers.quiz import quiz_conv_handler
     from handlers.info import info_conv_handler
     from handlers.stats import stats_conv_handler
-    print("DEBUG: Imported handlers successfully.")
+    # print("DEBUG: Imported handlers successfully.")
 
 except ImportError as e:
     # Basic logging if config fails
@@ -60,14 +61,14 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.critical(f"Failed to import core modules: {e}. Bot cannot start.")
     # Print sys.path again on failure for easier debugging
-    print(f"DEBUG: sys.path on ImportError: {sys.path}") 
+    # print(f"DEBUG: sys.path on ImportError: {sys.path}") 
     exit(1)
 except Exception as e:
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger(__name__)
     logger.critical(f"An unexpected error occurred during imports: {e}. Bot cannot start.")
     # Print sys.path again on failure for easier debugging
-    print(f"DEBUG: sys.path on Exception: {sys.path}") 
+    # print(f"DEBUG: sys.path on Exception: {sys.path}") 
     exit(1)
 
 # --- Error Handler --- 
@@ -165,16 +166,6 @@ def main() -> None:
     application.run_polling()
     logger.info("Bot polling stopped.")
 
-# Fallback function removed as it wasn't used and caused potential issues
-# def main_fallback(update: Update, context: CallbackContext):
-#     """Generic fallback handler for the main conversation (if not in a sub-conversation)."""
-#     logger.warning(f"Main fallback triggered for update: {update}")
-#     # Simply send the user back to the main menu via the start_handler logic
-#     # Need to ensure start_handler sends a new message or edits if possible
-#     # Re-using main_menu_callback might be better if it handles sending/editing
-#     if update.effective_chat:
-#         context.bot.send_message(update.effective_chat.id, "أمر غير معروف. العودة إلى القائمة الرئيسية.")
-#     return main_menu_callback(update, context)
 
 if __name__ == "__main__":
     main()
