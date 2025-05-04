@@ -8,12 +8,13 @@ from telegram.ext import ConversationHandler
 # --- Environment Variables --- 
 
 # Load environment variables (consider using python-dotenv for local development)
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") # Use TELEGRAM_BOT_TOKEN
 DATABASE_URL = os.environ.get("DATABASE_URL")
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://your-api-base-url.com/api") # Provide a default or ensure it's set
 
 # Validate essential variables
-if not BOT_TOKEN:
+if not TELEGRAM_BOT_TOKEN: # Check the correct variable name
+    raise ValueError("Missing required environment variable: TELEGRAM_BOT_TOKEN")
     raise ValueError("Missing required environment variable: BOT_TOKEN")
 if not DATABASE_URL:
     # Allow running without DB for testing some features, but log a warning
