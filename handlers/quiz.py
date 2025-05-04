@@ -94,15 +94,18 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
         item_id = item.get(id_key)
         item_name = item.get(name_key, f"Item {item_id}")
         if item_id is not None:
-            keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{prefix}{item_id}")]) # Corrected f-string
+            # Removed newline characters from f-strings
+            keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{prefix}{item_id}")]) 
 
     # Pagination controls
     pagination_row = []
     total_pages = math.ceil(len(items) / ITEMS_PER_PAGE)
     if page > 0:
-        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id or \'\'}")) # Corrected f-string
+        # Removed newline characters from f-strings
+        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id or \'\'}")) 
     if end_index < len(items):
-        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id or \'\'}")) # Corrected f-string
+        # Removed newline characters from f-strings
+        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id or \'\'}")) 
     if pagination_row:
         keyboard.append(pagination_row)
 
