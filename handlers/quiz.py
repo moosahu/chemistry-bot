@@ -94,18 +94,20 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
         item_id = item.get(id_key)
         item_name = item.get(name_key, f"Item {item_id}")
         if item_id is not None:
-            # Removed newline characters from f-strings
+            # Corrected f-string: Removed potential leading space and newline
             keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{prefix}{item_id}")]) 
 
     # Pagination controls
     pagination_row = []
     total_pages = math.ceil(len(items) / ITEMS_PER_PAGE)
+    # Prepare parent_id string outside the f-string to avoid issues
+    parent_id_str = str(parent_id) if parent_id is not None else ""
     if page > 0:
-        # Removed newline characters from f-strings
-        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id or \'\'}")) 
+        # Corrected f-string: Use pre-formatted parent_id_str
+        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id_str}")) 
     if end_index < len(items):
-        # Removed newline characters from f-strings
-        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id or \'\'}")) 
+        # Corrected f-string: Use pre-formatted parent_id_str
+        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id_str}")) 
     if pagination_row:
         keyboard.append(pagination_row)
 
@@ -267,7 +269,9 @@ def handle_scope_pagination(update: Update, context: CallbackContext) -> int:
     parts = data.split("_")
     scope_type = parts[2]
     page = int(parts[3])
-    parent_id = int(parts[4]) if len(parts) > 4 and parts[4] else None
+    # Handle potentially empty parent_id at the end
+    parent_id_str = parts[4] if len(parts) > 4 else ""
+    parent_id = int(parent_id_str) if parent_id_str.isdigit() else None
 
     items = context.user_data.get("scope_items", [])
     if not items:
@@ -329,7 +333,8 @@ def handle_scope_back(update: Update, context: CallbackContext) -> int:
         try:
             unit_id = int(data.split("_")[-1])
             # Fetch units for the parent course
-            course_id = context.user_data.get("parent_id") # Should be course_id
+            # We need the course_id which should be stored when we selected the course
+            course_id = context.user_data.get("parent_id") # Should be course_id from unit selection step
             if course_id is None:
                  logger.error("Cannot go back to unit list: parent course_id not found in user_data.")
                  return quiz_menu(update, context) # Fallback to main quiz menu
