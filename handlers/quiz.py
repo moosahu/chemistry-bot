@@ -58,22 +58,12 @@ ITEMS_PER_PAGE = 6 # Number of courses/units/lessons per page
 def create_quiz_type_keyboard() -> InlineKeyboardMarkup:
     """Creates keyboard for selecting quiz type (random, course, unit, lesson)."""
     keyboard = [
-        [InlineKeyboardButton("🎲 اختبار عشوائي", callback_data=
-"quiz_type_random
-")],
-        [InlineKeyboardButton("📚 حسب المقرر", callback_data=
-"quiz_type_course
-")],
+        [InlineKeyboardButton("🎲 اختبار عشوائي", callback_data="quiz_type_random")],
+        [InlineKeyboardButton("📚 حسب المقرر", callback_data="quiz_type_course")],
         # Add unit/lesson later if direct selection is needed, or handle via course
-        # [InlineKeyboardButton("📖 حسب الوحدة", callback_data=
-"quiz_type_unit
-")],
-        # [InlineKeyboardButton("📄 حسب الدرس", callback_data=
-"quiz_type_lesson
-")],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data=
-"main_menu
-")]
+        # [InlineKeyboardButton("📖 حسب الوحدة", callback_data="quiz_type_unit")],
+        # [InlineKeyboardButton("📄 حسب الدرس", callback_data="quiz_type_lesson")],
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -103,20 +93,15 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
         item_id = item.get(id_key)
         item_name = item.get(name_key, f"Item {item_id}")
         if item_id is not None:
-            keyboard.append([InlineKeyboardButton(item_name, callback_data=f" {prefix}{item_id}
-")])
+            keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{prefix}{item_id}")]) # Corrected f-string
 
     # Pagination controls
     pagination_row = []
     total_pages = math.ceil(len(items) / ITEMS_PER_PAGE)
     if page > 0:
-        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id or 
-''}
-"))
+        pagination_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"quiz_page_{scope_type}_{page - 1}_{parent_id or ''}")) # Corrected f-string
     if end_index < len(items):
-        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id or 
-''}
-"))
+        pagination_row.append(InlineKeyboardButton("▶️ التالي", callback_data=f"quiz_page_{scope_type}_{page + 1}_{parent_id or ''}")) # Corrected f-string
     if pagination_row:
         keyboard.append(pagination_row)
 
@@ -125,7 +110,8 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
     if scope_type == "unit" and parent_id is not None:
         back_callback = f"quiz_back_to_course"
     elif scope_type == "lesson" and parent_id is not None:
-        back_callback = f"quiz_back_to_unit_{parent_id}" # Need parent unit ID
+        # Assuming parent_id here is the unit_id when displaying lessons
+        back_callback = f"quiz_back_to_unit_{parent_id}" 
     
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback)])
 
@@ -165,9 +151,7 @@ def select_quiz_type(update: Update, context: CallbackContext) -> int:
     data = query.data
     logger.info(f"User {user_id} selected quiz type: {data}")
 
-    quiz_type = data.split(
-"_"
-)[-1] # e.g., "random", "course"
+    quiz_type = data.split("_")[-1] # Corrected split
     context.user_data["quiz_selection"] = {"type": quiz_type}
     context.user_data["current_page"] = 0 # Reset page for scope selection
 
@@ -210,9 +194,7 @@ def select_quiz_scope(update: Update, context: CallbackContext) -> int:
     data = query.data
     logger.info(f"User {user_id} selected quiz scope: {data}")
 
-    parts = data.split(
-"_"
-)
+    parts = data.split("_") # Corrected split
     scope_level = parts[2] # course, unit, lesson
     scope_id = int(parts[3])
 
@@ -222,22 +204,22 @@ def select_quiz_scope(update: Update, context: CallbackContext) -> int:
     next_level_items = []
     next_scope_type = ""
     prompt_text = ""
+    parent_course_id = context.user_data.get("parent_id") # Get parent course id if exists (from previous level)
 
     if scope_level == "course":
         # Fetch units for the selected course
         next_level_items = DB_MANAGER.get_units_by_course(scope_id) if DB_MANAGER else []
         next_scope_type = "unit"
         prompt_text = "📖 اختر الوحدة الدراسية:"
-        context.user_data["parent_id"] = scope_id # Store course_id for back button
+        context.user_data["parent_id"] = scope_id # Store course_id for back button from unit list
     elif scope_level == "unit":
         # Fetch lessons for the selected unit
         next_level_items = DB_MANAGER.get_lessons_by_unit(scope_id) if DB_MANAGER else []
         next_scope_type = "lesson"
         prompt_text = "📄 اختر الدرس:"
-        # Need parent course ID if going back from lesson -> unit -> course
-        # Assuming parent_id (course_id) is still in user_data
-        # We need unit_id for back button from lesson list
-        context.user_data["parent_id"] = scope_id # Store unit_id for back button
+        # Keep the parent_id (which is course_id) for potential back navigation
+        # Store the current unit_id separately if needed for back from lesson list
+        context.user_data["current_unit_id"] = scope_id 
     elif scope_level == "lesson":
         # Final level selected, ask for question count
         # Fetch question count for this lesson from API
@@ -252,11 +234,13 @@ def select_quiz_scope(update: Update, context: CallbackContext) -> int:
     # If there are items for the next level, show them
     if next_level_items:
         context.user_data["scope_items"] = next_level_items # Store for pagination
-        keyboard = create_scope_keyboard(next_scope_type, next_level_items, page=0, parent_id=scope_id)
+        # Pass the correct parent ID for the next level's back button
+        parent_id_for_next = scope_id if scope_level == "course" else context.user_data.get("current_unit_id")
+        keyboard = create_scope_keyboard(next_scope_type, next_level_items, page=0, parent_id=parent_id_for_next)
         safe_edit_message_text(query, text=prompt_text, reply_markup=keyboard)
         return SELECT_QUIZ_SCOPE # Stay in this state for next level selection
     else:
-        # No items found for the next level (e.g., course has no units)
+        # No items found for the next level (e.g., course has no units, unit has no lessons)
         # Ask for question count for the current level (e.g., whole course/unit)
         count_endpoint = f"/{scope_level}s/{scope_id}/questions/count" # e.g., /courses/1/questions/count
         count_response = fetch_from_api(count_endpoint)
@@ -275,9 +259,7 @@ def handle_scope_pagination(update: Update, context: CallbackContext) -> int:
     data = query.data
     logger.debug(f"User {user_id} requested scope pagination: {data}")
 
-    parts = data.split(
-"_"
-)
+    parts = data.split("_") # Corrected split
     scope_type = parts[2]
     page = int(parts[3])
     parent_id = int(parts[4]) if len(parts) > 4 and parts[4] else None
@@ -293,12 +275,14 @@ def handle_scope_pagination(update: Update, context: CallbackContext) -> int:
         
     # Store current page and parent_id
     context.user_data["current_page"] = page
-    context.user_data["parent_id"] = parent_id
+    # context.user_data["parent_id"] = parent_id # Re-evaluate if parent_id needs update here
 
     # Create and send the keyboard for the requested page
     prompt_map = {"course": "📚 اختر المقرر الدراسي:", "unit": "📖 اختر الوحدة الدراسية:", "lesson": "📄 اختر الدرس:"}
     text = prompt_map.get(scope_type, "اختر:")
-    keyboard = create_scope_keyboard(scope_type, items, page=page, parent_id=parent_id)
+    # Get the correct parent_id for the back button based on current scope_type
+    current_parent_id = context.user_data.get("parent_id") if scope_type == "unit" else context.user_data.get("current_unit_id")
+    keyboard = create_scope_keyboard(scope_type, items, page=page, parent_id=current_parent_id)
     safe_edit_message_text(query, text=text, reply_markup=keyboard)
     
     return SELECT_QUIZ_SCOPE # Remain in the scope selection state
@@ -321,6 +305,7 @@ def handle_scope_back(update: Update, context: CallbackContext) -> int:
         context.user_data.pop("parent_id", None)
         context.user_data.pop("current_page", None)
         context.user_data.pop("quiz_selection", None)
+        context.user_data.pop("current_unit_id", None)
         return SELECT_QUIZ_TYPE
         
     elif data == "quiz_back_to_course": # Back from unit list to course list
@@ -331,6 +316,7 @@ def handle_scope_back(update: Update, context: CallbackContext) -> int:
         context.user_data["scope_items"] = courses
         context.user_data["current_page"] = 0 # Reset page
         context.user_data.pop("parent_id", None) # Clear parent_id (was course_id)
+        context.user_data.pop("current_unit_id", None)
         text = "📚 اختر المقرر الدراسي:"
         keyboard = create_scope_keyboard("course", courses, page=0)
         safe_edit_message_text(query, text=text, reply_markup=keyboard)
@@ -338,14 +324,11 @@ def handle_scope_back(update: Update, context: CallbackContext) -> int:
         
     elif data.startswith("quiz_back_to_unit_"): # Back from lesson list to unit list
         try:
-            unit_id = int(data.split(
-"_"
-)[-1])
-            # We need the course_id to fetch units for that course
-            # Find the course_id associated with this unit_id (requires DB query or stored data)
-            # This is complex - simpler to store the parent course_id when selecting a unit
-            # Assuming course_id was stored as parent_id when units were displayed
-            course_id = context.user_data.get("parent_id") # This should be the course_id
+            # The parent_id passed when creating the lesson list keyboard was the unit_id
+            unit_id = int(data.split("_")[-1]) # Corrected split
+            # We need the course_id to fetch units for that course.
+            # It should be stored in parent_id from the previous step (unit selection)
+            course_id = context.user_data.get("parent_id") 
             if course_id is None:
                  logger.error("Cannot go back to unit list: parent course_id not found in user_data.")
                  return quiz_menu(update, context) # Fallback to main quiz menu
@@ -356,6 +339,7 @@ def handle_scope_back(update: Update, context: CallbackContext) -> int:
                  
             context.user_data["scope_items"] = units
             context.user_data["current_page"] = 0
+            context.user_data["current_unit_id"] = None # Clear current unit id
             # parent_id remains the course_id
             text = "📖 اختر الوحدة الدراسية:"
             keyboard = create_scope_keyboard("unit", units, page=0, parent_id=course_id)
@@ -402,57 +386,36 @@ def enter_question_count(update: Update, context: CallbackContext) -> int:
 # --- Conversation Handler Definition --- 
 
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu, pattern=
-"^menu_quiz$
-")],
+    entry_points=[CallbackQueryHandler(quiz_menu, pattern="^menu_quiz$")], # Corrected pattern
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern=
-"^quiz_type_"
-),
-            CallbackQueryHandler(main_menu_callback, pattern=
-"^main_menu$
-") # Allow returning to main menu
+            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_"), # Corrected pattern
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Corrected pattern
         ],
         SELECT_QUIZ_SCOPE: [
-            CallbackQueryHandler(select_quiz_scope, pattern=
-"^quiz_scope_"
-),
-            CallbackQueryHandler(handle_scope_pagination, pattern=
-"^quiz_page_"
-),
-            CallbackQueryHandler(handle_scope_back, pattern=
-"^quiz_back_to_|^quiz_menu$"
-) # Handle various back buttons
+            CallbackQueryHandler(select_quiz_scope, pattern="^quiz_scope_"), # Corrected pattern
+            CallbackQueryHandler(handle_scope_pagination, pattern="^quiz_page_"), # Corrected pattern
+            CallbackQueryHandler(handle_scope_back, pattern="^quiz_back_to_|^quiz_menu$") # Corrected pattern
         ],
-        ENTER_QUESTION_COUNT: [            MessageHandler(filters.TEXT & ~filters.COMMAND, enter_question_count),
+        ENTER_QUESTION_COUNT: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, enter_question_count),
         ],
         TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer, pattern=
-"^quiz_.*_ans_"
-),
-            CallbackQueryHandler(skip_question_callback, pattern=
-"^quiz_.*_skip_"
-)
+            CallbackQueryHandler(handle_quiz_answer, pattern="^quiz_.*_ans_"), # Corrected pattern
+            CallbackQueryHandler(skip_question_callback, pattern="^quiz_.*_skip_") # Corrected pattern
             # No message handler here, only button presses expected
         ],
         SHOWING_RESULTS: [
             # This state is usually terminal, show_results returns MAIN_MENU
             # Add handlers here if interaction is needed after results (e.g., review answers)
-            CallbackQueryHandler(main_menu_callback, pattern=
-"^main_menu$
-") # Allow going back to main menu
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Corrected pattern
         ],
     },
     fallbacks=[
-        CommandHandler(
-"start"
-, main_menu_callback), # Go to main menu on /start
-        CallbackQueryHandler(main_menu_callback, pattern=
-"^main_menu$
-"), # Handle explicit main menu return
+        CommandHandler("start", main_menu_callback), # Corrected command name
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Corrected pattern
         # Add a generic fallback message?
-        MessageHandler(Filters.all, lambda u, c: quiz_fallback(u, c))
+        MessageHandler(filters.ALL, lambda u, c: quiz_fallback(u, c)) # Corrected filter name
     ],
     map_to_parent={
         # If MAIN_MENU is returned, map it to the main conversation handler's MAIN_MENU state
@@ -485,6 +448,7 @@ def quiz_fallback(update: Update, context: CallbackContext):
         context.user_data.pop("scope_items", None)
         context.user_data.pop("parent_id", None)
         context.user_data.pop("current_page", None)
+        context.user_data.pop("current_unit_id", None)
 
     if update.callback_query:
         safe_edit_message_text(update.callback_query, text=text, reply_markup=keyboard)
