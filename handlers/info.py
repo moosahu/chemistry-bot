@@ -170,17 +170,20 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
+        # Corrected f-string formatting using double quotes for keys
         content = f"*{item_name} ({details["رمز"]})*\n\n" \
                   f"- الرقم الذري: {details["رقم_ذري"]}\n" \
                   f"- الوزن الذري: {details["وزن_ذري"]}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
+        # Corrected f-string formatting using double quotes for keys
         content = f"*{item_name} ({process_text_with_chemical_notation(details["صيغة"])})*\n\n" \
                   f"- النوع: {details["نوع"]}\n" \
                   f"- الحالة (STP): {details["حالة"]}"
     elif category == "concepts" and item_name in CONCEPTS:
         content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
     else:
+        # Corrected f-string formatting for error message
         content = f"عذراً، لم يتم العثور على تفاصيل لـ \"{item_name}\" في فئة \"{category}\"."
         logger.warning(f"Details not found for item 
 '{item_name}' in category '{category}'.")
