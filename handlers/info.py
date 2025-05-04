@@ -211,16 +211,10 @@ def show_info_detail(update: Update, context: CallbackContext) -> int:
     elif category == "concepts" and item_name in CONCEPTS:
         content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
     else:
-        content = f"عذراً، لم يتم العثور على تفاصيل لـ 
-"{item_name}
-" في فئة 
-"{category}
-"."
-        logger.warning(f"Details not found for item 
-'{item_name}
-' in category 
-'{category}
-'.")
+        # Corrected: Removed \n from inside {} placeholders
+        content = f"عذراً، لم يتم العثور على تفاصيل لـ \"{item_name}\" في فئة \"{category}\"."
+        # Corrected: Removed \n from inside {} placeholders
+        logger.warning(f"Details not found for item \'{item_name}\' in category \'{category}\'.")
 
     # Format content
     formatted_content = process_text_with_chemical_notation(content)
