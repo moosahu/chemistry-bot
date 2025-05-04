@@ -125,3 +125,27 @@ def format_chemical_equation(equation):
     """Formats a chemical equation string using process_text_with_chemical_notation."""
     return process_text_with_chemical_notation(equation)
 
+
+
+
+def format_duration(seconds: int) -> str:
+    """Formats a duration in seconds into a human-readable string (e.g., 1h 30m 15s)."""
+    if seconds < 0:
+        return "0s"
+    
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    
+    parts = []
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if seconds > 0 or not parts: # Always show seconds if it's the only unit or > 0
+        parts.append(f"{seconds}s")
+        
+    return " ".join(parts)
+
