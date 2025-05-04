@@ -12,7 +12,9 @@ from telegram.ext import (
 
 # Import necessary components from other modules
 try:
-    from config import logger, DB_MANAGER, MAIN_MENU, STATS_MENU, LEADERBOARD_LIMIT
+    # Corrected Import: Import DB_MANAGER from database.manager
+    from config import logger, MAIN_MENU, STATS_MENU, LEADERBOARD_LIMIT
+    from database.manager import DB_MANAGER 
     from utils.helpers import safe_send_message, safe_edit_message_text, format_duration
     from handlers.common import main_menu_callback # For returning to main menu
 except ImportError as e:
@@ -23,11 +25,11 @@ except ImportError as e:
     # Define placeholders
     MAIN_MENU, STATS_MENU = 0, 8 # Match config.py
     LEADERBOARD_LIMIT = 10
-    DB_MANAGER = None
-    def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
-    def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
+    DB_MANAGER = None # Keep fallback as None
+    async def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
+    async def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
     def format_duration(seconds): logger.warning("Placeholder format_duration called!"); return f"{seconds}s"
-    def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
+    async def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
 
 # --- Helper Functions --- 
 
@@ -42,28 +44,28 @@ def create_stats_menu_keyboard() -> InlineKeyboardMarkup:
 
 # --- Conversation Steps --- 
 
-def stats_menu(update: Update, context: CallbackContext) -> int:
+async def stats_menu(update: Update, context: CallbackContext) -> int:
     """Displays the main statistics menu."""
     query = update.callback_query
     user_id = update.effective_user.id
     
     if query:
-        query.answer()
+        await query.answer()
         logger.info(f"User {user_id} entered stats menu.")
         text = "🏅 اختر الإحصائيات التي تريد عرضها:"
         keyboard = create_stats_menu_keyboard()
-        safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        await safe_edit_message_text(query, text=text, reply_markup=keyboard)
     else:
         logger.warning("stats_menu called without callback query.")
-        safe_send_message(context.bot, update.effective_chat.id, text="يرجى استخدام القائمة الرئيسية.")
+        await safe_send_message(context.bot, update.effective_chat.id, text="يرجى استخدام القائمة الرئيسية.")
         return MAIN_MENU
         
     return STATS_MENU # Stay in stats menu state
 
-def show_my_stats(update: Update, context: CallbackContext) -> int:
+async def show_my_stats(update: Update, context: CallbackContext) -> int:
     """Fetches and displays the personal statistics for the user."""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested personal stats.")
 
@@ -73,11 +75,11 @@ def show_my_stats(update: Update, context: CallbackContext) -> int:
         if user_stats and user_stats.get("total_quizzes_taken", 0) > 0:
             total_time_str = format_duration(user_stats.get("total_time_seconds", 0))
             # Corrected: Ensure keys exist or use .get() with default
-            stats_text += f"📝 إجمالي الاختبارات: {user_stats.get('total_quizzes_taken', 0)}\n"
-            stats_text += f"✅ مجموع الإجابات الصحيحة: {user_stats.get('total_correct', 0)}\n"
-            stats_text += f"❌ مجموع الإجابات الخاطئة: {user_stats.get('total_wrong', 0)}\n"
-            stats_text += f"⏭️ مجموع الأسئلة المتخطاة: {user_stats.get('total_skipped', 0)}\n"
-            stats_text += f"💯 متوسط النتيجة: {user_stats.get('average_score', 0.0):.1f}%\n"
+            stats_text += f"📝 إجمالي الاختبارات: {user_stats.get(	'total_quizzes_taken	', 0)}\n"
+            stats_text += f"✅ مجموع الإجابات الصحيحة: {user_stats.get(	'total_correct	', 0)}\n"
+            stats_text += f"❌ مجموع الإجابات الخاطئة: {user_stats.get(	'total_wrong	', 0)}\n"
+            stats_text += f"⏭️ مجموع الأسئلة المتخطاة: {user_stats.get(	'total_skipped	', 0)}\n"
+            stats_text += f"💯 متوسط النتيجة: {user_stats.get(	'average_score	', 0.0):.1f}%\n"
             stats_text += f"⏱️ إجمالي وقت اللعب: {total_time_str}"
         else:
             stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
@@ -86,14 +88,14 @@ def show_my_stats(update: Update, context: CallbackContext) -> int:
 
     # Corrected: Removed \n from inside callback_data string
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    safe_edit_message_text(query, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
+    await safe_edit_message_text(query, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
     
     return STATS_MENU # Stay in stats menu state
 
-def show_leaderboard(update: Update, context: CallbackContext) -> int:
+async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     """Fetches and displays the leaderboard."""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested leaderboard.")
 
@@ -106,12 +108,12 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
                 # Corrected: Use .get() for display_name and handle potential missing user_id
-                user_id_entry = entry.get('user_id', 'Unknown')
+                user_id_entry = entry.get(	'user_id	', 	'Unknown	')
                 display_name = entry.get("user_display_name", f"User {user_id_entry}")
                 # Escape markdown characters in username
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
-                avg_score = entry.get("average_score", 0.0)
-                quizzes_taken = entry.get("quizzes_taken", 0)
+                avg_score = entry.get(	'average_score	', 0.0)
+                quizzes_taken = entry.get(	'quizzes_taken	', 0)
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
@@ -120,7 +122,7 @@ def show_leaderboard(update: Update, context: CallbackContext) -> int:
 
     # Corrected: Removed \n from inside callback_data string
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    safe_edit_message_text(query, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
+    await safe_edit_message_text(query, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
     
     return STATS_MENU # Stay in stats menu state
 

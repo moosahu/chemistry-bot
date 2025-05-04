@@ -178,7 +178,7 @@ def apply_schema_updates():
         with conn.cursor() as cur:
             logger.info("[Schema Update] Applying necessary schema updates...")
 
-            # Example Update: Add 'is_admin' column to users if it doesn't exist
+            # Update 1: Add 'is_admin' column to users if it doesn't exist
             cur.execute("""
                 SELECT column_name 
                 FROM information_schema.columns 
@@ -186,17 +186,31 @@ def apply_schema_updates():
             """)
             if not cur.fetchone():
                 cur.execute("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;")
-                conn.commit()
+                # No commit here, commit at the end
                 logger.info("[Schema Update] Added 'is_admin' column to 'users' table.")
             else:
                 logger.debug("[Schema Update] 'is_admin' column already exists in 'users'.")
+
+            # Update 2: Add 'lesson_id' column to questions if it doesn't exist (Fix for observed error)
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'questions' AND column_name = 'lesson_id'
+            """)
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE questions ADD COLUMN lesson_id INTEGER REFERENCES lessons(lesson_id) ON DELETE SET NULL;")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_lesson_id ON questions(lesson_id);")
+                # No commit here, commit at the end
+                logger.info("[Schema Update] Added 'lesson_id' column and index to 'questions' table.")
+            else:
+                logger.debug("[Schema Update] 'lesson_id' column already exists in 'questions'.")
 
             # Add other ALTER statements or data migrations here as needed
             # Example: Ensure default courses exist
             cur.execute("INSERT INTO courses (name) VALUES ('الكيمياء العامة') ON CONFLICT (name) DO NOTHING;")
             # Add more default courses, units, lessons if required for initial setup
 
-            conn.commit()
+            conn.commit() # Commit all changes at the end
             logger.info("[Schema Update] Schema updates applied successfully.")
             return True
     except psycopg2.Error as e:
