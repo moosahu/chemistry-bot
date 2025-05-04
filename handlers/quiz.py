@@ -281,8 +281,12 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         logger.error(f"Failed to fetch {next_scope_type}s from API ({api_endpoint}) or invalid format.")
         # Decide whether to ask for count for current level or show error
         # Let's show an error and go back for now
-        # Corrected f-string using single quotes for split
-        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(\' \')[-1]}. يرجى المحاولة مرة أخرى."
+        # Corrected f-string by assigning split result to variable first
+        try:
+            last_word = prompt_text.split(' ')[-1]
+        except IndexError:
+            last_word = "العناصر"
+        error_message = f"⚠️ حدث خطأ أثناء جلب {last_word}. يرجى المحاولة مرة أخرى."
         await safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_type_keyboard()) # Go back to type selection
         return SELECT_QUIZ_TYPE
 
