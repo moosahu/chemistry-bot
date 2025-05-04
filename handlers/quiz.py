@@ -26,7 +26,7 @@ try:
     from handlers.common import create_main_menu_keyboard, main_menu_callback # For returning to main menu
     from handlers.quiz_logic import (
         start_quiz_logic, handle_quiz_answer, skip_question_callback, 
-        show_results # Core logic functions
+        end_quiz # Core logic functions
     )
 except ImportError as e:
     # Fallback for potential import issues
