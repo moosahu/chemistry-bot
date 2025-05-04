@@ -76,7 +76,7 @@ async def question_timer_callback(context: CallbackContext):
 
         # Call the skip handler, marking it as timed out
         # Pass the bot object explicitly if needed by handle_quiz_skip
-        await handle_quiz_skip(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=True)
+        await skip_question_callback(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=True)
     else:
         logger.info(f"[TIMER] Quiz {quiz_id} ended or question {question_index} already handled, ignoring timer.")
 
@@ -440,9 +440,7 @@ async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
     else:
         # Quiz finished
         logger.info(f"[QUIZ CB] Quiz {quiz_id_cb} finished for user {user_id}.")
-        return await end_quiz(context.bot, chat_id, user_id, quiz_id_cb, context)
-
-async def handle_quiz_skip(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext, timed_out: bool = False, error_skip: bool = False):
+        return await end_quiz(context.bot, chat_id, user_id, quiz_id_cb, context)\nasync def skip_question_callback(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext, timed_out: bool = False, error_skip: bool = False):
     """Handles skipping a question, either by user action, timeout, or error."""
     user_data = context.user_data
     quiz_data = user_data.get("current_quiz")
