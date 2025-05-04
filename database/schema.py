@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Handles database schema setup and updates."""
+"""Handles database schema setup and updates for the bot's own data."""
 
 import logging
 import psycopg2
@@ -19,9 +19,7 @@ except ImportError:
         return None
 
 def setup_database_schema():
-    """Sets up the initial database schema if tables don't exist.
-       Combines setup logic from db_utils.py and initial table creation.
-    """
+    """Sets up the initial database schema for bot-specific tables if they don't exist."""
     conn = connect_db()
     if conn is None:
         logger.error("[Schema Setup] Failed to connect to database. Aborting setup.")
@@ -29,9 +27,9 @@ def setup_database_schema():
 
     try:
         with conn.cursor() as cur:
-            logger.info("[Schema Setup] Creating tables if they do not exist...")
+            logger.info("[Schema Setup] Creating bot-specific tables if they do not exist...")
 
-            # --- Core Tables (from db_utils.py) --- 
+            # --- Bot Core Tables --- 
 
             # users table
             cur.execute("""
@@ -47,79 +45,6 @@ def setup_database_schema():
                 );
             """)
             logger.debug("[Schema Setup] Checked/Created users table.")
-
-            # --- Content Structure Tables (from update_db_schema.py, adapted) --- 
-            # courses (renamed from grade_levels)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS courses (
-                    course_id SERIAL PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL UNIQUE, -- Added UNIQUE constraint
-                    description TEXT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
-            logger.debug("[Schema Setup] Checked/Created courses table.")
-
-            # units (renamed from chapters)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS units (
-                    unit_id SERIAL PRIMARY KEY,
-                    course_id INTEGER REFERENCES courses(course_id) ON DELETE CASCADE,
-                    name VARCHAR(255) NOT NULL,
-                    description TEXT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE (course_id, name) -- Ensure unit names are unique within a course
-                );
-            """)
-            logger.debug("[Schema Setup] Checked/Created units table.")
-
-            # lessons
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS lessons (
-                    lesson_id SERIAL PRIMARY KEY,
-                    unit_id INTEGER REFERENCES units(unit_id) ON DELETE CASCADE,
-                    name VARCHAR(255) NOT NULL,
-                    description TEXT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE (unit_id, name) -- Ensure lesson names are unique within a unit
-                );
-            """)
-            logger.debug("[Schema Setup] Checked/Created lessons table.")
-
-            # --- Quiz Related Tables (from db_utils.py, refined) --- 
-
-            # questions table (linking to lessons)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS questions (
-                    question_id SERIAL PRIMARY KEY,
-                    lesson_id INTEGER REFERENCES lessons(lesson_id) ON DELETE SET NULL, -- Keep question if lesson deleted?
-                    question_text TEXT NOT NULL,
-                    image_url VARCHAR(512), -- Optional image URL for the question
-                    -- Correct answer info is expected from API, not stored directly here?
-                    -- If storing, add correct_option_index INTEGER NOT NULL CHECK (...)
-                    explanation TEXT, -- Optional explanation
-                    difficulty INTEGER, -- Optional difficulty level
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    -- Removed quiz_id, chapter_id, grade_level_id - link via lesson_id
-                );
-            """)
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_lesson_id ON questions(lesson_id);")
-            logger.debug("[Schema Setup] Checked/Created questions table and index.")
-
-            # options table (linked to questions)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS options (
-                    option_id SERIAL PRIMARY KEY,
-                    question_id INTEGER REFERENCES questions(question_id) ON DELETE CASCADE,
-                    option_index INTEGER NOT NULL, -- 0, 1, 2, 3
-                    option_text TEXT, -- Allow text to be NULL if image is used
-                    option_image_url VARCHAR(512), -- Optional image URL for the option
-                    is_correct BOOLEAN NOT NULL, -- Explicitly store if this option is correct
-                    UNIQUE (question_id, option_index) -- Ensure option index is unique per question
-                );
-            """)
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id);")
-            logger.debug("[Schema Setup] Checked/Created options table and index.")
 
             # quiz_results table (simplified and focused)
             cur.execute("""
@@ -144,19 +69,19 @@ def setup_database_schema():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_quiz_results_completed_at ON quiz_results(completed_at);")
             logger.debug("[Schema Setup] Checked/Created quiz_results table and indexes.")
 
-            # Removed user_quiz_attempts and user_answers as details are now in quiz_results JSONB
-            # Removed quizzes table as quizzes are defined by type/scope, not separate entities
+            # --- Content tables (courses, units, lessons, questions, options) are NOT managed by the bot --- 
+            # --- They are managed by the separate API and its database --- 
 
             conn.commit()
-            logger.info("[Schema Setup] Initial schema setup/check completed successfully.")
+            logger.info("[Schema Setup] Bot-specific initial schema setup/check completed successfully.")
             return True
     except psycopg2.Error as e:
-        logger.error(f"[Schema Setup] Database error during initial setup: {e}")
+        logger.error(f"[Schema Setup] Database error during bot-specific initial setup: {e}")
         if conn:
             conn.rollback()
         return False
     except Exception as e:
-        logger.exception(f"[Schema Setup] Unexpected error during initial setup: {e}")
+        logger.exception(f"[Schema Setup] Unexpected error during bot-specific initial setup: {e}")
         if conn:
             conn.rollback()
         return False
@@ -166,9 +91,7 @@ def setup_database_schema():
             logger.debug("[Schema Setup] Database connection closed after setup.")
 
 def apply_schema_updates():
-    """Applies specific ALTER TABLE or other updates needed after initial setup.
-       Based on update_db_schema.py logic, adapted for the new schema.
-    """
+    """Applies specific ALTER TABLE or other updates needed for bot tables after initial setup."""
     conn = connect_db()
     if conn is None:
         logger.error("[Schema Update] Failed to connect to database. Aborting updates.")
@@ -176,7 +99,7 @@ def apply_schema_updates():
 
     try:
         with conn.cursor() as cur:
-            logger.info("[Schema Update] Applying necessary schema updates...")
+            logger.info("[Schema Update] Applying necessary schema updates for bot tables...")
 
             # Update 1: Add 'is_admin' column to users if it doesn't exist
             cur.execute("""
@@ -191,35 +114,19 @@ def apply_schema_updates():
             else:
                 logger.debug("[Schema Update] 'is_admin' column already exists in 'users'.")
 
-            # Update 2: Add 'lesson_id' column to questions if it doesn't exist (Fix for observed error)
-            cur.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'questions' AND column_name = 'lesson_id'
-            """)
-            if not cur.fetchone():
-                cur.execute("ALTER TABLE questions ADD COLUMN lesson_id INTEGER REFERENCES lessons(lesson_id) ON DELETE SET NULL;")
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_lesson_id ON questions(lesson_id);")
-                # No commit here, commit at the end
-                logger.info("[Schema Update] Added 'lesson_id' column and index to 'questions' table.")
-            else:
-                logger.debug("[Schema Update] 'lesson_id' column already exists in 'questions'.")
-
-            # Add other ALTER statements or data migrations here as needed
-            # Example: Ensure default courses exist
-            cur.execute("INSERT INTO courses (name) VALUES ('الكيمياء العامة') ON CONFLICT (name) DO NOTHING;")
-            # Add more default courses, units, lessons if required for initial setup
+            # --- Updates for content tables (courses, units, lessons, questions, options) are NOT applied here --- 
+            # --- They should be handled in the API's database migration process --- 
 
             conn.commit() # Commit all changes at the end
-            logger.info("[Schema Update] Schema updates applied successfully.")
+            logger.info("[Schema Update] Bot-specific schema updates applied successfully.")
             return True
     except psycopg2.Error as e:
-        logger.error(f"[Schema Update] Database error during updates: {e}")
+        logger.error(f"[Schema Update] Database error during bot-specific updates: {e}")
         if conn:
             conn.rollback()
         return False
     except Exception as e:
-        logger.exception(f"[Schema Update] Unexpected error during updates: {e}")
+        logger.exception(f"[Schema Update] Unexpected error during bot-specific updates: {e}")
         if conn:
             conn.rollback()
         return False
@@ -230,16 +137,16 @@ def apply_schema_updates():
 
 # Run setup and updates when the module is executed directly
 if __name__ == "__main__":
-    logger.info("Running database schema setup and updates directly...")
+    logger.info("Running bot-specific database schema setup and updates directly...")
     if setup_database_schema():
-        logger.info("Initial schema setup/check successful.")
+        logger.info("Bot-specific initial schema setup/check successful.")
         if apply_schema_updates():
-            logger.info("Schema updates applied successfully.")
+            logger.info("Bot-specific schema updates applied successfully.")
             exit(0)
         else:
-            logger.error("Schema updates failed.")
+            logger.error("Bot-specific schema updates failed.")
             exit(1)
     else:
-        logger.error("Initial schema setup/check failed.")
+        logger.error("Bot-specific initial schema setup/check failed.")
         exit(1)
 
