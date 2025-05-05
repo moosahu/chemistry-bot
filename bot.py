@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v10 with direct handler registration)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v11 with JobQueue enabled)."""
 
 import logging
 import sys
@@ -20,7 +20,8 @@ from telegram.ext import (
     MessageHandler,
     filters,
     PicklePersistence,
-    CallbackContext
+    CallbackContext,
+    JobQueue # <-- Import JobQueue
 )
 from telegram import Update
 
@@ -83,30 +84,43 @@ def main() -> None:
         persistence_dir = os.path.join(project_root, 'persistence')
         os.makedirs(persistence_dir, exist_ok=True)
         persistence_file = os.path.join(persistence_dir, 'bot_conversation_persistence.pkl')
-        # IMPORTANT: Set allow_pickle=True for custom classes if needed, but be aware of security risks.
-        # For standard types, it should be fine.
         persistence = PicklePersistence(filepath=persistence_file)
         logger.info(f"PicklePersistence configured at {persistence_file}.")
     except Exception as pers_exc:
         logger.error(f"Error configuring persistence: {pers_exc}")
         persistence = None
 
+    # --- Job Queue Setup --- 
+    try:
+        job_queue = JobQueue()
+        logger.info("JobQueue created.")
+    except Exception as jq_exc:
+        logger.error(f"Error creating JobQueue: {jq_exc}")
+        job_queue = None # Continue without JobQueue if creation fails
+
     # --- Application Setup --- 
     try:
-        application = (
-            Application.builder()
-            .token(TELEGRAM_BOT_TOKEN)
-            .persistence(persistence)
-            .build()
-        )
+        app_builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+        if persistence:
+            app_builder = app_builder.persistence(persistence)
+        if job_queue: # <-- Check if job_queue was created successfully
+            app_builder = app_builder.job_queue(job_queue) # <-- Pass JobQueue to builder
+        
+        application = app_builder.build()
         logger.info("Telegram Application built.")
+        
+        # --- Attach JobQueue to Application --- 
+        if job_queue: # <-- Check again before setting application
+            job_queue.set_application(application) # <-- Link JobQueue to the application
+            logger.info("JobQueue attached to the application.")
+        else:
+            logger.warning("JobQueue was not created or attached. Timed features will not work.")
+            
     except Exception as app_exc:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.")
         exit(1)
 
     # --- Register Handlers Directly --- 
-    # The entry points within each ConversationHandler will handle the button presses
-    
     # 1. Start command handler
     application.add_handler(start_handler)
     logger.debug("[DEBUG] start_handler added to application.")
