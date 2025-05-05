@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow (Corrected v9 - Fixed ConversationHandler Structure)."""
+"""Conversation handler for the quiz selection and execution flow (Corrected v10 - Fixed ConversationHandler Structure)."""
 
 import logging
 import math
@@ -214,17 +214,16 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         context.user_data["quiz_selection"]["max_questions"] = max_questions
         context.user_data["quiz_selection"]["endpoint"] = questions_endpoint
         logger.info(f"Lesson {scope_id} selected. Max questions: {max_questions}")
-        text = f"📄 درس محدد: أدخل عدد الأسئلة التي تريدها (1-{max_questions}):" # Corrected f-string (removed extra parenthesis)
+        text = f"📄 درس محدد: أدخل عدد الأسئلة التي تريدها (1-{max_questions}):" # Corrected f-string
         await safe_edit_message_text(query, text=text, reply_markup=None)
         return ENTER_QUESTION_COUNT
 
     if next_level_items is None:
         logger.error(f"Failed to fetch {next_scope_type}s from API ({api_endpoint_for_next}) or invalid format.")
-        # Safely get the last word for the error message
         try:
             last_word = prompt_text.split(" ")[-1]
         except IndexError:
-            last_word = "العناصر" # Default if prompt_text is empty or has no space
+            last_word = "العناصر"
         error_message = f"⚠️ حدث خطأ أثناء جلب {last_word} من الـ API."
         await safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
@@ -381,28 +380,43 @@ async def cancel_quiz_selection(update: Update, context: CallbackContext) -> int
         
     return END
 
-# --- Conversation Handler Definition (Corrected Structure) --- 
+# --- Conversation Handler Definition (Corrected v10 - Fixed Brackets) --- 
 
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern=
+    entry_points=[
+        CallbackQueryHandler(quiz_menu_entry, pattern=r"^quiz_menu$")
+    ],
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern=
+            CallbackQueryHandler(select_quiz_type, pattern=r"^quiz_type_(random|course)$"),
+            CallbackQueryHandler(main_menu_callback, pattern=r"^main_menu$") # Allow returning to main menu
+        ],
         SELECT_QUIZ_SCOPE: [
-            CallbackQueryHandler(select_quiz_scope, pattern=
+            CallbackQueryHandler(select_quiz_scope, pattern=r"^quiz_scope_(course|unit|lesson)_\d+$"),
+            CallbackQueryHandler(handle_scope_pagination, pattern=r"^quiz_page_(course|unit|lesson)_\d+_\d*$"),
+            CallbackQueryHandler(handle_scope_back, pattern=r"^quiz_back_to_(course|unit_\d+)$|^quiz_menu$")
+        ],
         ENTER_QUESTION_COUNT: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, enter_question_count)
         ],
         TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer, pattern=
+            CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_answer_\d+$"),
+            CallbackQueryHandler(skip_question_button_handler, pattern=r"^skip_question$")
+        ]
+        # SHOWING_RESULTS is handled by quiz_logic returning END or MAIN_MENU
     },
     fallbacks=[
-        CallbackQueryHandler(cancel_quiz_selection, pattern=
+        CallbackQueryHandler(cancel_quiz_selection, pattern=r"^cancel_quiz$"), # Added a specific cancel pattern
+        CallbackQueryHandler(main_menu_callback, pattern=r"^main_menu$"), # Allow returning to main menu from any state
+        CommandHandler("cancel", cancel_quiz_selection) # Allow cancelling via command
     ],
     map_to_parent={
+        # States that ConversationHandler.END returns to
         END: MAIN_MENU,
-        SHOWING_RESULTS: MAIN_MENU, 
-        MAIN_MENU: MAIN_MENU 
+        # States that return to the parent conversation
+        MAIN_MENU: MAIN_MENU, 
+        # If quiz_logic returns SHOWING_RESULTS, map it back to MAIN_MENU after showing results
+        SHOWING_RESULTS: MAIN_MENU 
     },
     name="quiz_conversation",
     persistent=True,
