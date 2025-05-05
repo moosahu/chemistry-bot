@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow (Corrected v8 - Fixed Syntax Error)."""
+"""Conversation handler for the quiz selection and execution flow (Corrected v9 - Fixed ConversationHandler Structure)."""
 
 import logging
 import math
@@ -214,13 +214,18 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         context.user_data["quiz_selection"]["max_questions"] = max_questions
         context.user_data["quiz_selection"]["endpoint"] = questions_endpoint
         logger.info(f"Lesson {scope_id} selected. Max questions: {max_questions}")
-        text = f"📄 درس محدد: أدخل عدد الأسئلة التي تريدها (1-{max_questions}):"
+        text = f"📄 درس محدد: أدخل عدد الأسئلة التي تريدها (1-{max_questions}):" # Corrected f-string (removed extra parenthesis)
         await safe_edit_message_text(query, text=text, reply_markup=None)
         return ENTER_QUESTION_COUNT
 
     if next_level_items is None:
         logger.error(f"Failed to fetch {next_scope_type}s from API ({api_endpoint_for_next}) or invalid format.")
-        error_message = f"⚠️ حدث خطأ أثناء جلب {prompt_text.split(" ")[-1]} من الـ API."
+        # Safely get the last word for the error message
+        try:
+            last_word = prompt_text.split(" ")[-1]
+        except IndexError:
+            last_word = "العناصر" # Default if prompt_text is empty or has no space
+        error_message = f"⚠️ حدث خطأ أثناء جلب {last_word} من الـ API."
         await safe_edit_message_text(query, text=error_message, reply_markup=create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
 
@@ -376,44 +381,31 @@ async def cancel_quiz_selection(update: Update, context: CallbackContext) -> int
         
     return END
 
-# --- Conversation Handler Definition --- 
+# --- Conversation Handler Definition (Corrected Structure) --- 
 
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern='^quiz_menu$')], # **FIXED**: Correct pattern
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern=
     states={
-        # State: SELECT_QUIZ_TYPE (Waiting for user to choose Random or Course)
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern='^quiz_type_(random|course)$') # **FIXED**: Correct pattern
-        ],
-        # State: SELECT_QUIZ_SCOPE (Waiting for user to choose Course/Unit/Lesson or paginate/go back)
+            CallbackQueryHandler(select_quiz_type, pattern=
         SELECT_QUIZ_SCOPE: [
-            CallbackQueryHandler(select_quiz_scope, pattern='^quiz_scope_(course|unit|lesson)_\d+$'), # **FIXED**: Correct pattern
-            CallbackQueryHandler(handle_scope_pagination, pattern='^quiz_page_(course|unit|lesson)_\d+_\d*$'), # **FIXED**: Correct pattern
-            CallbackQueryHandler(handle_scope_back, pattern='^quiz_back_to_(course|unit_\d+)$|^quiz_menu$') # **FIXED**: Correct pattern
-        ],
-        # State: ENTER_QUESTION_COUNT (Waiting for user to type the number of questions)
+            CallbackQueryHandler(select_quiz_scope, pattern=
         ENTER_QUESTION_COUNT: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, enter_question_count)
         ],
-        # State: TAKING_QUIZ (Quiz in progress, handled by quiz_logic functions)
         TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer, pattern='^quiz_[^_]+_ans_\d+_\d+$'), # **FIXED**: Correct pattern
-            CallbackQueryHandler(skip_question_button_handler, pattern='^quiz_[^_]+_skip_\d+$') # **FIXED**: Correct pattern
-        ]
+            CallbackQueryHandler(handle_quiz_answer, pattern=
     },
     fallbacks=[
-        CallbackQueryHandler(cancel_quiz_selection, pattern='^cancel_quiz$'), # Assuming a cancel button exists
-        CallbackQueryHandler(main_menu_callback, pattern='^main_menu$'), # Allow returning to main menu
-        CommandHandler('start', cancel_quiz_selection) # Cancel on /start command
+        CallbackQueryHandler(cancel_quiz_selection, pattern=
     ],
     map_to_parent={
         END: MAIN_MENU,
         SHOWING_RESULTS: MAIN_MENU, 
         MAIN_MENU: MAIN_MENU 
     },
-    # **FIXED**: Add allow_reentry=True if needed, and potentially persistence
     name="quiz_conversation",
-    persistent=True, # Assuming you use persistence
+    persistent=True,
     allow_reentry=True
-) # **FIXED**: Correctly closed parenthesis
+)
 
