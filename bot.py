@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v7 with added debugging)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v8 with general pattern for main menu)."""
 
 import logging
 import sys
@@ -63,9 +63,7 @@ async def error_handler(update: object, context: CallbackContext) -> None:
 async def debug_main_menu_message(update: Update, context: CallbackContext) -> int:
     """Logs any text message received while in the MAIN_MENU state."""
     if update.message:
-        logger.debug(f"[DEBUG] Received text message in MAIN_MENU state: 	'{update.message.text}	'")
-        # Optionally reply to user to indicate state
-        # await update.message.reply_text("Debug: In MAIN_MENU state. Use buttons.")
+        logger.debug(f"[DEBUG] Received text message in MAIN_MENU state: 	'{update.message.text}'")
     return MAIN_MENU # Stay in the same state
 
 # --- Main Function --- 
@@ -119,11 +117,11 @@ def main() -> None:
         entry_points=[start_handler],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(main_menu_callback, pattern="^menu_quiz$"),
-                CallbackQueryHandler(main_menu_callback, pattern="^menu_info$"),
-                CallbackQueryHandler(main_menu_callback, pattern="^menu_stats$"),
+                # Use a general pattern to capture all main menu buttons
+                CallbackQueryHandler(main_menu_callback, pattern="^menu_.*"), # Changed pattern
+                # Keep the handler for explicit return to main menu
                 CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
-                # Add a message handler for debugging within MAIN_MENU state
+                # Keep the message handler for debugging within MAIN_MENU state
                 MessageHandler(filters.TEXT & ~filters.COMMAND, debug_main_menu_message)
             ],
             QUIZ_MENU: [quiz_conv_handler],
