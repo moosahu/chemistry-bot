@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v5 with corrected Main ConversationHandler)."""
 
 import logging
 import sys
@@ -20,27 +20,24 @@ from telegram.ext import (
     MessageHandler,
     filters, # Import filters (lowercase) instead of Filters
     PicklePersistence, # For storing conversation state across restarts
-    CallbackContext # <-- Added missing import
+    CallbackContext
 )
-from telegram import Update # <-- Added missing import for type hinting
+from telegram import Update
 
 # --- Import Configuration and Core Components --- 
 try:
     from config import (
         TELEGRAM_BOT_TOKEN, API_BASE_URL, DATABASE_URL, # Core config
         logger, # Logger instance
-        MAIN_MENU, QUIZ_MENU, SELECT_QUIZ_TYPE, SELECT_QUIZ_SCOPE, 
-        ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, 
-        INFO_MENU, STATS_MENU, SHOW_INFO_DETAIL, END # Conversation states
+        MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END # Conversation states
+        # Ensure all states used in sub-handlers are imported if needed here, though primarily needed within sub-handlers
     )
     from database.schema import setup_database_schema, apply_schema_updates
-    # Import handlers directly
-    from handlers.common import start_handler # Handles /start command
-    from handlers.quiz import quiz_conv_handler # Quiz conversation
-    from handlers.info import info_conv_handler # Info conversation
-    from handlers.stats import stats_conv_handler # Stats conversation
-    # Import main_menu_callback separately if needed for explicit returns, but rely on sub-handler entry points first
-    from handlers.common import main_menu_callback 
+    # Import handlers
+    from handlers.common import start_handler, main_menu_callback # Handles /start and main menu button logic
+    from handlers.quiz import quiz_conv_handler # Quiz sub-conversation
+    from handlers.info import info_conv_handler # Info sub-conversation
+    from handlers.stats import stats_conv_handler # Stats sub-conversation
 
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
@@ -108,14 +105,57 @@ def main() -> None:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.")
         exit(1)
 
+    # --- Main Conversation Handler --- 
+    # This handler manages the top-level flow: starting, showing the main menu,
+    # and delegating to sub-conversations (quiz, info, stats).
+    main_conv_handler = ConversationHandler(
+        entry_points=[start_handler], # Start with /start
+        states={
+            MAIN_MENU: [
+                # When in MAIN_MENU state, handle button clicks starting with 'menu_'
+                # main_menu_callback will determine the next state (QUIZ_MENU, INFO_MENU, etc.)
+                CallbackQueryHandler(main_menu_callback, pattern="^menu_"),
+                # Handle explicit return to main menu via button with 'main_menu' data
+                CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
+            ],
+            # IMPORTANT: Map the states returned by main_menu_callback to the sub-handlers
+            # When main_menu_callback returns QUIZ_MENU, control is passed to quiz_conv_handler
+            QUIZ_MENU: [quiz_conv_handler],
+            INFO_MENU: [info_conv_handler],
+            STATS_MENU: [stats_conv_handler],
+            # Add other top-level states if needed (e.g., ADMIN_MENU)
+        },
+        fallbacks=[
+            # Fallback to /start if something goes wrong or user sends /start again
+            start_handler,
+            # Optional: Add a generic message handler as a fallback within the main conversation
+            # MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_command_handler) # Example
+        ],
+        persistent=True,
+        name="main_conversation", # Name for persistence
+        # Allow sub-handlers to return to the MAIN_MENU state of this handler
+        map_to_parent={
+            MAIN_MENU: MAIN_MENU, # If a sub-handler returns MAIN_MENU, go back to the main menu state here
+            END: END # Allow sub-handlers to end the entire conversation
+        }
+    )
+
     # --- Register Handlers --- 
-    # Add the /start command handler
-    application.add_handler(start_handler)
+    # Register the main conversation handler which now manages the sub-handlers
+    application.add_handler(main_conv_handler)
 
-    # Add conversation handlers directly. Their entry points (e.g., CallbackQueryHandler pattern='^menu_quiz$')
-    # will be triggered by the buttons sent by start_handler.
-    application.add_handler(quiz_conv_handler)
-    application.add_handler(info_conv_handler)
-    application.add_handler(stats_conv_handler)
+    # Add the error handler
+    application.add_error_handler(error_handler)
 
-    # Add a handler for explicit 
+    # Note: Do NOT add quiz_conv_handler, info_conv_handler, stats_conv_handler directly anymore.
+    # They are now managed *within* main_conv_handler.
+
+    # --- Start Bot --- 
+    logger.info("Bot application configured. Starting polling...")
+    application.run_polling()
+    logger.info("Bot polling stopped.")
+
+
+if __name__ == "__main__":
+    main()
+
