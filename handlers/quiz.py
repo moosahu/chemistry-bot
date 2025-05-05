@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow (Corrected v3 - Random logic fix)."""
+"""Conversation handler for the quiz selection and execution flow (Corrected v4 - Syntax fix)."""
 
 import logging
 import math
@@ -288,7 +288,8 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         return SELECT_QUIZ_SCOPE
     else: # If no sub-items, proceed to question count for the current scope
         await safe_edit_message_text(query, text=f"⏳ جارٍ حساب عدد الأسئلة لـ {scope_level}...", reply_markup=None)
-        questions_endpoint = f"{context.user_data["quiz_selection"].get("endpoint_base", "")}/questions"
+        # **FIXED LINE 291**: Use single quotes inside f-string
+        questions_endpoint = f"{context.user_data['quiz_selection'].get('endpoint_base', '')}/questions"
         context.user_data["quiz_selection"]["endpoint"] = questions_endpoint
         max_questions = await get_question_count_from_api(questions_endpoint)
         if max_questions == 0:
@@ -308,21 +309,29 @@ async def handle_scope_pagination(update: Update, context: CallbackContext) -> i
     user_id = update.effective_user.id
     data = query.data
     logger.info(f"User {user_id} requested pagination: {data}")
-    parts = data.split("_")
-    scope_type = parts[2]
-    page = int(parts[3])
-    parent_id = int(parts[4]) if len(parts) > 4 and parts[4] else None
-    items = context.user_data.get("scope_items", [])
-    if not items:
+    
+    try:
+        _, _, scope_type, page_str, parent_id_str = data.split("_")
+        page = int(page_str)
+        parent_id = int(parent_id_str) if parent_id_str else None
+    except (ValueError, IndexError) as e:
+        logger.error(f"Invalid pagination callback data: {data}. Error: {e}")
+        await safe_edit_message_text(query, text="حدث خطأ في التنقل بين الصفحات.")
+        return SELECT_QUIZ_SCOPE
+
+    scope_items = context.user_data.get("scope_items")
+    if not scope_items:
         logger.error("Pagination requested but scope_items not found in user_data.")
-        await safe_edit_message_text(query, text="حدث خطأ في التنقل بين الصفحات.", reply_markup=create_quiz_type_keyboard())
+        await safe_edit_message_text(query, text="فقدت بيانات التنقل. يرجى البدء من جديد.", reply_markup=create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
-    context.user_data["current_page"] = page
-    keyboard = create_scope_keyboard(scope_type, items, page=page, parent_id=parent_id)
-    prompt_text = f"اختر {scope_type}: (صفحة {page + 1})"
+
+    prompt_text = f"اختر {scope_type}:"
     if scope_type == "course": prompt_text = "📚 اختر المقرر الدراسي:"
     elif scope_type == "unit": prompt_text = "📖 اختر الوحدة الدراسية:"
     elif scope_type == "lesson": prompt_text = "📄 اختر الدرس:"
+    
+    context.user_data["current_page"] = page
+    keyboard = create_scope_keyboard(scope_type, scope_items, page=page, parent_id=parent_id)
     await safe_edit_message_text(query, text=prompt_text, reply_markup=keyboard)
     return SELECT_QUIZ_SCOPE
 
@@ -332,46 +341,47 @@ async def handle_scope_back(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     data = query.data
     logger.info(f"User {user_id} requested back navigation: {data}")
-    context.user_data["current_page"] = 0 # Reset page on back
 
-    if data == "quiz_menu":
-        text = "🧠 اختر نوع الاختبار الذي تريده:"
-        keyboard = create_quiz_type_keyboard()
-        await safe_edit_message_text(query, text=text, reply_markup=keyboard)
-        return SELECT_QUIZ_TYPE
-    elif data == "quiz_back_to_course":
+    if data == "quiz_back_to_course":
+        # Go back to course selection
         courses = await fetch_from_api("/api/v1/courses")
         if courses is None or not isinstance(courses, list):
-            logger.error("Failed to fetch courses on back navigation.")
-            await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء جلب المقررات الدراسية. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
+            logger.error("Failed to fetch courses for back navigation.")
+            await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء جلب قائمة المقررات.", reply_markup=create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
         context.user_data["scope_items"] = courses
+        context.user_data["current_page"] = 0
+        context.user_data.pop("parent_id", None)
         text = "📚 اختر المقرر الدراسي:"
         keyboard = create_scope_keyboard("course", courses, page=0)
         await safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return SELECT_QUIZ_SCOPE
-    elif data.startswith("quiz_back_to_unit_"):
-        unit_id = int(data.split("_")[-1])
-        # Fetch the parent course ID from context if stored
-        parent_course_id = context.user_data.get("parent_id") # Assuming parent_id stores course_id when viewing units
-        if parent_course_id is None:
-             logger.error(f"Could not determine parent course ID when going back to unit {unit_id}.")
-             await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء الرجوع. لا يمكن تحديد المقرر الأصلي.", reply_markup=create_quiz_type_keyboard())
-             return SELECT_QUIZ_TYPE
         
+    elif data.startswith("quiz_back_to_unit_"):
+        try:
+            parent_course_id = int(data.split("_")[-1])
+        except (ValueError, IndexError):
+             logger.error(f"Invalid back_to_unit callback data: {data}")
+             await safe_edit_message_text(query, text="حدث خطأ أثناء الرجوع.", reply_markup=create_quiz_type_keyboard())
+             return SELECT_QUIZ_TYPE
+             
+        # Go back to unit selection for the parent course
         api_endpoint = f"/api/v1/courses/{parent_course_id}/units"
         units = await fetch_from_api(api_endpoint)
         if units is None or not isinstance(units, list):
-            logger.error(f"Failed to fetch units for course {parent_course_id} on back navigation.")
-            await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء جلب الوحدات الدراسية. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
+            logger.error(f"Failed to fetch units for course {parent_course_id} for back navigation.")
+            await safe_edit_message_text(query, text="⚠️ حدث خطأ أثناء جلب قائمة الوحدات.", reply_markup=create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
         context.user_data["scope_items"] = units
+        context.user_data["current_page"] = 0
+        context.user_data["parent_id"] = parent_course_id
         text = "📖 اختر الوحدة الدراسية:"
         keyboard = create_scope_keyboard("unit", units, page=0, parent_id=parent_course_id)
         await safe_edit_message_text(query, text=text, reply_markup=keyboard)
         return SELECT_QUIZ_SCOPE
-    else:
-        logger.warning(f"Unknown back navigation data: {data}")
+        
+    else: # Default back to quiz type selection
+        logger.warning(f"Unhandled back navigation: {data}. Returning to quiz menu.")
         text = "🧠 اختر نوع الاختبار الذي تريده:"
         keyboard = create_quiz_type_keyboard()
         await safe_edit_message_text(query, text=text, reply_markup=keyboard)
@@ -379,72 +389,82 @@ async def handle_scope_back(update: Update, context: CallbackContext) -> int:
 
 async def enter_question_count(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
-    if not update.message or not update.message.text:
-        logger.warning(f"User {user_id} sent non-text input for question count.")
-        await safe_send_message(context.bot, update.effective_chat.id, text="يرجى إدخال رقم صحيح لعدد الأسئلة.")
-        return ENTER_QUESTION_COUNT
+    text = update.message.text
+    logger.info(f"User {user_id} entered question count: {text}")
+    quiz_selection = context.user_data.get("quiz_selection")
+    if not quiz_selection:
+        logger.error("enter_question_count called without quiz_selection.")
+        await safe_send_message(context.bot, update.effective_chat.id, text="حدث خطأ. يرجى البدء من جديد.", reply_markup=create_main_menu_keyboard(user_id))
+        return MAIN_MENU
 
-    text_input = update.message.text
-    logger.debug(f"Received question count input: 	'{text_input}'")
-    quiz_selection = context.user_data.get("quiz_selection", {})
-    max_questions = quiz_selection.get("max_questions", 0)
+    max_questions = quiz_selection.get("max_questions", 10) # Default max if missing
 
     try:
-        count = int(text_input)
+        count = int(text)
         if 1 <= count <= max_questions:
-            logger.info(f"User {user_id} selected {count} questions. Starting quiz.")
             quiz_selection["count"] = count
-            # Call the quiz starting logic
+            logger.info(f"User {user_id} selected {count} questions.")
+            await safe_send_message(context.bot, update.effective_chat.id, text=f"👍 حسناً، سيتم تحضير اختبار بـ {count} أسئلة.")
+            # Now start the quiz using the logic handler
             return await start_quiz_logic(update, context)
         else:
-            await safe_send_message(context.bot, update.effective_chat.id, text=f"الرقم غير صالح. يرجى إدخال عدد بين 1 و {max_questions}.")
+            await safe_send_message(context.bot, update.effective_chat.id, text=f"❌ العدد غير صالح. يرجى إدخال رقم بين 1 و {max_questions}.")
             return ENTER_QUESTION_COUNT
     except ValueError:
-        await safe_send_message(context.bot, update.effective_chat.id, text="إدخال غير صالح. يرجى إدخال رقم صحيح.")
+        await safe_send_message(context.bot, update.effective_chat.id, text="❌ إدخال غير صالح. يرجى إدخال رقم.")
         return ENTER_QUESTION_COUNT
-    except Exception as e:
-        logger.error(f"Error processing question count for user {user_id}: {e}")
-        await safe_send_message(context.bot, update.effective_chat.id, text="حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.")
-        return SELECT_QUIZ_TYPE
+
+async def cancel_quiz_setup(update: Update, context: CallbackContext) -> int:
+    """Handles cancellation during the quiz setup phase."""
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} cancelled quiz setup.")
+    await safe_send_message(context.bot, update.effective_chat.id, text="تم إلغاء إعداد الاختبار.")
+    # Clean up potentially stored data
+    context.user_data.pop("quiz_selection", None)
+    context.user_data.pop("current_page", None)
+    context.user_data.pop("parent_id", None)
+    context.user_data.pop("scope_items", None)
+    context.user_data.pop("all_random_questions", None)
+    # Send main menu
+    kb = create_main_menu_keyboard(user_id)
+    await safe_send_message(context.bot, update.effective_chat.id, text="القائمة الرئيسية:", reply_markup=kb)
+    return MAIN_MENU
 
 # --- Conversation Handler Definition --- 
+
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu, pattern="^menu_quiz$")],
+    entry_points=[CallbackQueryHandler(quiz_menu, pattern="^quiz_menu$")],
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_"),
-            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
+            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_(random|course)$"),
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
         ],
         SELECT_QUIZ_SCOPE: [
-            CallbackQueryHandler(select_quiz_scope, pattern="^quiz_scope_"),
-            CallbackQueryHandler(handle_scope_pagination, pattern="^quiz_page_"),
-            CallbackQueryHandler(handle_scope_back, pattern="^quiz_back_"),
-            CallbackQueryHandler(handle_scope_back, pattern="^quiz_menu$") # Allow back to quiz type selection
+            CallbackQueryHandler(select_quiz_scope, pattern="^quiz_scope_(course|unit|lesson)_\d+$"),
+            CallbackQueryHandler(handle_scope_pagination, pattern="^quiz_page_(course|unit|lesson)_\d+_\d*$"),
+            CallbackQueryHandler(handle_scope_back, pattern="^quiz_back_to_(course|unit_\d+)$|^quiz_menu$"), # Handle back buttons
+            CallbackQueryHandler(quiz_menu, pattern="^quiz_menu$"), # Allow returning to quiz type selection
         ],
         ENTER_QUESTION_COUNT: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, enter_question_count)
         ],
         TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer, pattern="^quiz_answer_"),
-            CallbackQueryHandler(skip_question_callback, pattern="^quiz_skip$"),
-            CallbackQueryHandler(end_quiz, pattern="^quiz_end$")
+            CallbackQueryHandler(handle_quiz_answer, pattern="^quiz_.*_ans_\d+_\d+$"),
+            CallbackQueryHandler(skip_question_callback, pattern="^quiz_.*_skip_\d+$"),
+            CallbackQueryHandler(end_quiz, pattern="^quiz_end$"), # Optional: Add an explicit end button
         ],
         SHOWING_RESULTS: [
-            CallbackQueryHandler(quiz_menu, pattern="^quiz_menu$"), # Back to quiz type selection
-            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Back to main menu
+            CallbackQueryHandler(quiz_menu, pattern="^quiz_menu$"),
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
         ],
     },
     fallbacks=[
-        CommandHandler("start", main_menu_callback), # Go to main menu on /start
-        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Handle explicit main menu return
-        # Fallback within quiz conversation
-        CallbackQueryHandler(quiz_menu, pattern=".*") # Go back to quiz type selection on any other callback
+        CommandHandler("cancel", cancel_quiz_setup), # Allow cancellation during setup
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Global fallback to main menu
+        CallbackQueryHandler(quiz_menu, pattern="^quiz_menu$"), # Fallback to quiz menu
     ],
-    map_to_parent={
-        MAIN_MENU: MAIN_MENU,
-        END: END
-    },
+    name="quiz_conversation",
     persistent=True,
-    name="quiz_conversation"
+    allow_reentry=True
 )
 
