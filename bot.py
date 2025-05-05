@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v5 with corrected Main ConversationHandler)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v6 with explicit patterns in Main ConversationHandler)."""
 
 import logging
 import sys
@@ -112,14 +112,14 @@ def main() -> None:
         entry_points=[start_handler], # Start with /start
         states={
             MAIN_MENU: [
-                # When in MAIN_MENU state, handle button clicks starting with 'menu_'
-                # main_menu_callback will determine the next state (QUIZ_MENU, INFO_MENU, etc.)
-                CallbackQueryHandler(main_menu_callback, pattern="^menu_"),
+                # Use explicit patterns for each main menu button
+                CallbackQueryHandler(main_menu_callback, pattern="^menu_quiz$"),
+                CallbackQueryHandler(main_menu_callback, pattern="^menu_info$"),
+                CallbackQueryHandler(main_menu_callback, pattern="^menu_stats$"),
                 # Handle explicit return to main menu via button with 'main_menu' data
                 CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
             ],
-            # IMPORTANT: Map the states returned by main_menu_callback to the sub-handlers
-            # When main_menu_callback returns QUIZ_MENU, control is passed to quiz_conv_handler
+            # Map the states returned by main_menu_callback to the sub-handlers
             QUIZ_MENU: [quiz_conv_handler],
             INFO_MENU: [info_conv_handler],
             STATS_MENU: [stats_conv_handler],
@@ -128,12 +128,9 @@ def main() -> None:
         fallbacks=[
             # Fallback to /start if something goes wrong or user sends /start again
             start_handler,
-            # Optional: Add a generic message handler as a fallback within the main conversation
-            # MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_command_handler) # Example
         ],
         persistent=True,
         name="main_conversation", # Name for persistence
-        # Allow sub-handlers to return to the MAIN_MENU state of this handler
         map_to_parent={
             MAIN_MENU: MAIN_MENU, # If a sub-handler returns MAIN_MENU, go back to the main menu state here
             END: END # Allow sub-handlers to end the entire conversation
@@ -141,14 +138,8 @@ def main() -> None:
     )
 
     # --- Register Handlers --- 
-    # Register the main conversation handler which now manages the sub-handlers
     application.add_handler(main_conv_handler)
-
-    # Add the error handler
     application.add_error_handler(error_handler)
-
-    # Note: Do NOT add quiz_conv_handler, info_conv_handler, stats_conv_handler directly anymore.
-    # They are now managed *within* main_conv_handler.
 
     # --- Start Bot --- 
     logger.info("Bot application configured. Starting polling...")
