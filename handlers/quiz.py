@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow (Corrected v5 - Removed await from fetch_from_api)."""
+"""Conversation handler for the quiz selection and execution flow (Corrected v6 - Fixed await and f-string syntax errors)."""
 
 import logging
 import math
@@ -97,7 +97,7 @@ def create_scope_keyboard(scope_type: str, items: list, page: int = 0, parent_id
 def get_all_questions_for_random() -> list | None:
     """Fetches questions from all courses and combines them."""
     logger.info("[RANDOM] Fetching all courses...")
-    # **FIX**: Removed await
+    # **FIX**: Removed await (Line 99)
     courses = fetch_from_api("/api/v1/courses")
     if courses is None or not isinstance(courses, list):
         logger.error("[RANDOM] Failed to fetch courses for random quiz.")
@@ -295,7 +295,8 @@ async def select_quiz_scope(update: Update, context: CallbackContext) -> int:
         return SELECT_QUIZ_SCOPE
     else: # If no sub-items, proceed to question count for the current scope
         await safe_edit_message_text(query, text=f"⏳ جارٍ حساب عدد الأسئلة لـ {scope_level}...", reply_markup=None)
-        questions_endpoint = f"{context.user_data["quiz_selection"].get("endpoint_base", "")}/questions"
+        # **FIX**: Corrected f-string syntax (Line 298)
+        questions_endpoint = f"{context.user_data['quiz_selection'].get('endpoint_base', '')}/questions"
         context.user_data["quiz_selection"]["endpoint"] = questions_endpoint
         # **FIX**: Removed await
         max_questions = get_question_count_from_api(questions_endpoint)
