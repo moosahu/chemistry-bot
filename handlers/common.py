@@ -115,7 +115,7 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     # The actual state transition is handled by the ConversationHandler return value
     # The specific handlers for QUIZ_MENU, INFO_MENU, etc., will be called next
     # and are responsible for editing the message or sending a new one.
-    logger.debug(f"Returning state: {state_to_return}")
+    logger.debug(f"[DEBUG] main_menu_callback attempting to return state: {state_to_return}")
     return state_to_return
 
 # --- Handler Definitions --- 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v8 with general pattern for main menu)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v10 with direct handler registration)."""
 
 import logging
 import sys
@@ -17,8 +17,8 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ConversationHandler,
-    MessageHandler, # Import MessageHandler
-    filters, # Import filters (lowercase)
+    MessageHandler,
+    filters,
     PicklePersistence,
     CallbackContext
 )
@@ -33,7 +33,7 @@ try:
     )
     from database.schema import setup_database_schema, apply_schema_updates
     # Import handlers
-    from handlers.common import start_handler, main_menu_callback
+    from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
     from handlers.quiz import quiz_conv_handler
     from handlers.info import info_conv_handler
     from handlers.stats import stats_conv_handler
@@ -59,13 +59,6 @@ async def error_handler(update: object, context: CallbackContext) -> None:
         except Exception as send_error:
             logger.error(f"Failed to send error message to user: {send_error}")
 
-# --- Debug Handler for MAIN_MENU state --- 
-async def debug_main_menu_message(update: Update, context: CallbackContext) -> int:
-    """Logs any text message received while in the MAIN_MENU state."""
-    if update.message:
-        logger.debug(f"[DEBUG] Received text message in MAIN_MENU state: 	'{update.message.text}'")
-    return MAIN_MENU # Stay in the same state
-
 # --- Main Function --- 
 def main() -> None:
     """Start the bot."""
@@ -90,6 +83,8 @@ def main() -> None:
         persistence_dir = os.path.join(project_root, 'persistence')
         os.makedirs(persistence_dir, exist_ok=True)
         persistence_file = os.path.join(persistence_dir, 'bot_conversation_persistence.pkl')
+        # IMPORTANT: Set allow_pickle=True for custom classes if needed, but be aware of security risks.
+        # For standard types, it should be fine.
         persistence = PicklePersistence(filepath=persistence_file)
         logger.info(f"PicklePersistence configured at {persistence_file}.")
     except Exception as pers_exc:
@@ -109,46 +104,31 @@ def main() -> None:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.")
         exit(1)
 
-    # --- Debugging log before defining handler --- 
-    logger.debug(f"[DEBUG] Registering main_menu_callback function: {main_menu_callback}")
+    # --- Register Handlers Directly --- 
+    # The entry points within each ConversationHandler will handle the button presses
+    
+    # 1. Start command handler
+    application.add_handler(start_handler)
+    logger.debug("[DEBUG] start_handler added to application.")
 
-    # --- Main Conversation Handler --- 
-    main_conv_handler = ConversationHandler(
-        entry_points=[start_handler],
-        states={
-            MAIN_MENU: [
-                # Use a general pattern to capture all main menu buttons
-                CallbackQueryHandler(main_menu_callback, pattern="^menu_.*"), # Changed pattern
-                # Keep the handler for explicit return to main menu
-                CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
-                # Keep the message handler for debugging within MAIN_MENU state
-                MessageHandler(filters.TEXT & ~filters.COMMAND, debug_main_menu_message)
-            ],
-            QUIZ_MENU: [quiz_conv_handler],
-            INFO_MENU: [info_conv_handler],
-            STATS_MENU: [stats_conv_handler],
-        },
-        fallbacks=[
-            start_handler,
-        ],
-        persistent=True,
-        name="main_conversation",
-        map_to_parent={
-            MAIN_MENU: MAIN_MENU,
-            END: END
-        }
-    )
+    # 2. Quiz conversation handler
+    application.add_handler(quiz_conv_handler)
+    logger.debug(f"[DEBUG] quiz_conv_handler added to application: {quiz_conv_handler}")
 
-    # --- Debugging log after defining handler --- 
-    logger.debug(f"[DEBUG] Main ConversationHandler defined: {main_conv_handler}")
+    # 3. Info conversation handler
+    application.add_handler(info_conv_handler)
+    logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
 
-    # --- Register Handlers --- 
-    application.add_handler(main_conv_handler)
-    logger.debug("[DEBUG] Main ConversationHandler added to application.") # Log after adding
+    # 4. Stats conversation handler
+    application.add_handler(stats_conv_handler)
+    logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
+
+    # 5. Error handler (add last)
     application.add_error_handler(error_handler)
+    logger.debug("[DEBUG] error_handler added to application.")
 
     # --- Start Bot --- 
-    logger.info("Bot application configured. Starting polling...")
+    logger.info("Bot application configured with direct handlers. Starting polling...")
     application.run_polling()
     logger.info("Bot polling stopped.")
 
