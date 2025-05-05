@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Common handlers like /start and main menu navigation (Corrected v2 - Fixed quiz button callback)."""
+"""Common handlers like /start and main menu navigation (Corrected v3 - Fixed info/stats button callbacks)."""
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -34,10 +34,10 @@ except ImportError as e:
 def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard, potentially showing admin options."""
     keyboard = [
-        # **FIXED**: Changed callback_data to match quiz_conv_handler entry point
-        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="quiz_menu")],
-        [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="info_menu")], # Corrected based on previous logs showing this works
-        [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="stats_menu")], # Corrected based on previous logs showing this works
+        # Use callback_data that matches the entry point patterns of the handlers
+        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="quiz_menu")], # Matches quiz.py pattern="^quiz_menu$"
+        [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")], # **FIXED**: Matches info.py pattern="^menu_info$"
+        [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")], # **FIXED**: Matches stats.py pattern="^menu_stats$"
         # Add other main menu items here
     ]
     # Example: Add an admin button if the user is an admin
@@ -85,12 +85,12 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         logger.info(f"Main menu callback: User {user.id} chose 	'{data}'.") 
 
         # Determine next state based on callback data
-        # **FIXED**: Compare with corrected callback_data values
+        # **FIXED**: Compare with corrected callback_data values matching handler patterns
         if data == "quiz_menu":
             state_to_return = QUIZ_MENU
-        elif data == "info_menu":
+        elif data == "menu_info": # **FIXED**
             state_to_return = INFO_MENU
-        elif data == "stats_menu":
+        elif data == "menu_stats": # **FIXED**
             state_to_return = STATS_MENU
         # Add other menu options here
         # elif data == "admin_menu":
@@ -123,7 +123,7 @@ start_handler = CommandHandler('start', start_command)
 
 # Callback query handler for navigating back to the main menu
 # This specifically handles the 'main_menu' callback data
-# Other main menu buttons ('quiz_menu', 'info_menu', etc.) act as entry points
+# Other main menu buttons ('quiz_menu', 'menu_info', etc.) act as entry points
 # to other ConversationHandlers or trigger state changes handled by the main dispatcher.
 main_menu_handler = CallbackQueryHandler(main_menu_callback, pattern='^main_menu$')
 
