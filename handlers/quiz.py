@@ -376,7 +376,7 @@ async def enter_question_count(update: Update, context: CallbackContext) -> int:
 # --- Conversation Handler Setup --- 
 
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu, pattern="^start_quiz$")],
+    entry_points=[CallbackQueryHandler(quiz_menu, pattern="^menu_quiz$")],
     states={
         SELECT_QUIZ_TYPE: [
             CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_"),

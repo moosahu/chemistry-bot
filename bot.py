@@ -34,10 +34,13 @@ try:
         INFO_MENU, STATS_MENU, SHOW_INFO_DETAIL, END # Conversation states
     )
     from database.schema import setup_database_schema, apply_schema_updates
-    from handlers.common import start_handler, main_menu_handler, main_menu_callback
-    from handlers.quiz import quiz_conv_handler
-    from handlers.info import info_conv_handler
-    from handlers.stats import stats_conv_handler
+    # Import handlers directly
+    from handlers.common import start_handler # Handles /start command
+    from handlers.quiz import quiz_conv_handler # Quiz conversation
+    from handlers.info import info_conv_handler # Info conversation
+    from handlers.stats import stats_conv_handler # Stats conversation
+    # Import main_menu_callback separately if needed for explicit returns, but rely on sub-handler entry points first
+    from handlers.common import main_menu_callback 
 
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
@@ -51,17 +54,15 @@ except Exception as e:
     exit(1)
 
 # --- Error Handler --- 
-# Corrected: Defined as async def
 async def error_handler(update: object, context: CallbackContext) -> None:
     """Log Errors caused by Updates."""
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
-    # Optionally, notify the user or admin about the error
-    # Example: 
-    # if isinstance(update, Update) and update.effective_chat:
-    #     try:
-    #         await context.bot.send_message(chat_id=update.effective_chat.id, text="حدث خطأ ما. يرجى المحاولة مرة أخرى لاحقاً.")
-    #     except Exception as send_error:
-    #         logger.error(f"Failed to send error message to user: {send_error}")
+    # Optionally notify user
+    if isinstance(update, Update) and update.effective_chat:
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="حدث خطأ ما. يرجى المحاولة مرة أخرى لاحقاً.")
+        except Exception as send_error:
+            logger.error(f"Failed to send error message to user: {send_error}")
 
 # --- Main Function --- 
 def main() -> None:
@@ -84,8 +85,12 @@ def main() -> None:
 
     # --- Persistence --- 
     try:
-        persistence = PicklePersistence(filepath="bot_conversation_persistence.pkl")
-        logger.info("PicklePersistence configured.")
+        # Ensure the directory exists for the persistence file
+        persistence_dir = os.path.join(project_root, 'persistence')
+        os.makedirs(persistence_dir, exist_ok=True)
+        persistence_file = os.path.join(persistence_dir, 'bot_conversation_persistence.pkl')
+        persistence = PicklePersistence(filepath=persistence_file)
+        logger.info(f"PicklePersistence configured at {persistence_file}.")
     except Exception as pers_exc:
         logger.error(f"Error configuring persistence: {pers_exc}")
         persistence = None # Continue without persistence
@@ -103,37 +108,14 @@ def main() -> None:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.")
         exit(1)
 
-    # --- Main Conversation Handler --- 
-    main_conv_handler = ConversationHandler(
-        entry_points=[start_handler], # Start with /start
-        states={
-            MAIN_MENU: [
-                quiz_conv_handler, 
-                info_conv_handler,
-                stats_conv_handler,
-                main_menu_handler, 
-                CallbackQueryHandler(main_menu_callback) 
-            ],
-        },
-        fallbacks=[
-            start_handler, 
-        ],
-        persistent=True,
-        name="main_conversation" # Name for persistence
-    )
-
     # --- Register Handlers --- 
-    application.add_handler(main_conv_handler)
-    
-    # Add error handler
-    application.add_error_handler(error_handler)
+    # Add the /start command handler
+    application.add_handler(start_handler)
 
-    # --- Start Bot --- 
-    logger.info("Bot application configured. Starting polling...")
-    application.run_polling()
-    logger.info("Bot polling stopped.")
+    # Add conversation handlers directly. Their entry points (e.g., CallbackQueryHandler pattern='^menu_quiz$')
+    # will be triggered by the buttons sent by start_handler.
+    application.add_handler(quiz_conv_handler)
+    application.add_handler(info_conv_handler)
+    application.add_handler(stats_conv_handler)
 
-
-if __name__ == "__main__":
-    main()
-
+    # Add a handler for explicit 
