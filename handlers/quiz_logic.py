@@ -217,9 +217,9 @@ class QuizLogic:
                 selected_option_text = opt.get("option_text", "")
                  # If original option text was a URL and we used a placeholder, use placeholder for feedback too
                 if (selected_option_text.startswith("http://") or selected_option_text.startswith("https://")) and not selected_option_text.strip() == "":
-                    selected_option_text = f"خيار {current_question_data.get("options", []).index(opt) + 1} (صورة)"
+                    selected_option_text = f"خيار {current_question_data.get('options', []).index(opt) + 1} (صورة)"
                 elif not selected_option_text or selected_option_text.strip() == "":
-                    selected_option_text = f"خيار {current_question_data.get("options", []).index(opt) + 1}"
+                    selected_option_text = f"خيار {current_question_data.get(\'options\', []).index(opt) + 1}"
                 break
         
         time_taken = time.time() - self.question_start_time
