@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Common handlers like /start and main menu navigation."""
+"""Common handlers like /start and main menu navigation (Corrected v4 - Fixed start_quiz callback)."""
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -35,14 +35,14 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard, potentially showing admin options."""
     keyboard = [
         # Use callback_data that matches the entry point patterns of the handlers
-        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="quiz_start")], # MODIFIED: Was quiz_menu, now matches quiz.py pattern="^quiz_start$"
+        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")], # ***CORRECTED***: Matches quiz.py pattern="^start_quiz$"
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")], 
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")], 
         # Add other main menu items here
     ]
     # Example: Add an admin button if the user is an admin
     # if DB_MANAGER and DB_MANAGER.is_user_admin(user_id):
-    #     keyboard.append([InlineKeyboardButton("⚙️ لوحة الإدارة", callback_data="admin_menu")]) # Use admin_menu if needed
+    #     keyboard.append([InlineKeyboardButton("⚙️ لوحة الإدارة", callback_data="admin_menu")]) 
     
     return InlineKeyboardMarkup(keyboard)
 
@@ -83,26 +83,17 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         data = query.data
         logger.info(f"Main menu callback: User {user.id} chose 	'{data}'.") 
 
-        # Determine next state based on callback data
-        if data == "quiz_start": # MODIFIED: Changed from quiz_menu to quiz_start
-            # This will now be caught by the quiz_conv_handler entry point
-            # The ConversationHandler in bot.py should have quiz_conv_handler as a top-level handler
-            # or this callback needs to be explicitly routed to QUIZ_MENU state if main_menu_callback is part of a larger ConversationHandler
-            # For simplicity, assuming quiz_conv_handler is directly registered with Application
-            # and its entry point pattern="^quiz_start$" will pick this up.
-            # If main_menu_callback is part of a MAIN ConversationHandler, then this should return QUIZ_MENU
-            # and the main ConversationHandler should have an entry point for quiz_start that leads to the quiz conversation.
-            # Given the current structure, this callback might not even be strictly necessary if quiz_start directly triggers quiz_conv_handler.
-            # However, if it IS part of a larger conversation handler, it should return the state that triggers the quiz.
-            # For now, let's assume it's meant to transition to a state handled by quiz.py
-            logger.debug(f"Callback 'quiz_start' received. This should be handled by quiz_conv_handler directly.")
-            # If this main_menu_callback is part of a larger ConversationHandler that has QUIZ_MENU as a state
-            # and quiz_conv_handler is nested, then this should return QUIZ_MENU.
-            # If quiz_conv_handler is a top-level handler, this specific 'if' branch might not be hit if the pattern is caught by quiz_conv_handler first.
-            # Let's assume for now that the main dispatcher will route 'quiz_start' to quiz_conv_handler.
-            # No explicit state return needed here if quiz_conv_handler handles it.
-            # However, to be safe and align with how other buttons might work if they were states:
-            return QUIZ_MENU # This signals to a potential parent ConversationHandler to transition.
+        if data == "start_quiz": # ***CORRECTED*** to handle the new callback for quiz entry
+            logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Quiz ConversationHandler should take over.")
+            # The ConversationHandler for quiz should be triggered directly by its pattern 'start_quiz'.
+            # This function (main_menu_callback) might not even be strictly necessary for 'start_quiz' 
+            # if the quiz_conv_handler is added directly to the application and its entry point is 'start_quiz'.
+            # However, returning a state that the quiz handler expects as an entry or a known state can be a fallback.
+            # For now, we assume the quiz_conv_handler will intercept 'start_quiz' before this.
+            # If this code IS reached for 'start_quiz', it means the quiz_conv_handler did not intercept it as an entry point.
+            # This would imply an issue with how handlers are ordered or structured in bot.py.
+            # Let's return QUIZ_MENU, which is the state quiz_menu_entry in quiz.py expects to transition to SELECT_QUIZ_TYPE.
+            return QUIZ_MENU 
 
         elif data == "menu_info": 
             state_to_return = INFO_MENU
@@ -111,22 +102,20 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         elif data == "main_menu": 
             state_to_return = MAIN_MENU
         else:
-            logger.warning(f"Unknown main menu callback data: '{data}'")
+            logger.warning(f"Unknown main menu callback data: '{data}' in main_menu_callback")
             state_to_return = MAIN_MENU 
 
     if state_to_return == MAIN_MENU:
         menu_text = "القائمة الرئيسية:"
         keyboard = create_main_menu_keyboard(user.id)
         if query:
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=menu_text, reply_markup=keyboard)
+            await safe_edit_message_text(query, text=menu_text, reply_markup=keyboard)
         else: 
             await safe_send_message(context.bot, update.effective_chat.id, text=menu_text, reply_markup=keyboard)
 
     logger.debug(f"[DEBUG] main_menu_callback attempting to return state: {state_to_return}")
     return state_to_return
 
-# --- Handler Definitions --- 
-
 start_handler = CommandHandler('start', start_command)
+main_menu_handler = CallbackQueryHandler(main_menu_callback, pattern='^main_menu$')
 
-# This handler is for the 
