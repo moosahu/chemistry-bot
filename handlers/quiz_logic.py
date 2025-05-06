@@ -32,8 +32,33 @@ class QuizLogic:
         keyboard = []
         for i, option in enumerate(options_data):
             option_id = option.get("option_id", i)
+            option_text_original = option.get("option_text", "")
+
+            # Check if option_text_original is None, empty, or a URL
+            button_text = ""
+            if not option_text_original or option_text_original.strip() == "":
+                button_text = f"خيار {i + 1}" # Default text: Option X
+                logger.warning(f"Option text was empty for option_id {option_id} in quiz {self.quiz_id}. Using default: '{button_text}'")
+            elif option_text_original.startswith("http://") or option_text_original.startswith("https://"):
+                # If it's a URL, try to make a short placeholder. For now, just use a generic one.
+                # A more advanced approach might try to fetch a title or use part of the URL, but keep it simple for now.
+                button_text = f"خيار {i + 1} (صورة)" # Default text: Option X (Image)
+                logger.info(f"Option text for option_id {option_id} in quiz {self.quiz_id} was a URL. Using placeholder: '{button_text}'")
+            else:
+                button_text = str(option_text_original) # Ensure it's a string
+            
+            # Telegram buttons have a text length limit (e.g., 64 bytes for callback_data, text itself also has limits, typically 1-64 chars is safe)
+            # Truncate if too long, though ideally data source should provide suitable length text.
+            if len(button_text.encode('utf-8')) > 60: # Rough check, actual limit is in bytes
+                button_text = button_text[:20] + "..." # Truncate to a safe length
+                logger.warning(f"Option text was too long for option_id {option_id} in quiz {self.quiz_id}. Truncated to: '{button_text}'")
+
+            if not button_text: # Final fallback if somehow still empty
+                 button_text = f"خيار {i + 1}"
+                 logger.error(f"Critical: Button text became empty after processing for option_id {option_id}. Final fallback to: '{button_text}'")
+
             callback_data = f"ans_{self.current_question_index}_{option_id}"
-            keyboard.append([InlineKeyboardButton(option["option_text"], callback_data=callback_data)])
+            keyboard.append([InlineKeyboardButton(text=button_text, callback_data=callback_data)])
         return InlineKeyboardMarkup(keyboard)
 
     async def send_question(self, chat_id: int, user_id: int):
@@ -69,6 +94,9 @@ class QuizLogic:
                 )
             except telegram.error.BadRequest as e:
                 logger.error(f"Failed to send photo (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}. URL: {image_url}")
+                if "BUTTON_TEXT_EMPTY" in str(e) or "text is empty" in str(e).lower():
+                    logger.error(f"Error sending photo for q_id {current_question_data.get('question_id', 'UNKNOWN')} was due to empty button text. This should have been caught by create_options_keyboard.")
+                
                 if question_text_from_data:
                     logger.info(f"Photo send failed for q_id {current_question_data.get('question_id', 'UNKNOWN')}, attempting to send as text.")
                     full_question_text = header + str(question_text_from_data)
@@ -91,13 +119,21 @@ class QuizLogic:
 
             full_question_text = header + question_text_main
             logger.info(f"Attempting to send text question for quiz {self.quiz_id}, q_idx {self.current_question_index}: {full_question_text[:100]}...")
-            sent_message = await safe_send_message(
-                self.bot,
-                chat_id=chat_id,
-                text=full_question_text,
-                reply_markup=options_keyboard,
-                parse_mode="HTML"
-            )
+            try:
+                sent_message = await safe_send_message(
+                    self.bot,
+                    chat_id=chat_id,
+                    text=full_question_text,
+                    reply_markup=options_keyboard,
+                    parse_mode="HTML"
+                )
+            except telegram.error.BadRequest as e:
+                logger.error(f"Failed to send text question (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}.")
+                if "BUTTON_TEXT_EMPTY" in str(e) or "text is empty" in str(e).lower():
+                    logger.error(f"Error sending text question for q_id {current_question_data.get('question_id', 'UNKNOWN')} was due to empty button text. This should have been caught by create_options_keyboard.")
+            except Exception as e:
+                 logger.error(f"Unexpected error sending text question for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}.", exc_info=True)
+
 
         if sent_message:
             self.last_question_message_id = sent_message.message_id
@@ -128,18 +164,31 @@ class QuizLogic:
                 logger.error(f"JobQueue not found in context for quiz {self.quiz_id}, user {user_id}. Timer not started.")
         else:
             logger.error(f"Failed to send question {self.current_question_index} (text or image) for quiz {self.quiz_id} to user {user_id}. No message object returned.")
+            # Attempt to inform user and end quiz gracefully
             try:
-                await safe_send_message(self.bot, chat_id, "عذراً، حدث خطأ أثناء إرسال السؤال. سيتم إنهاء الاختبار الحالي.")
+                await safe_send_message(self.bot, chat_id, "عذراً، حدث خطأ أثناء إرسال السؤال الحالي. سيتم إنهاء الاختبار. يرجى المحاولة لاحقاً.")
             except Exception as e_msg_err:
                 logger.error(f"Failed to send error message to user {user_id} after question send failure: {e_msg_err}")
+            # End the conversation for this user
+            user_data = self.context.user_data
+            if user_data:
+                user_data.pop('current_quiz_logic', None)
+                user_data.pop('quiz_type', None)
+                user_data.pop('quiz_scope', None)
+                user_data.pop('question_count', None)
             return ConversationHandler.END
 
     async def handle_answer(self, update: Update, context: CallbackContext):
         query = update.callback_query
-        await query.answer()
+        await query.answer() # Acknowledge callback query
         user_id = query.from_user.id
         chat_id = query.message.chat_id
         
+        # Ensure quiz logic instance is still valid and matches the callback
+        if not hasattr(self, 'quiz_id') or not self.quiz_id: # Check if quiz_id exists
+            logger.warning(f"handle_answer called for user {user_id} but quiz_id is not set in QuizLogic instance. Ignoring.")
+            return
+
         timer_job_name = f"qtimer_{user_id}_{chat_id}_{self.quiz_id}_{self.current_question_index}"
         remove_job_if_exists(timer_job_name, context)
 
@@ -153,7 +202,7 @@ class QuizLogic:
 
         if question_idx != self.current_question_index:
             logger.warning(f"Received answer for q_idx {question_idx} but current is {self.current_question_index} for quiz {self.quiz_id}. Ignoring.")
-            await safe_send_message(self.bot, chat_id, "لقد استلمت إجابة لسؤال سابق. يتم عرض السؤال الحالي.")
+            # await safe_send_message(self.bot, chat_id, "لقد استلمت إجابة لسؤال سابق. يتم عرض السؤال الحالي.") # Avoid spamming user
             return
 
         current_question_data = self.questions_data[self.current_question_index]
@@ -162,9 +211,15 @@ class QuizLogic:
         selected_option_text = "غير محدد"
 
         for opt in current_question_data.get("options", []):
+            # Ensure opt_id is compared as string if selected_option_id_str is string
             if str(opt.get("option_id", -1)) == selected_option_id_str:
                 is_correct = opt.get("is_correct", False)
                 selected_option_text = opt.get("option_text", "")
+                 # If original option text was a URL and we used a placeholder, use placeholder for feedback too
+                if (selected_option_text.startswith("http://") or selected_option_text.startswith("https://")) and not selected_option_text.strip() == "":
+                    selected_option_text = f"خيار {current_question_data.get("options", []).index(opt) + 1} (صورة)"
+                elif not selected_option_text or selected_option_text.strip() == "":
+                    selected_option_text = f"خيار {current_question_data.get("options", []).index(opt) + 1}"
                 break
         
         time_taken = time.time() - self.question_start_time
@@ -173,7 +228,7 @@ class QuizLogic:
             "question_id": current_question_data.get("question_id"),
             "question_text": current_question_data.get("question_text", "N/A"),
             "selected_option_id": selected_option_id_str,
-            "selected_option_text": selected_option_text,
+            "selected_option_text": selected_option_text, # This is the text shown on the button
             "is_correct": is_correct,
             "time_taken": time_taken
         })
@@ -189,16 +244,23 @@ class QuizLogic:
         q_text = str(q_text_from_data if q_text_from_data is not None else "")
         original_question_text = header + q_text
 
+        # Display the selected option text (which is the button_text)
+        edited_text = f"{original_question_text}\n\n<i>إجابتك: {selected_option_text}</i>\n<b>{feedback_text}</b>"
+        
+        # Try to edit the message. If it's an image, caption might not be editable, or message_id might be for image.
+        # For simplicity, we assume last_question_message_id is always editable with text.
         await safe_edit_message_text(
             bot=self.bot,
             chat_id=chat_id,
             message_id=self.last_question_message_id,
-            text=f"{original_question_text}\n\n<i>إجابتك: {selected_option_text}</i>\n<b>{feedback_text}</b>",
-            reply_markup=None,
+            text=edited_text,
+            reply_markup=None, # Remove keyboard after answer
             parse_mode="HTML"
         )
 
         self.current_question_index += 1
+        # Small delay before next question
+        await asyncio.sleep(1.5) # Using FEEDBACK_DELAY from config would be better if available
         await self.send_question(chat_id, user_id)
 
     async def question_timeout_callback(self, context: CallbackContext):
@@ -209,8 +271,8 @@ class QuizLogic:
         chat_id = job_data["chat_id"]
         message_id = job_data["message_id"]
 
-        if self.quiz_id != quiz_id or self.current_question_index != question_idx:
-            logger.info(f"Timeout job for old quiz/question ({quiz_id}, q_idx {question_idx}) ignored. Current: ({self.quiz_id}, q_idx {self.current_question_index})")
+        if not hasattr(self, 'quiz_id') or self.quiz_id != quiz_id or self.current_question_index != question_idx:
+            logger.info(f"Timeout job for old quiz/question ({quiz_id}, q_idx {question_idx}) ignored. Current: ({getattr(self, 'quiz_id', 'N/A')}, q_idx {self.current_question_index})")
             return
 
         logger.info(f"Question {question_idx} timed out for user {user_id} in quiz {quiz_id}.")
@@ -240,6 +302,7 @@ class QuizLogic:
         )
         
         self.current_question_index += 1
+        await asyncio.sleep(1.5) # Using FEEDBACK_DELAY from config would be better
         await self.send_question(chat_id, user_id)
 
     async def show_results(self, chat_id: int, user_id: int):
@@ -251,14 +314,27 @@ class QuizLogic:
         results_text += f"عدد الأسئلة الكلي: {self.total_questions}\n"
         results_text += f"عدد الإجابات الصحيحة: {correct_answers}\n"
         results_text += f"النسبة المئوية: {percentage:.2f}%\n\n"
+        # Consider adding a summary of answers if needed
 
         logger.info(f"Showing results for quiz {self.quiz_id} to user {user_id}. Score: {correct_answers}/{self.total_questions}")
         await safe_send_message(self.bot, chat_id, results_text, parse_mode="HTML")
         
+        # Clean up user_data related to the quiz
+        user_data = self.context.user_data
+        if user_data:
+            user_data.pop('current_quiz_logic', None)
+            user_data.pop('quiz_type', None)
+            user_data.pop('quiz_scope', None)
+            user_data.pop('question_count', None)
+        logger.debug(f"Quiz data cleaned from user_data for user {user_id} after quiz {self.quiz_id}")
+
     async def start_quiz(self, update: Update):
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
-        self.user_id = user_id
+        # Store the user_id in the instance if it wasn't passed during __init__ (e.g. if QuizLogic was created earlier)
+        if not self.user_id:
+            self.user_id = user_id
+            logger.info(f"User ID {user_id} set for quiz {self.quiz_id} at start_quiz.")
 
         if not self.questions_data or self.total_questions == 0:
             logger.error(f"Attempted to start quiz {self.quiz_id} for user {user_id} with no questions or zero total questions.")
@@ -268,3 +344,4 @@ class QuizLogic:
         logger.info(f"Quiz {self.quiz_id} starting for user {user_id} with {self.total_questions} questions of type {self.quiz_type}.")
         await self.send_question(chat_id, user_id)
         return TAKING_QUIZ
+
