@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Core logic for handling quizzes in the Chemistry Telegram Bot, now with a QuizLogic class."""
 
 import random
@@ -46,10 +45,6 @@ class QuizLogic:
             media = InputMediaPhoto(media=photo_url, caption=text, parse_mode=ParseMode.HTML)
             if current_message_id:
                 try:
-                    # Try editing if the message had a photo, otherwise, it might fail or send new
-                    # For simplicity, if there's a photo, we might prefer sending a new one if editing media caption is complex
-                    # or if the previous message didn't have a photo.
-                    # Let's assume for now we delete old and send new if photo is involved in edit
                     await safe_delete_message(self.bot, chat_id, current_message_id)
                     new_message = await self.bot.send_photo(chat_id=chat_id, photo=photo_url, caption=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
                 except BadRequest as e:
@@ -63,9 +58,6 @@ class QuizLogic:
                     new_message = await safe_edit_message_text(self.bot, chat_id=chat_id, message_id=current_message_id, text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
                 except BadRequest as e: # If message didn't change or other issue
                     logger.warning(f"[QuizLogic] Failed to edit message {current_message_id}, sending new: {e}")
-                    # Delete old message with media if it had one, to avoid clutter
-                    # This part needs care: if previous had photo and new doesn't, edit might fail. 
-                    # For now, assume safe_edit_message_text handles it or we send new.
                     await safe_delete_message(self.bot, chat_id, current_message_id) # Clean up old message
                     new_message = await safe_send_message(self.bot, chat_id, text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
             else:
@@ -91,7 +83,6 @@ class QuizLogic:
                     display_text = option_text if option_text else f"Image Option {i+1}"
                     buttons.append([InlineKeyboardButton(display_text, callback_data=f"quiz_{quiz_id}_ans_{question_index}_{i}")])
         
-        # Add skip button
         buttons.append([InlineKeyboardButton("➡️ تخطي السؤال", callback_data=f"quiz_{quiz_id}_skip_{question_index}")])
         return InlineKeyboardMarkup(buttons)
 
@@ -109,14 +100,11 @@ class QuizLogic:
         question_text_main = question.get("question_text", "")
         question_image_url = question.get("image_url")
 
-        # Header for the question
         header = f"<b>السؤال {q_idx + 1} من {quiz_data['total_questions']}:</b>\n"
         full_question_text = header + question_text_main
 
-        # Build keyboard
         reply_markup = self._build_question_keyboard(question, quiz_id, q_idx)
         
-        # Send or edit message
         new_message_id = await self._send_or_edit_message(
             chat_id=chat_id,
             text=full_question_text,
@@ -127,23 +115,18 @@ class QuizLogic:
         if new_message_id:
             quiz_data["last_message_id"] = new_message_id
 
-        # Schedule timer if enabled
         if ENABLE_QUESTION_TIMER:
             job_name = f"qtimer_{chat_id}_{user_id}_{quiz_id}_{q_idx}"
-            remove_job_if_exists(job_name, self.context) # self.context is CallbackContext
+            remove_job_if_exists(job_name, self.context)
             
             timer_context_data = {
                 "chat_id": chat_id,
                 "user_id": user_id,
                 "quiz_id": quiz_id,
                 "question_index": q_idx,
-                "quiz_logic_instance_ref": id(self) # Or a way to get this instance if needed by callback
             }
-            # The callback needs to be a global/static method or accessible by the job queue
-            # For now, we assume a global `question_timer_callback` is defined elsewhere (e.g. in handlers/quiz.py or here globally)
-            # and it will call `logic.handle_timeout(...)`
             self.context.job_queue.run_once(
-                question_timer_callback, # This is a global function defined below
+                question_timer_callback,
                 timedelta(seconds=QUESTION_TIMER_SECONDS),
                 data=timer_context_data,
                 name=job_name,
@@ -157,13 +140,13 @@ class QuizLogic:
         user = update.effective_user
         chat_id = update.effective_chat.id
         user_id = user.id
-        self.user_data['_effective_user_id'] = user_id # Store for logging
+        self.user_data['_effective_user_id'] = user_id
 
         quiz_selection = self.user_data.get("quiz_selection")
         if not quiz_selection or "type" not in quiz_selection or "count" not in quiz_selection or "endpoint" not in quiz_selection:
             logger.error(f"[QuizLogic] start_quiz for user {user_id} without complete quiz_selection: {quiz_selection}")
             await safe_send_message(self.bot, chat_id, text="حدث خطأ، لم يتم تحديد تفاصيل الاختبار. يرجى المحاولة من القائمة الرئيسية.")
-            kb = create_main_menu_keyboard(user_id) # Assuming this function exists and is appropriate
+            kb = create_main_menu_keyboard(user_id)
             await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
 
@@ -188,9 +171,9 @@ class QuizLogic:
                 num_questions = len(all_fetched_questions)
             if num_questions > 0:
                  quiz_questions_raw = random.sample(all_fetched_questions, num_questions)
-            quiz_selection.pop("fetched_questions", None) # Clear after use
-        else: # Specific API endpoint
-            params = {"limit": num_questions} # API should respect this limit
+            quiz_selection.pop("fetched_questions", None)
+        else:
+            params = {"limit": num_questions}
             api_response = fetch_from_api(questions_endpoint, params=params)
             if api_response == "TIMEOUT" or not isinstance(api_response, list):
                 logger.error(f"[QuizLogic] Failed to fetch questions from {questions_endpoint} for user {user_id}. Response: {api_response}")
@@ -199,9 +182,9 @@ class QuizLogic:
                 await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
                 return MAIN_MENU
             quiz_questions_raw = api_response
-            if len(quiz_questions_raw) > num_questions: # API gave more than requested
+            if len(quiz_questions_raw) > num_questions:
                 quiz_questions_raw = random.sample(quiz_questions_raw, num_questions)
-            elif len(quiz_questions_raw) < num_questions: # API gave less
+            elif len(quiz_questions_raw) < num_questions:
                 num_questions = len(quiz_questions_raw)
 
         if num_questions == 0 or not quiz_questions_raw:
@@ -211,11 +194,10 @@ class QuizLogic:
             await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
 
-        # Transform all questions
         quiz_questions_transformed = []
         for q_data in quiz_questions_raw:
             transformed = transform_api_question(q_data)
-            if transformed and (transformed.get("options") or transformed.get("correct_answer") is not None): # Basic validation
+            if transformed and (transformed.get("options") or transformed.get("correct_answer") is not None):
                 quiz_questions_transformed.append(transformed)
             else:
                 logger.warning(f"[QuizLogic] Skipping invalid question after transformation: {q_data}")
@@ -224,7 +206,8 @@ class QuizLogic:
         if num_questions == 0:
             logger.error(f"[QuizLogic] No questions remained after transformation for user {user_id}. Aborting.")
             await safe_send_message(self.bot, chat_id, text="لم يتم العثور على أسئلة صالحة بعد المعالجة. يرجى المحاولة مرة أخرى.")
-            # ... return to main menu ...
+            kb = create_main_menu_keyboard(user_id)
+            await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
 
         quiz_id = str(uuid.uuid4())
@@ -233,7 +216,7 @@ class QuizLogic:
             "questions": quiz_questions_transformed,
             "total_questions": num_questions,
             "current_question_index": 0,
-            "answers": [None] * num_questions, # None: unanswered, int: answer_idx, -1: skip, -2: timeout (wrong), -3: error
+            "answers": [None] * num_questions,
             "score": 0,
             "start_time": datetime.now(),
             "finished": False,
@@ -256,49 +239,43 @@ class QuizLogic:
         quiz_data = self.user_data.get("current_quiz")
         if not quiz_data or quiz_data.get("finished"):
             await query.answer("الاختبار غير نشط أو انتهى.")
-            return TAKING_QUIZ # Or MAIN_MENU
+            return TAKING_QUIZ
 
         q_idx = quiz_data["current_question_index"]
         question_data = quiz_data["questions"][q_idx]
 
-        # Determine if correct (new and old structure)
         is_correct = False
         correct_answer_text_or_image = "غير محدد"
         options_list = question_data.get("options")
-        if options_list: # New structure
+        if options_list:
             if 0 <= chosen_option_index < len(options_list):
                 is_correct = options_list[chosen_option_index].get("is_correct", False)
                 correct_opt = next((opt for opt in options_list if opt.get("is_correct")), None)
                 if correct_opt:
                     correct_answer_text_or_image = correct_opt.get("option_text") or "صورة صحيحة"
-        else: # Old structure
-            correct_answer_str = str(question_data.get("correct_answer")) # API might send int or str
-            # Old structure assumes chosen_option_index is 0-based from NUM_OPTIONS
-            # and correct_answer is 1-based string like "1", "2"
+        else:
+            correct_answer_str = str(question_data.get("correct_answer"))
             if correct_answer_str and str(chosen_option_index + 1) == correct_answer_str:
                 is_correct = True
             correct_opt_text_key = f"option{correct_answer_str}"
             correct_opt_image_key = f"option{correct_answer_str}_image"
-            correct_answer_text_or_image = question_data.get(correct_opt_t            correct_answer_text_or_image = question_data.get(correct_opt_text_key) or ("صورة صحيحة" if question_data.get(correct_opt_image_key) else "غير محدد")
+            correct_answer_text_or_image = question_data.get(correct_opt_text_key) or ("صورة صحيحة" if question_data.get(correct_opt_image_key) else "غير محدد")
 
-        quiz_data["answers"][q_idx] = chosen_option_index # Store chosen answer index
+        quiz_data["answers"][q_idx] = chosen_option_index
         if is_correct:
             quiz_data["score"] += 1
             feedback_text = "🎉 إجابة صحيحة!"
         else:
             feedback_text = f"❌ إجابة خاطئة. الإجابة الصحيحة: {correct_answer_text_or_image}"
         
-        await query.answer(text="تم تسجيل إجابتك.") # Quick feedback to Telegram
-        # Send feedback message (optional, can be part of next question message)
-        # For now, let's make it brief and proceed
+        await query.answer(text="تم تسجيل إجابتك.")
         if quiz_data.get("last_message_id"):
              await safe_edit_message_text(self.bot, chat_id, quiz_data["last_message_id"], text=feedback_text, reply_markup=None)
-             await asyncio.sleep(FEEDBACK_DELAY) # Show feedback for a moment
+             await asyncio.sleep(FEEDBACK_DELAY)
         else:
             await safe_send_message(self.bot, chat_id, text=feedback_text)
             await asyncio.sleep(FEEDBACK_DELAY)
 
-        # Remove active timer for this question
         job_name = f"qtimer_{chat_id}_{user_id}_{quiz_data['quiz_id']}_{q_idx}"
         remove_job_if_exists(job_name, self.context)
 
@@ -311,7 +288,7 @@ class QuizLogic:
 
     async def handle_skip_question(self, update: Update, timed_out: bool = False, error_occurred: bool = False) -> int:
         """Handles skipping a question (either by user, timeout, or error)."""
-        query = update.callback_query # Might be None if called by timer directly
+        query = update.callback_query
         user = update.effective_user
         chat_id = update.effective_chat.id
         user_id = user.id
@@ -319,8 +296,7 @@ class QuizLogic:
         quiz_data = self.user_data.get("current_quiz")
         if not quiz_data or quiz_data.get("finished"):
             if query: await query.answer("الاختبار غير نشط أو انتهى.")
-            # else: await safe_send_message(self.bot, chat_id, "الاختبار غير نشط أو انتهى.")
-            return MAIN_MENU # Or TAKING_QUIZ if it should not exit state
+            return MAIN_MENU
 
         q_idx = quiz_data["current_question_index"]
         quiz_id = quiz_data["quiz_id"]
@@ -332,30 +308,28 @@ class QuizLogic:
 
         skip_message = ""
         if error_occurred:
-            quiz_data["answers"][q_idx] = -3 # Error
+            quiz_data["answers"][q_idx] = -3
             skip_message = f"تم تسجيل خطأ للسؤال {q_idx + 1}."
             logger.info(f"[QuizLogic] Question {q_idx + 1} marked as ERROR for user {user_id} in quiz {quiz_id}.")
         elif timed_out:
-            quiz_data["answers"][q_idx] = -2 # Timed out (counts as wrong)
+            quiz_data["answers"][q_idx] = -2
             skip_message = f"⏰ انتهى وقت السؤال {q_idx + 1}! تم اعتباره إجابة خاطئة."
             logger.info(f"[QuizLogic] Question {q_idx + 1} marked as TIMED OUT (WRONG) for user {user_id} in quiz {quiz_id}.")
-        else: # Normal skip by user
-            quiz_data["answers"][q_idx] = -1 # Skipped
+        else:
+            quiz_data["answers"][q_idx] = -1
             skip_message = f"تم تخطي السؤال {q_idx + 1}."
             logger.info(f"[QuizLogic] Question {q_idx + 1} SKIPPED by user {user_id} in quiz {quiz_id}.")
 
         if query: 
             await query.answer("تم تسجيل التخطي.")
         
-        # Edit message to show skip status, then proceed
         if quiz_data.get("last_message_id"):
             await safe_edit_message_text(self.bot, chat_id, quiz_data["last_message_id"], text=skip_message, reply_markup=None)
-            await asyncio.sleep(FEEDBACK_DELAY) # Show feedback
-        else: # Should not happen if quiz is ongoing
+            await asyncio.sleep(FEEDBACK_DELAY)
+        else:
             await safe_send_message(self.bot, chat_id, text=skip_message)
             await asyncio.sleep(FEEDBACK_DELAY)
 
-        # Remove active timer for this question
         job_name = f"qtimer_{chat_id}_{user_id}_{quiz_id}_{q_idx}"
         remove_job_if_exists(job_name, self.context)
 
@@ -373,9 +347,8 @@ class QuizLogic:
         user_id = user.id
 
         quiz_data = self.user_data.get("current_quiz")
-        if not quiz_data or quiz_data.get("finished") and not (from_answer or from_skip): # Allow re-entry if just finished
+        if not quiz_data or quiz_data.get("finished") and not (from_answer or from_skip):
             logger.warning(f"[QuizLogic] finish_quiz called for user {user_id} but no active/unfinished quiz.")
-            # Send to main menu if no quiz data
             kb = create_main_menu_keyboard(user_id)
             await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
@@ -384,16 +357,14 @@ class QuizLogic:
         end_time = datetime.now()
         duration_seconds = (end_time - quiz_data["start_time"]).total_seconds()
 
-        # Calculate final score (already updated in handle_answer)
         score = quiz_data["score"]
         total_q = quiz_data["total_questions"]
         percentage = (score / total_q * 100) if total_q > 0 else 0
 
-        # Save results to DB
         try:
             DB_MANAGER.add_quiz_result(
                 user_id=user_id,
-                quiz_type=quiz_data.get("quiz_type_display", "N/A"), # Or a more specific type if available
+                quiz_type=quiz_data.get("quiz_type_display", "N/A"),
                 quiz_scope=quiz_data.get("quiz_scope_display", "N/A"),
                 score=score,
                 total_questions=total_q,
@@ -410,25 +381,18 @@ class QuizLogic:
         results_text += f"<b>النتيجة:</b> {score} / {total_q} ({percentage:.2f}%)\n"
         results_text += f"<b>الوقت المستغرق:</b> {format_duration(int(duration_seconds))}\n\n"
         results_text += "أداء رائع! يمكنك مراجعة إجاباتك أو بدء اختبار جديد."
-        # TODO: Add review answers button later
 
-        # Clean up last question message if it exists
         if quiz_data.get("last_message_id"):
             await safe_delete_message(self.bot, chat_id, quiz_data["last_message_id"])
-            quiz_data["last_message_id"] = None # Clear it
+            quiz_data["last_message_id"] = None
 
-        # Send results message
         results_keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("العودة إلى قائمة الاختبارات", callback_data="main_quiz_menu")],
             [InlineKeyboardButton("العودة إلى القائمة الرئيسية", callback_data="main_menu")]
         ])
         await safe_send_message(self.bot, chat_id, text=results_text, reply_markup=results_keyboard, parse_mode=ParseMode.HTML)
         
-        # Clean up quiz data from user_data after showing results
-        # self.user_data.pop("current_quiz", None) # Keep for potential review, or clear later
-        # self.user_data.pop("quiz_selection", None)
-
-        return SHOWING_RESULTS # This state should handle the results keyboard callbacks
+        return SHOWING_RESULTS
 
     async def return_to_main_menu(self, update: Update) -> int:
         """Cleans up quiz state and returns user to the main menu."""
@@ -437,14 +401,12 @@ class QuizLogic:
         quiz_data = self.user_data.get("current_quiz")
 
         if quiz_data:
-            # Clean up any active timers for this user/quiz
             if not quiz_data.get("finished"):
                  q_idx = quiz_data["current_question_index"]
                  quiz_id = quiz_data["quiz_id"]
                  job_name = f"qtimer_{chat_id}_{user_id}_{quiz_id}_{q_idx}"
                  remove_job_if_exists(job_name, self.context)
             
-            # Clean up last message if any
             if quiz_data.get("last_message_id"):
                 await safe_delete_message(self.bot, chat_id, quiz_data["last_message_id"])
 
@@ -456,8 +418,6 @@ class QuizLogic:
         await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
         return MAIN_MENU
 
-# --- Global Timer Callback --- 
-# This needs to be global or static to be easily called by JobQueue if not passing instance method
 async def question_timer_callback(context: CallbackContext):
     """Handles the timeout for a single question. Calls the appropriate QuizLogic method."""
     job_data = context.job.data
@@ -468,21 +428,6 @@ async def question_timer_callback(context: CallbackContext):
 
     logger.info(f"[GLOBAL TIMER] Callback for user {user_id}, quiz {quiz_id}, q_idx {question_index_timed_out}")
 
-    # We need a way to get the QuizLogic instance or operate on user_data directly.
-    # For this structure, handlers/quiz.py will instantiate QuizLogic and store it in context.chat_data or context.user_data
-    # Or, the QuizLogic instance needs to be reconstructed here if it's not passed.
-    # Let's assume handlers/quiz.py makes the QuizLogic instance accessible, e.g., via context.user_data['quiz_logic_instance']
-    # This is a bit complex. A simpler way is for this callback to directly manipulate user_data
-    # and then call a method that might need an update object if it's to send messages.
-
-    # Simplification: The timer will call a method on an *existing* QuizLogic instance
-    # This means the QuizLogic instance must be findable or passed.
-    # The job_data might need to contain enough info to reconstruct or find it.
-    # For now, let's assume the handler that started the quiz (in quiz.py) will handle this
-    # by creating a QuizLogic instance and its methods are called.
-    # This global callback will try to find the relevant user_data and call the skip logic.
-
-    # Access user_data via dispatcher (Important for jobs)
     if not hasattr(context, "dispatcher") or not context.dispatcher:
          logger.error("[GLOBAL TIMER] Dispatcher not found in context for question_timer_callback.")
          return
@@ -498,21 +443,6 @@ async def question_timer_callback(context: CallbackContext):
         
         logger.info(f"[GLOBAL TIMER] Timeout confirmed for user {user_id}, quiz {quiz_id}, q_idx {question_index_timed_out}. Triggering skip.")
         
-        # To call QuizLogic.handle_skip_question, we need an Update object.
-        # This is a limitation of calling complex logic from a timer without an update.
-        # Option 1: The timer sends a simple message and marks data, user handles next step.
-        # Option 2: The timer callback tries to simulate an update or calls a simplified skip.
-        
-        # Let's try to call a simplified internal skip that doesn't require a full Update object
-        # if it only modifies data and the next interaction will show the change.
-        # However, to proceed to the next question or finish quiz, we need to send messages.
-
-        # For now, let's assume `handlers/quiz.py` will have an instance of `QuizLogic`
-        # and this global callback is a bit of a workaround. The ideal would be for
-        # `handlers/quiz.py` to schedule `quiz_logic_instance.handle_timeout` if possible.
-
-        # Let's try to make a dummy update-like structure for the skip handler if it needs one
-        # This is not ideal. The QuizLogic instance should be retrieved and its method called.
         class DummyUpdate:
             class DummyEffectiveUser:
                 id = user_id
@@ -520,22 +450,16 @@ async def question_timer_callback(context: CallbackContext):
                 id = chat_id
             effective_user = DummyEffectiveUser()
             effective_chat = DummyEffectiveChat()
-            callback_query = None # Timer doesn't have a callback query
+            callback_query = None
         
         dummy_update = DummyUpdate()
         
-        # Re-create a temporary QuizLogic instance for this job context
-        # This is also not ideal as it creates a new instance. 
-        # The instance associated with the conversation should be used.
-        # This requires careful state management in user_data or chat_data by handlers/quiz.py
-        temp_logic_instance = QuizLogic(context) # context here is the job's context
-        # Ensure this temp_logic_instance uses the correct user_data for user_id
-        temp_logic_instance.user_data = user_data # Crucial: associate with the specific user's data
+        temp_logic_instance = QuizLogic(context)
+        temp_logic_instance.user_data = user_data
 
         await temp_logic_instance.handle_skip_question(dummy_update, timed_out=True)
     else:
         logger.info(f"[GLOBAL TIMER] Quiz {quiz_id} for user {user_id} ended, or q_idx {question_index_timed_out} already handled. Timer ignored.")
 
 logger.info("[QuizLogic Module] QuizLogic class and global timer callback defined.")
-
 
