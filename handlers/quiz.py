@@ -430,8 +430,8 @@ async def handle_quiz_answer_callback(update: Update, context: CallbackContext) 
         # question_index = int(parts[3]) # Also managed internally by QuizLogic
         chosen_option_index = int(parts[4])
     except (IndexError, ValueError) as e:
-        logger.error(f"Error parsing quiz answer callback data 
-{data}": {e}")
+        # Corrected line below
+        logger.error(f"Error parsing quiz answer callback data. Data: '{data}', Error: {e}")
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في بيانات الإجابة.")
         return TAKING_QUIZ # Stay in quiz, or end it if unrecoverable
 
@@ -540,5 +540,5 @@ quiz_conv_handler = ConversationHandler(
     # persistent=True # Consider if persistence is needed and how to manage it
 )
 
-logger.info("handlers/quiz.py V1 Final loaded successfully with quiz_conv_handler.")
+logger.info("handlers/quiz.py V1 Final (Syntax Corrected) loaded successfully with quiz_conv_handler.")
 
