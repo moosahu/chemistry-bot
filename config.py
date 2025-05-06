@@ -20,7 +20,7 @@ if not DATABASE_URL:
     logging.warning("Missing environment variable: DATABASE_URL. Database features will be disabled.")
 if not API_BASE_URL or API_BASE_URL == "http://your-api-base-url.com/api":
     # Allow running without API for testing some features, but log a warning
-    logging.warning(f"Missing or default environment variable: API_BASE_URL ('{API_BASE_URL}'). API features might be disabled or use a dummy URL.")
+    logging.warning(f"Missing or default environment variable: API_BASE_URL (\'{API_BASE_URL}\'). API features might be disabled or use a dummy URL.")
 
 # --- Logging Configuration --- 
 
@@ -36,12 +36,16 @@ logger.setLevel(logging.DEBUG) # Set bot's own logger to DEBUG for more details
 
 logger.info("Logging configured.")
 logger.debug(f"API_BASE_URL set to: {API_BASE_URL}")
-logger.debug(f"DATABASE_URL is {'set' if DATABASE_URL else 'NOT set'}.")
+logger.debug(f"DATABASE_URL is {\'set\' if DATABASE_URL else \'NOT set\'}.")
 
 # --- Conversation States --- 
 
 # Define states as integers. Ensure they are unique.
-MAIN_MENU, QUIZ_MENU, SELECT_QUIZ_TYPE, SELECT_QUIZ_SCOPE, ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, INFO_MENU, STATS_MENU, SHOW_INFO_DETAIL = range(10) # Added SHOW_INFO_DETAIL
+# Existing states were range(10), so 0-9 are used.
+# New states for course/unit selection flow will start from 10.
+MAIN_MENU, QUIZ_MENU, SELECT_QUIZ_TYPE, SELECT_QUIZ_SCOPE, \
+ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, INFO_MENU, STATS_MENU, SHOW_INFO_DETAIL, \
+SELECT_COURSE_FOR_UNIT_QUIZ, SELECT_UNIT_FOR_COURSE = range(12) # Extended range to include new states (10 and 11)
 
 # Fallback state
 END = ConversationHandler.END
