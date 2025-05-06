@@ -38,7 +38,7 @@ class QuizLogic:
             if not option_text_original or option_text_original.strip() == "":
                 button_text = f"خيار {i + 1}"
                 logger.warning(f"Option text was empty for option_id {option_id} in quiz {self.quiz_id}. Using default: '{button_text}'")
-            elif option_text_original.startswith("http://") or option_text_original.startswith("https://"):
+            elif option_text_original.startswith("http://")  or option_text_original.startswith("https://") :
                 button_text = f"خيار {i + 1} (صورة)"
                 logger.info(f"Option text for option_id {option_id} in quiz {self.quiz_id} was a URL. Using placeholder: '{button_text}'")
             else:
@@ -201,15 +201,17 @@ class QuizLogic:
         is_correct = False
         selected_option_text_for_display = "غير محدد"
 
+        # THIS IS THE CORRECTED SECTION - It uses opt_idx from enumerate
+        # and does not use .index() within an f-string for this logic.
         for opt_idx, opt in enumerate(current_question_data.get("options", [])):
             if str(opt.get("option_id", -1)) == selected_option_id_str:
                 is_correct = opt.get("is_correct", False)
                 original_opt_text = opt.get("option_text", "")
                 
-                if (original_opt_text.startswith("http://") or original_opt_text.startswith("https://")) and not original_opt_text.strip() == "":
-                    selected_option_text_for_display = f"خيار {opt_idx + 1} (صورة)" # Corrected: Use opt_idx for enumeration
+                if (original_opt_text.startswith("http://")  or original_opt_text.startswith("https://") ) and not original_opt_text.strip() == "":
+                    selected_option_text_for_display = f"خيار {opt_idx + 1} (صورة)" 
                 elif not original_opt_text or original_opt_text.strip() == "":
-                    selected_option_text_for_display = f"خيار {opt_idx + 1}" # Corrected: Use opt_idx for enumeration
+                    selected_option_text_for_display = f"خيار {opt_idx + 1}"
                 else:
                     selected_option_text_for_display = original_opt_text
                 break
@@ -329,4 +331,3 @@ class QuizLogic:
         logger.info(f"Quiz {self.quiz_id} starting for user {user_id} with {self.total_questions} questions of type {self.quiz_type}.")
         await self.send_question(chat_id, user_id)
         return TAKING_QUIZ
-
