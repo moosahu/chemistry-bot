@@ -34,7 +34,7 @@ try:
     )
     from database.schema import setup_database_schema, apply_schema_updates
     # Import handlers
-        from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
+    from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
     # from handlers.quiz import quiz_conv_handler
     # from handlers.info import info_conv_handler
     # from handlers.stats import stats_conv_handler
