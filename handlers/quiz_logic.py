@@ -260,7 +260,6 @@ class QuizLogic:
                 is_correct = True
             correct_opt_text_key = f"option{correct_answer_str}"
             correct_opt_image_key = f"option{correct_answer_str}_image"
-            # السطر المصحح والنهائي هنا:
             correct_answer_text_or_image = question_data.get(correct_opt_text_key) or ("صورة صحيحة" if question_data.get(correct_opt_image_key) else "غير محدد")
 
         quiz_data["answers"][q_idx] = chosen_option_index
