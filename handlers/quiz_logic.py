@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Core logic for handling quizzes in the Chemistry Telegram Bot (Corrected v8 - Fixed options handling based on API structure)."""
+"""Core logic for handling quizzes in the Chemistry Telegram Bot (Corrected v9 - Supports both old and new options structures)."""
 
 import random
 import time
@@ -17,7 +17,7 @@ from config import (
     logger,
     MAIN_MENU, TAKING_QUIZ, SHOWING_RESULTS,
     FEEDBACK_DELAY, ENABLE_QUESTION_TIMER,
-    NUM_OPTIONS # Keep NUM_OPTIONS if used elsewhere, but options loop is now dynamic
+    NUM_OPTIONS # Used for fallback old structure
 )
 from utils.helpers import (
     safe_send_message, safe_edit_message_text,
@@ -126,22 +126,37 @@ async def start_quiz_logic(update: Update, context: CallbackContext) -> int:
             await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
         
-        # **FIX**: Transform pre-fetched random questions to ensure consistent structure
+        # Transform pre-fetched random questions to ensure consistent structure (important for validation)
         transformed_random_questions = []
         for q_data in all_random_questions:
-            transformed_q = transform_api_question(q_data)
+            # Use transform_api_question which should handle both structures if updated correctly
+            transformed_q = transform_api_question(q_data) 
             if transformed_q:
                 transformed_random_questions.append(transformed_q)
             else:
                  logger.warning(f"[QUIZ LOGIC] Skipping invalid random question data during transformation: {q_data}")
         all_random_questions = transformed_random_questions # Use transformed list
 
+        # Validate transformed questions (using the same logic as API questions)
+        valid_random_questions = []
+        for q_data in all_random_questions:
+             # Check if it has valid options (either list or old format handled by transform)
+             has_valid_options_list = isinstance(q_data.get("options"), list) and len(q_data["options"]) > 0 and any(opt.get("option_text") or opt.get("image_url") for opt in q_data["options"]) and sum(1 for opt in q_data["options"] if opt.get("is_correct")) == 1
+             # Check if old format exists (assuming transform_api_question adds 'correct_answer' index for old format)
+             has_valid_old_format = q_data.get("correct_answer") is not None and any(q_data.get(f"option{i+1}") or q_data.get(f"option{i+1}_image") for i in range(NUM_OPTIONS))
+
+             if has_valid_options_list or has_valid_old_format:
+                 valid_random_questions.append(q_data)
+             else:
+                  logger.warning(f"[QUIZ LOGIC] Skipping invalid transformed random question (no valid options found): {q_data}")
+        all_random_questions = valid_random_questions
+
         if len(all_random_questions) < num_questions:
             logger.warning(f"[QUIZ LOGIC] Requested {num_questions} random questions, but only {len(all_random_questions)} valid available. Using all available.")
             num_questions = len(all_random_questions)
             quiz_questions = all_random_questions # Use all if requested more than available
         elif num_questions > 0:
-            logger.info(f"[QUIZ LOGIC] Sampling {num_questions} questions from {len(all_random_questions)} pre-fetched random questions.")
+            logger.info(f"[QUIZ LOGIC] Sampling {num_questions} questions from {len(all_random_questions)} valid pre-fetched random questions.")
             quiz_questions = random.sample(all_random_questions, num_questions)
         else: # num_questions became 0
              quiz_questions = []
@@ -172,20 +187,16 @@ async def start_quiz_logic(update: Update, context: CallbackContext) -> int:
         # Transform and Validate Questions from API
         valid_api_questions = []
         for q_data in api_questions_response:
-            transformed_q = transform_api_question(q_data)
-            # **FIX**: Validation should check for 'options' list and its content
-            if transformed_q and isinstance(transformed_q.get("options"), list) and len(transformed_q["options"]) > 0:
-                # Further check if at least one option has text or image
-                has_valid_option = any(opt.get("option_text") or opt.get("image_url") for opt in transformed_q["options"])
-                # Further check if exactly one option is marked correct
-                correct_count = sum(1 for opt in transformed_q["options"] if opt.get("is_correct"))
-                
-                if has_valid_option and correct_count == 1:
-                    valid_api_questions.append(transformed_q)
-                else:
-                     logger.warning(f"[QUIZ LOGIC] Skipping invalid question data (no valid options or incorrect number of correct answers [{correct_count}]) received from API ({questions_endpoint}): {q_data}")
+            transformed_q = transform_api_question(q_data) # Should handle both structures
+            
+            # Validate based on expected output of transform_api_question
+            has_valid_options_list = isinstance(transformed_q.get("options"), list) and len(transformed_q["options"]) > 0 and any(opt.get("option_text") or opt.get("image_url") for opt in transformed_q["options"]) and sum(1 for opt in transformed_q["options"] if opt.get("is_correct")) == 1
+            has_valid_old_format = transformed_q.get("correct_answer") is not None and any(transformed_q.get(f"option{i+1}") or transformed_q.get(f"option{i+1}_image") for i in range(NUM_OPTIONS))
+
+            if transformed_q and (has_valid_options_list or has_valid_old_format):
+                valid_api_questions.append(transformed_q)
             else:
-                logger.warning(f"[QUIZ LOGIC] Skipping invalid question data (missing/empty 'options' list or transformation failed) received from API ({questions_endpoint}): {q_data}")
+                logger.warning(f"[QUIZ LOGIC] Skipping invalid question data (transformation failed or no valid options found) received from API ({questions_endpoint}): {q_data}")
         
         # Adjust num_questions if API returned fewer valid questions or didn't respect limit
         if len(valid_api_questions) > num_questions:
@@ -233,7 +244,7 @@ async def start_quiz_logic(update: Update, context: CallbackContext) -> int:
     return TAKING_QUIZ # Transition to the quiz-taking state
 
 async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext):
-    """Sends a specific question to the user, including text, image, and options."""
+    """Sends a specific question to the user, including text, image, and options (Handles both structures)."""
     user_data = context.user_data
     quiz_data = user_data.get("current_quiz")
 
@@ -249,7 +260,6 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
     question = quiz_data["questions"][question_index]
     quiz_data["current_question_index"] = question_index # Update current index
 
-    # *** ADDED LOGGING ***
     logger.debug(f"[QUIZ LOGIC] Preparing question {question_index} (ID: {question.get('question_id')}) for quiz {quiz_id}. Data: {question}")
 
     # --- Prepare Question Text and Media --- 
@@ -259,64 +269,75 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
     
     question_image = question.get("image_url")
 
-    # --- Prepare Options and Keyboard (FIXED LOGIC) --- 
-    options_list = question.get("options", []) # Get the list of options
+    # --- Prepare Options and Keyboard (Handles BOTH structures) --- 
     keyboard_buttons = []
-    
-    if not isinstance(options_list, list):
-        logger.error(f"[QUIZ LOGIC] Question {question_index} (ID: {question.get('question_id')}) has invalid 'options' format: {options_list}. Skipping keyboard.")
-        options_list = [] # Prevent error below
+    options_list = question.get("options") # Try new structure first
+    is_new_structure = isinstance(options_list, list) and len(options_list) > 0
 
     row = []
-    for i, option_data in enumerate(options_list):
-        if not isinstance(option_data, dict):
-            logger.warning(f"[QUIZ LOGIC] Skipping invalid option item (not a dict) at index {i} for question {question_index}: {option_data}")
-            continue
+    if is_new_structure:
+        logger.debug(f"[QUIZ LOGIC] Using new 'options' list structure for question {question_index}.")
+        for i, option_data in enumerate(options_list):
+            if not isinstance(option_data, dict):
+                logger.warning(f"[QUIZ LOGIC] Skipping invalid option item (not a dict) at index {i} for question {question_index}: {option_data}")
+                continue
+                
+            opt_text = option_data.get("option_text")
+            opt_image = option_data.get("image_url")
+            button_text = ""
             
-        opt_text = option_data.get("option_text")
-        opt_image = option_data.get("image_url") # Check for image per option
-        button_text = ""
-        
-        # *** ADDED LOGGING ***
-        logger.debug(f"[QUIZ LOGIC] Processing option {i}: Text='{opt_text}', Image='{opt_image}'")
+            logger.debug(f"[QUIZ LOGIC] Processing option {i} (new): Text='{opt_text}', Image='{opt_image}'")
 
-        if opt_text:
-            button_text = opt_text
-        elif opt_image:
-            button_text = f"(صورة الخيار {i+1})" # Placeholder text for image option
-        else:
-            # *** ADDED LOGGING ***
-            logger.debug(f"[QUIZ LOGIC] Skipping option {i} as both text and image are missing.")
-            continue # Skip if both text and image are missing for this option
+            if opt_text:
+                button_text = opt_text
+            elif opt_image:
+                button_text = f"(صورة الخيار {i+1})"
+            else:
+                logger.debug(f"[QUIZ LOGIC] Skipping option {i} (new) as both text and image are missing.")
+                continue
+                
+            callback_data = f"quiz_{quiz_id}_ans_{question_index}_{i}"
+            row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
             
-        # Use index 'i' as the answer index in callback data
-        callback_data = f"quiz_{quiz_id}_ans_{question_index}_{i}"
-        row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
-        
-        # Arrange buttons in rows of 2
-        if len(row) == 2:
-            keyboard_buttons.append(row)
-            row = []
+            if len(row) == 2:
+                keyboard_buttons.append(row)
+                row = []
+    else: # Fallback to old structure (option1, option2, etc.)
+        logger.debug(f"[QUIZ LOGIC] Using old 'optionX' structure for question {question_index}.")
+        for i in range(NUM_OPTIONS): # Typically 4
+            opt_text = question.get(f"option{i+1}")
+            opt_image = question.get(f"option{i+1}_image")
+            button_text = ""
+
+            logger.debug(f"[QUIZ LOGIC] Processing option {i} (old): Text='{opt_text}', Image='{opt_image}'")
+
+            if opt_text:
+                button_text = opt_text
+            elif opt_image:
+                button_text = f"(صورة الخيار {i+1})"
+            else:
+                logger.debug(f"[QUIZ LOGIC] Skipping option {i} (old) as both text and image are missing.")
+                continue
+
+            callback_data = f"quiz_{quiz_id}_ans_{question_index}_{i}"
+            row.append(InlineKeyboardButton(button_text, callback_data=callback_data))
+
+            if len(row) == 2:
+                keyboard_buttons.append(row)
+                row = []
             
     if row: # Add remaining buttons if odd number
         keyboard_buttons.append(row)
 
-    # *** ADDED LOGGING ***
     logger.debug(f"[QUIZ LOGIC] Built options keyboard rows (before adding skip): {keyboard_buttons}")
 
     # Add Skip button only if there were options to show
-    if keyboard_buttons: # Only add skip if options were actually added
+    if keyboard_buttons:
         keyboard_buttons.append([InlineKeyboardButton("⏭️ تخطي السؤال", callback_data=f"quiz_{quiz_id}_skip_{question_index}")])
         reply_markup = InlineKeyboardMarkup(keyboard_buttons)
     else:
-        # If no valid options were found, don't show the options keyboard, maybe just send text/image?
-        # Or potentially skip the question entirely if options are mandatory?
-        # For now, send without keyboard, but log an error.
-        logger.error(f"[QUIZ LOGIC] No valid options found to build keyboard for question {question_index} (ID: {question.get('question_id')}). Sending without options.")
-        reply_markup = None # Send without keyboard
-        # Consider automatically skipping this question if options are essential
-        # await skip_question_callback(bot, chat_id, user_id, quiz_id, question_index, context, error_occurred=True)
-        # return
+        logger.error(f"[QUIZ LOGIC] No valid options found to build keyboard for question {question_index} (ID: {question.get('question_id')}) using either structure. Sending without options.")
+        reply_markup = None
 
     # --- Send Message (Text or Photo) --- 
     sent_message = None
@@ -328,11 +349,10 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
                 chat_id=chat_id,
                 photo=question_image,
                 caption=question_text,
-                reply_markup=reply_markup, # Might be None if no options
+                reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
         else:
-            # Ensure there's text to send if no image
             if not question_text.strip():
                  logger.error(f"[QUIZ LOGIC] Question {question_index} (ID: {question.get('question_id')}) has no image and no text. Skipping.")
                  await skip_question_callback(bot, chat_id, user_id, quiz_id, question_index, context, error_occurred=True)
@@ -341,22 +361,21 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
             sent_message = await bot.send_message(
                 chat_id=chat_id,
                 text=question_text,
-                reply_markup=reply_markup, # Might be None if no options
+                reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
     except BadRequest as e:
-        # Handle potential errors like invalid image URL or Markdown issues
         logger.error(f"[QUIZ LOGIC] BadRequest sending question {question_index} (quiz {quiz_id}): {e}. Question data: {question}")
         send_error = e
         await safe_send_message(context.bot, chat_id, text=f"⚠️ حدث خطأ أثناء إرسال السؤال {question_index + 1}. سيتم تخطيه تلقائياً.")
         await skip_question_callback(bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False, error_occurred=True)
-        return # Stop further processing for this question
+        return
     except TelegramError as e:
         logger.error(f"[QUIZ LOGIC] TelegramError sending question {question_index} (quiz {quiz_id}): {e}. Question data: {question}")
         send_error = e
         await safe_send_message(context.bot, chat_id, text=f"⚠️ حدث خطأ غير متوقع أثناء إرسال السؤال {question_index + 1}. سيتم تخطيه تلقائياً.")
         await skip_question_callback(bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False, error_occurred=True)
-        return # Stop further processing for this question
+        return
 
     if sent_message:
         quiz_data["last_question_message_id"] = sent_message.message_id
@@ -365,7 +384,6 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
         # --- Start Question Timer (Only if options were shown) --- 
         if reply_markup and ENABLE_QUESTION_TIMER and hasattr(context, 'job_queue') and context.job_queue:
             job_name = f"quiz_{quiz_id}_q_{question_index}_timer"
-            # Remove previous timer if exists
             remove_job_if_exists(job_name, context)
             
             timer_context = {
@@ -378,8 +396,8 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
                 question_timer_callback,
                 QUESTION_TIMER_SECONDS,
                 name=job_name,
-                chat_id=chat_id, # Pass chat_id for job queue context
-                user_id=user_id, # Pass user_id for job queue context
+                chat_id=chat_id,
+                user_id=user_id,
                 context=timer_context
             )
             quiz_data["question_timer_job_name"] = job_name
@@ -391,15 +409,14 @@ async def send_question(bot, chat_id: int, user_id: int, quiz_id: str, question_
 
     else:
         logger.error(f"[QUIZ LOGIC] Failed to get sent_message object after sending question {question_index} (quiz {quiz_id}). Send error was: {send_error}")
-        # If sending failed earlier, skip_question_callback was already called.
         if not send_error:
              await safe_send_message(context.bot, chat_id, text=f"⚠️ حدث خطأ غير معروف بعد إرسال السؤال {question_index + 1}. سيتم تخطيه تلقائياً.")
              await skip_question_callback(bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False, error_occurred=True)
 
 async def handle_answer(update: Update, context: CallbackContext) -> int:
-    """Handles user's answer selection from inline keyboard."""
+    """Handles user's answer selection from inline keyboard (Handles both structures)."""
     query = update.callback_query
-    await query.answer() # Acknowledge the button press
+    await query.answer()
 
     user_id = query.from_user.id
     chat_id = query.message.chat_id
@@ -407,16 +424,15 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
     quiz_data = user_data.get("current_quiz")
 
     # --- Extract data from callback_data --- 
-    # Format: quiz_{quiz_id}_ans_{question_index}_{answer_index}
     match = re.match(r"quiz_(.+)_ans_(\d+)_(\d+)", query.data)
     if not match:
         logger.error(f"[QUIZ LOGIC] Invalid callback data format for answer: {query.data}")
         await safe_edit_message_text(query.message, text="حدث خطأ في بيانات الزر. يرجى المحاولة مرة أخرى.")
-        return TAKING_QUIZ # Stay in the same state
+        return TAKING_QUIZ
 
     quiz_id, question_index_str, selected_answer_index_str = match.groups()
     question_index = int(question_index_str)
-    selected_answer_index = int(selected_answer_index_str) # This is the index 'i' from the loop
+    selected_answer_index = int(selected_answer_index_str)
 
     # --- Validate Quiz State --- 
     if not quiz_data or quiz_data.get("quiz_id") != quiz_id or quiz_data.get("finished"):
@@ -425,11 +441,11 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
         return TAKING_QUIZ
     if question_index != quiz_data.get("current_question_index"):
         logger.warning(f"[QUIZ LOGIC] User {user_id} answered question {question_index} but current is {quiz_data.get('current_question_index')}. Ignoring.")
-        await safe_edit_message_text(query.message, text="لقد أجبت على سؤال سابق. يرجى الإجابة على السؤال الحالي.")
+        # Don't edit message here, might confuse user if they clicked quickly
         return TAKING_QUIZ
     if quiz_data["answers"][question_index] is not None:
         logger.info(f"[QUIZ LOGIC] User {user_id} tried to answer question {question_index} again. Ignoring.")
-        await safe_edit_message_text(query.message, text="لقد أجبت على هذا السؤال بالفعل.")
+        # Don't edit message here
         return TAKING_QUIZ
 
     # --- Stop Timer --- 
@@ -437,33 +453,40 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
     if timer_job_name:
         remove_job_if_exists(timer_job_name, context)
         logger.info(f"[QUIZ LOGIC] Removed timer job {timer_job_name} for question {question_index}.")
-        quiz_data["question_timer_job_name"] = None # Clear the job name
+        quiz_data["question_timer_job_name"] = None
 
-    # --- Check Answer (FIXED LOGIC) --- 
+    # --- Check Answer (Handles BOTH structures) --- 
     question = quiz_data["questions"][question_index]
-    options_list = question.get("options", [])
-    correct_answer_index = -1 # Default to -1 (not found)
-    
-    if not isinstance(options_list, list):
-         logger.error(f"[QUIZ LOGIC] Question {question_index} (ID: {question.get('question_id')}) has invalid 'options' format during answer check. Skipping.")
-         await safe_edit_message_text(query.message, text="⚠️ حدث خطأ في بيانات خيارات هذا السؤال. سيتم تخطيه.")
-         await skip_question_callback(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False, error_occurred=True)
-         return TAKING_QUIZ
+    options_list = question.get("options")
+    is_new_structure = isinstance(options_list, list) and len(options_list) > 0
+    correct_answer_index = -1
 
-    # Find the index of the correct answer
-    for i, option_data in enumerate(options_list):
-        if isinstance(option_data, dict) and option_data.get("is_correct") is True:
-            correct_answer_index = i
-            break # Found the correct answer
+    if is_new_structure:
+        logger.debug(f"[QUIZ LOGIC] Checking answer using new 'options' list structure for question {question_index}.")
+        for i, option_data in enumerate(options_list):
+            if isinstance(option_data, dict) and option_data.get("is_correct") is True:
+                correct_answer_index = i
+                break
+    else: # Fallback to old structure
+        logger.debug(f"[QUIZ LOGIC] Checking answer using old 'correct_answer' field for question {question_index}.")
+        correct_answer_val = question.get("correct_answer")
+        # Assuming old 'correct_answer' is 0-based index matching the option number (1-4 -> 0-3)
+        if isinstance(correct_answer_val, int) and 0 <= correct_answer_val < NUM_OPTIONS:
+             correct_answer_index = correct_answer_val
+        else:
+             logger.warning(f"[QUIZ LOGIC] Invalid or missing 'correct_answer' field in old structure for question {question_index}: {correct_answer_val}")
+             # Fallback: try to find the index based on option text matching if possible? Risky.
+             # For now, treat as error.
+             correct_answer_index = -1 
 
     if correct_answer_index == -1:
-         logger.error(f"[QUIZ LOGIC] Question {question_index} (ID: {question.get('question_id')}) in quiz {quiz_id} has no correct answer marked in 'options'! Skipping.")
-         await safe_edit_message_text(query.message, text="⚠️ حدث خطأ في بيانات هذا السؤال (لا توجد إجابة صحيحة محددة). سيتم تخطيه.")
+         logger.error(f"[QUIZ LOGIC] Could not determine correct answer index for question {question_index} (ID: {question.get('question_id')}) in quiz {quiz_id}. Skipping.")
+         await safe_edit_message_text(query.message, text="⚠️ حدث خطأ في بيانات هذا السؤال (لم يتم تحديد الإجابة الصحيحة). سيتم تخطيه.")
          await skip_question_callback(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False, error_occurred=True)
          return TAKING_QUIZ
 
     is_correct = (selected_answer_index == correct_answer_index)
-    quiz_data["answers"][question_index] = selected_answer_index # Store user's choice index
+    quiz_data["answers"][question_index] = selected_answer_index
 
     feedback_text = ""
     if is_correct:
@@ -472,15 +495,20 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
         logger.info(f"[QUIZ LOGIC] User {user_id} answered question {question_index} CORRECTLY (Selected index: {selected_answer_index}, Correct index: {correct_answer_index}).")
     else:
         quiz_data["wrong_count"] += 1
-        # Try to get the text of the correct option for feedback
         correct_option_text = "غير متوفر"
-        if 0 <= correct_answer_index < len(options_list):
-             correct_option_data = options_list[correct_answer_index]
-             if isinstance(correct_option_data, dict):
-                  correct_option_text = correct_option_data.get("option_text", correct_option_text)
-                  if not correct_option_text and correct_option_data.get("image_url"):
-                       correct_option_text = f"(صورة الخيار {correct_answer_index + 1})"
-        
+        # Get correct option text based on structure
+        if is_new_structure:
+            if 0 <= correct_answer_index < len(options_list):
+                 correct_option_data = options_list[correct_answer_index]
+                 if isinstance(correct_option_data, dict):
+                      correct_option_text = correct_option_data.get("option_text", correct_option_text)
+                      if not correct_option_text and correct_option_data.get("image_url"):
+                           correct_option_text = f"(صورة الخيار {correct_answer_index + 1})"
+        else: # Old structure
+             correct_option_text = question.get(f"option{correct_answer_index + 1}", correct_option_text)
+             if not correct_option_text and question.get(f"option{correct_answer_index + 1}_image"):
+                  correct_option_text = f"(صورة الخيار {correct_answer_index + 1})"
+
         feedback_text = f"❌ إجابة خاطئة. الإجابة الصحيحة هي: {correct_option_text}"
         logger.info(f"[QUIZ LOGIC] User {user_id} answered question {question_index} INCORRECTLY (Selected index: {selected_answer_index}, Correct index: {correct_answer_index}).")
 
@@ -489,37 +517,34 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
     if explanation:
         feedback_text += f"\n\n*الشرح:* {explanation}"
 
-    # --- Edit Message to Show Feedback (FIXED LOGIC) --- 
+    # --- Edit Message to Show Feedback (Handles BOTH structures) --- 
     feedback_keyboard_buttons = []
     row = []
-    for i, option_data in enumerate(options_list):
-        if not isinstance(option_data, dict):
-             continue # Skip invalid option data
-             
-        opt_text = option_data.get("option_text")
-        opt_image = option_data.get("image_url")
-        button_text = ""
-        prefix = ""
+    if is_new_structure:
+        for i, option_data in enumerate(options_list):
+            if not isinstance(option_data, dict): continue
+            opt_text = option_data.get("option_text")
+            opt_image = option_data.get("image_url")
+            button_text = opt_text or (f"(صورة الخيار {i+1})" if opt_image else None)
+            if not button_text: continue
 
-        if opt_text:
-            button_text = opt_text
-        elif opt_image:
-            button_text = f"(صورة الخيار {i+1})"
-        else:
-            continue # Skip missing options
+            prefix = "✅ " if i == correct_answer_index else ("❌ " if i == selected_answer_index else "➖ ")
+            row.append(InlineKeyboardButton(prefix + button_text, callback_data=f"quiz_{quiz_id}_done_{question_index}_{i}"))
+            if len(row) == 2:
+                feedback_keyboard_buttons.append(row)
+                row = []
+    else: # Old structure
+         for i in range(NUM_OPTIONS):
+             opt_text = question.get(f"option{i+1}")
+             opt_image = question.get(f"option{i+1}_image")
+             button_text = opt_text or (f"(صورة الخيار {i+1})" if opt_image else None)
+             if not button_text: continue
 
-        if i == correct_answer_index:
-            prefix = "✅ "
-        elif i == selected_answer_index: # User chose this wrong answer
-            prefix = "❌ "
-        else:
-             prefix = "➖ " # Other wrong options
-
-        # Use a dummy callback to make buttons unclickable after answer
-        row.append(InlineKeyboardButton(prefix + button_text, callback_data=f"quiz_{quiz_id}_done_{question_index}_{i}"))
-        if len(row) == 2:
-            feedback_keyboard_buttons.append(row)
-            row = []
+             prefix = "✅ " if i == correct_answer_index else ("❌ " if i == selected_answer_index else "➖ ")
+             row.append(InlineKeyboardButton(prefix + button_text, callback_data=f"quiz_{quiz_id}_done_{question_index}_{i}"))
+             if len(row) == 2:
+                 feedback_keyboard_buttons.append(row)
+                 row = []
     if row:
         feedback_keyboard_buttons.append(row)
 
@@ -529,21 +554,19 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
     original_message_id = quiz_data.get("last_question_message_id")
     if original_message_id:
         try:
-            # Reconstruct the original question text/caption
             original_question_full_text = f"*السؤال {question_index + 1} من {quiz_data['total_questions']}*\n\n"
             if question.get("question_text"):
                 original_question_full_text += question["question_text"]
             
-            # Append feedback to the original text/caption
             final_text_with_feedback = f"{original_question_full_text}\n\n---\n{feedback_text}"
 
-            if query.message.photo: # If original was a photo
+            if query.message.photo:
                  await query.edit_message_caption(
                      caption=final_text_with_feedback,
                      reply_markup=feedback_reply_markup,
                      parse_mode='Markdown'
                  )
-            else: # If original was text
+            else:
                  await query.edit_message_text(
                      text=final_text_with_feedback,
                      reply_markup=feedback_reply_markup,
@@ -552,15 +575,12 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
             logger.debug(f"[QUIZ LOGIC] Edited message {original_message_id} with feedback for question {question_index}.")
         except BadRequest as e:
             logger.error(f"[QUIZ LOGIC] BadRequest editing message {original_message_id} with feedback: {e}")
-            # Fallback: Send feedback as a new message if editing fails
             await safe_send_message(context.bot, chat_id, text=feedback_text, reply_markup=feedback_reply_markup)
         except TelegramError as e:
             logger.error(f"[QUIZ LOGIC] TelegramError editing message {original_message_id} with feedback: {e}")
-            # Fallback: Send feedback as a new message
             await safe_send_message(context.bot, chat_id, text=feedback_text, reply_markup=feedback_reply_markup)
     else:
         logger.error(f"[QUIZ LOGIC] Cannot edit message for feedback - last_question_message_id not found for quiz {quiz_id}")
-        # Send feedback as a new message if original ID is missing
         await safe_send_message(context.bot, chat_id, text=feedback_text, reply_markup=feedback_reply_markup)
 
     # --- Delay and Move to Next Question or Results --- 
@@ -572,18 +592,16 @@ async def handle_answer(update: Update, context: CallbackContext) -> int:
     else:
         await show_quiz_results(context.bot, chat_id, user_id, quiz_id, context)
 
-    return TAKING_QUIZ # Remain in this state
+    return TAKING_QUIZ
 
 async def handle_skip_question(update: Update, context: CallbackContext) -> int:
     """Handles user pressing the 'Skip Question' button."""
     query = update.callback_query
-    await query.answer() # Acknowledge button press
+    await query.answer()
 
     user_id = query.from_user.id
     chat_id = query.message.chat_id
 
-    # --- Extract data from callback_data --- 
-    # Format: quiz_{quiz_id}_skip_{question_index}
     match = re.match(r"quiz_(.+)_skip_(\d+)", query.data)
     if not match:
         logger.error(f"[QUIZ LOGIC] Invalid callback data format for skip: {query.data}")
@@ -593,68 +611,60 @@ async def handle_skip_question(update: Update, context: CallbackContext) -> int:
     quiz_id, question_index_str = match.groups()
     question_index = int(question_index_str)
 
-    # Call the shared skip logic
     await skip_question_callback(context.bot, chat_id, user_id, quiz_id, question_index, context, timed_out=False, error_occurred=False, query=query)
 
     return TAKING_QUIZ
 
 async def skip_question_callback(bot, chat_id: int, user_id: int, quiz_id: str, question_index: int, context: CallbackContext, timed_out: bool = False, error_occurred: bool = False, query: Update = None):
     """Shared logic to handle skipping a question (manual, timeout, or error)."""
-    # Ensure context.user_data is available, especially when called from timer
     if hasattr(context, 'dispatcher') and context.dispatcher:
          user_data = context.dispatcher.user_data.get(user_id, {})
     else:
-         user_data = context.user_data # Fallback for direct calls
+         user_data = context.user_data
          
     quiz_data = user_data.get("current_quiz")
 
-    # --- Validate Quiz State --- 
     if not quiz_data or quiz_data.get("quiz_id") != quiz_id or quiz_data.get("finished"):
         logger.warning(f"[QUIZ LOGIC] skip_question_callback called for inactive/mismatched quiz {quiz_id} user {user_id}")
-        if query: # Only edit message if called from button press
+        if query:
             await safe_edit_message_text(query.message, text="يبدو أن هذا الاختبار قد انتهى أو لم يعد صالحاً.")
         return
         
-    # Check if already handled
     if quiz_data["answers"][question_index] is not None:
         logger.info(f"[QUIZ LOGIC] Question {question_index} already answered/skipped for quiz {quiz_id}. Ignoring skip request.")
-        if query: # Only edit message if called from button press
+        if query:
             await safe_edit_message_text(query.message, text="لقد تم التعامل مع هذا السؤال بالفعل.")
         return
 
-    # --- Stop Timer --- 
     timer_job_name = quiz_data.get("question_timer_job_name")
     if timer_job_name:
         remove_job_if_exists(timer_job_name, context)
         logger.info(f"[QUIZ LOGIC] Removed timer job {timer_job_name} for skipped question {question_index}.")
         quiz_data["question_timer_job_name"] = None
 
-    # --- Update Quiz State --- 
     skip_reason = "MANUAL"
     if timed_out:
         quiz_data["wrong_count"] += 1
-        quiz_data["answers"][question_index] = -2 # Mark as timed-out wrong
+        quiz_data["answers"][question_index] = -2
         skip_reason = "TIMEOUT (WRONG)"
     elif error_occurred:
-        quiz_data["skipped_count"] += 1 # Count errors as skipped for now
-        quiz_data["answers"][question_index] = -3 # Mark as error skip
-        skip_reason = "ERROR"
-    else: # Manual skip
         quiz_data["skipped_count"] += 1
-        quiz_data["answers"][question_index] = -1 # Mark as manually skipped
+        quiz_data["answers"][question_index] = -3
+        skip_reason = "ERROR"
+    else:
+        quiz_data["skipped_count"] += 1
+        quiz_data["answers"][question_index] = -1
         skip_reason = "MANUAL"
         
     logger.info(f"[QUIZ LOGIC] User {user_id} skipped question {question_index} (Reason: {skip_reason}). Counts: C={quiz_data['correct_count']}, W={quiz_data['wrong_count']}, S={quiz_data['skipped_count']}")
 
-    # --- Edit Message (Optional - only for manual skip via button) --- 
     if query and not timed_out and not error_occurred:
         try:
-            await query.edit_message_reply_markup(reply_markup=None) # Remove keyboard
+            await query.edit_message_reply_markup(reply_markup=None)
             await safe_send_message(bot, chat_id, text=f"تم تخطي السؤال {question_index + 1}.")
         except TelegramError as e:
             logger.error(f"[QUIZ LOGIC] Error editing message or sending skip confirmation: {e}")
 
-    # --- Move to Next Question or Results --- 
     next_question_index = question_index + 1
     if next_question_index < quiz_data["total_questions"]:
         await send_question(bot, chat_id, user_id, quiz_id, next_question_index, context)
@@ -663,53 +673,47 @@ async def skip_question_callback(bot, chat_id: int, user_id: int, quiz_id: str, 
 
 async def show_quiz_results(bot, chat_id: int, user_id: int, quiz_id: str, context: CallbackContext):
     """Calculates and displays the quiz results, saves them, and cleans up."""
-    # Ensure context.user_data is available, especially when called from timer/skip
     if hasattr(context, 'dispatcher') and context.dispatcher:
          user_data = context.dispatcher.user_data.get(user_id, {})
     else:
-         user_data = context.user_data # Fallback for direct calls
+         user_data = context.user_data
          
     quiz_data = user_data.get("current_quiz")
 
     if not quiz_data or quiz_data.get("quiz_id") != quiz_id:
         logger.error(f"[QUIZ LOGIC] show_quiz_results called for inactive/mismatched quiz {quiz_id} user {user_id}")
-        # Attempt to send a generic message if possible
         await safe_send_message(bot, chat_id, text="حدث خطأ أثناء عرض النتائج. قد يكون الاختبار غير صالح.")
         kb = create_main_menu_keyboard(user_id)
         await safe_send_message(bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
-        # Clear potentially corrupted data
         user_data.pop("current_quiz", None)
         return MAIN_MENU
         
-    if quiz_data.get("finished"): # Prevent showing results multiple times
+    if quiz_data.get("finished"): 
         logger.info(f"[QUIZ LOGIC] Results for quiz {quiz_id} already shown. Ignoring.")
-        return TAKING_QUIZ # Or MAIN_MENU? Stay safe.
+        return TAKING_QUIZ
 
     quiz_data["finished"] = True
     end_time = datetime.now()
-    duration = end_time - quiz_data.get("start_time", end_time) # Calculate duration
+    duration = end_time - quiz_data.get("start_time", end_time)
     duration_seconds = int(duration.total_seconds())
-    duration_str = time.strftime('%M:%S', time.gmtime(duration_seconds)) # Format as MM:SS
+    duration_str = time.strftime('%M:%S', time.gmtime(duration_seconds))
 
     total_questions = quiz_data["total_questions"]
     correct_count = quiz_data["correct_count"]
     wrong_count = quiz_data["wrong_count"]
-    skipped_count = quiz_data["skipped_count"]
-    # Recalculate skipped if some were marked as error/timeout
-    actual_answered = sum(1 for ans in quiz_data["answers"] if ans is not None and ans >= 0)
-    actual_skipped = total_questions - actual_answered
-    # Ensure counts add up, prioritize correct/wrong over calculated skipped
-    final_skipped = total_questions - correct_count - wrong_count 
-    if final_skipped < 0: final_skipped = 0 # Should not happen
+    # Recalculate skipped based on None, -1, -3 in answers array
+    final_skipped = sum(1 for ans in quiz_data["answers"] if ans is None or ans == -1 or ans == -3)
+    # Sanity check counts
+    if correct_count + wrong_count + final_skipped != total_questions:
+         logger.warning(f"[QUIZ LOGIC] Result counts mismatch for quiz {quiz_id}: C={correct_count}, W={wrong_count}, S(calc)={final_skipped}, Total={total_questions}. Answers: {quiz_data['answers']}")
+         # Adjust skipped based on others if possible
+         final_skipped = total_questions - correct_count - wrong_count
+         if final_skipped < 0: final_skipped = 0
 
     score_percentage = (correct_count / total_questions * 100) if total_questions > 0 else 0
 
     results_text = f"🏁 *نتائج الاختبار* 🏁\n\n"
     results_text += f"📝 نوع الاختبار: {quiz_data.get('quiz_type', 'غير محدد')}\n"
-    # Add scope details if available
-    # scope_id = quiz_data.get('quiz_scope_id')
-    # if scope_id:
-    #     results_text += f"🎯 النطاق: {scope_id}\n" 
     results_text += f"🔢 إجمالي الأسئلة: {total_questions}\n"
     results_text += f"✅ الإجابات الصحيحة: {correct_count}\n"
     results_text += f"❌ الإجابات الخاطئة: {wrong_count}\n"
@@ -717,9 +721,8 @@ async def show_quiz_results(bot, chat_id: int, user_id: int, quiz_id: str, conte
     results_text += f"⏱️ الوقت المستغرق: {duration_str}\n\n"
     results_text += f"🏆 *النتيجة النهائية: {score_percentage:.1f}%*\n"
 
-    # --- Save Results to Database --- 
     try:
-        db_manager = DB_MANAGER # Get global instance
+        db_manager = DB_MANAGER
         await db_manager.save_quiz_result(
             user_id=user_id,
             quiz_type=quiz_data.get('quiz_type', 'unknown'),
@@ -730,31 +733,18 @@ async def show_quiz_results(bot, chat_id: int, user_id: int, quiz_id: str, conte
             skipped_answers=final_skipped,
             score_percentage=score_percentage,
             duration_seconds=duration_seconds,
-            quiz_timestamp=quiz_data.get("start_time", datetime.now()) # Use start time
+            quiz_timestamp=quiz_data.get("start_time", datetime.now())
         )
         logger.info(f"[DB] Successfully saved quiz results for user {user_id}, quiz {quiz_id}.")
     except Exception as e:
         logger.error(f"[DB] Failed to save quiz results for user {user_id}, quiz {quiz_id}: {e}")
         results_text += "\n\n⚠️ تعذر حفظ هذه النتيجة في سجلاتك."
 
-    # --- Send Results and Cleanup --- 
     kb = create_main_menu_keyboard(user_id)
     await safe_send_message(bot, chat_id, text=results_text, reply_markup=kb, parse_mode='Markdown')
 
-    # Clean up quiz data from user_data
     user_data.pop("current_quiz", None)
     logger.info(f"[QUIZ LOGIC] Quiz {quiz_id} finished for user {user_id}. Cleaned up user_data.")
 
-    return MAIN_MENU # Return to main menu state after showing results
-
-# --- Utility to find correct answer index --- 
-# (This logic is now integrated into handle_answer)
-# def find_correct_answer_index(question_data):
-#     options = question_data.get("options", [])
-#     if not isinstance(options, list):
-#         return None
-#     for i, option in enumerate(options):
-#         if isinstance(option, dict) and option.get("is_correct") is True:
-#             return i
-#     return None
+    return MAIN_MENU
 
