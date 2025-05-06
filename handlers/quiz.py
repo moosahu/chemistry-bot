@@ -13,7 +13,7 @@ async def handle_text_during_quiz(update: Update, context: CallbackContext) -> i
 
 import logging
 import math
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkuprkup
 from telegram.ext import (
     CallbackContext,
     ConversationHandler,
