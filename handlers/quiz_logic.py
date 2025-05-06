@@ -21,7 +21,7 @@ from config import (
 )
 from utils.helpers import (
     safe_send_message, safe_edit_message_text, safe_delete_message,
-    remove_job_if_exists, get_quiz_type_string, format_duration
+    remove_job_if_exists, get_quiz_type_string, format_duration # Make sure get_quiz_type_string is in helpers
 )
 from handlers.common import create_main_menu_keyboard # Assuming this is still relevant
 from utils.api_client import fetch_from_api, transform_api_question
@@ -37,7 +37,9 @@ class QuizLogic:
         self.context = context
         self.user_data = context.user_data
         self.bot = context.bot
-        logger.debug(f"[QuizLogic] Initialized for user {self.user_data.get("_effective_user_id", "UNKNOWN")}")
+        # Corrected f-string for logger.debug
+        effective_user_id = self.user_data.get("_effective_user_id", "UNKNOWN")
+        logger.debug(f"[QuizLogic] Initialized for user {effective_user_id}")
 
     async def _send_or_edit_message(self, chat_id: int, text: str, reply_markup=None, photo_url: str | None = None, current_message_id: int | None = None):
         """Helper to send a new message or edit an existing one, managing media."""
@@ -163,7 +165,11 @@ class QuizLogic:
             await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
         
-        await safe_send_message(self.bot, chat_id, text=f"🔍 جارٍ إعداد اختبارك من {get_quiz_type_string(quiz_selection.get("type_display_name", ""))} بعدد {num_questions} أسئلة...", reply_markup=None)
+        # Corrected f-string for loading message
+        type_display_name_val = quiz_selection.get("type_display_name", "")
+        type_display_str = get_quiz_type_string(type_display_name_val)
+        loading_text = f"🔍 جارٍ إعداد اختبارك من {type_display_str} بعدد {num_questions} أسئلة..."
+        await safe_send_message(self.bot, chat_id, text=loading_text, reply_markup=None)
 
         quiz_questions_raw = []
         if questions_endpoint == "random_api":
@@ -309,15 +315,15 @@ class QuizLogic:
 
         skip_message = ""
         if error_occurred:
-            quiz_data["answers"][q_idx] = -3
+            quiz_data["answers"][q_idx] = -3 # Mark as error
             skip_message = f"تم تسجيل خطأ للسؤال {q_idx + 1}."
             logger.info(f"[QuizLogic] Question {q_idx + 1} marked as ERROR for user {user_id} in quiz {quiz_id}.")
         elif timed_out:
-            quiz_data["answers"][q_idx] = -2
+            quiz_data["answers"][q_idx] = -2 # Mark as timed out (wrong)
             skip_message = f"⏰ انتهى وقت السؤال {q_idx + 1}! تم اعتباره إجابة خاطئة."
             logger.info(f"[QuizLogic] Question {q_idx + 1} marked as TIMED OUT (WRONG) for user {user_id} in quiz {quiz_id}.")
         else:
-            quiz_data["answers"][q_idx] = -1
+            quiz_data["answers"][q_idx] = -1 # Mark as skipped
             skip_message = f"تم تخطي السؤال {q_idx + 1}."
             logger.info(f"[QuizLogic] Question {q_idx + 1} SKIPPED by user {user_id} in quiz {quiz_id}.")
 
@@ -373,12 +379,15 @@ class QuizLogic:
                 duration_seconds=int(duration_seconds),
                 quiz_timestamp=quiz_data["start_time"]
             )
-            logger.info(f"[QuizLogic] Quiz {quiz_data["quiz_id"]} results saved for user {user_id}.")
+            logger.info(f"[QuizLogic] Quiz {quiz_data['quiz_id']} results saved for user {user_id}.")
         except Exception as e:
             logger.error(f"[QuizLogic] Failed to save quiz results for user {user_id}: {e}")
 
         results_text = f"🏁 <b>نتائج الاختبار</b> 🏁\n\n"
-        results_text += f"<b>الموضوع:</b> {quiz_data.get("quiz_type_display", "غير محدد")} - {quiz_data.get("quiz_scope_display", "")}\n"
+        # Corrected f-string for results_text
+        quiz_type_display_val = quiz_data.get("quiz_type_display", "غير محدد")
+        quiz_scope_display_val = quiz_data.get("quiz_scope_display", "")
+        results_text += f"<b>الموضوع:</b> {quiz_type_display_val} - {quiz_scope_display_val}\n"
         results_text += f"<b>النتيجة:</b> {score} / {total_q} ({percentage:.2f}%)\n"
         results_text += f"<b>الوقت المستغرق:</b> {format_duration(int(duration_seconds))}\n\n"
         results_text += "أداء رائع! يمكنك مراجعة إجاباتك أو بدء اختبار جديد."
@@ -456,7 +465,7 @@ async def question_timer_callback(context: CallbackContext):
         dummy_update = DummyUpdate()
         
         temp_logic_instance = QuizLogic(context)
-        temp_logic_instance.user_data = user_data
+        temp_logic_instance.user_data = user_data # Pass the specific user_data
 
         await temp_logic_instance.handle_skip_question(dummy_update, timed_out=True)
     else:
