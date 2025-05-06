@@ -1,3 +1,5 @@
+print("DEBUG: bot.py started loading") # Added print
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -6,8 +8,9 @@
 import logging
 import sys
 import os
+import traceback # Import traceback for detailed error logging
 
-# --- Add project root to sys.path --- 
+# --- Add project root to sys.path ---
 project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -25,7 +28,8 @@ from telegram.ext import (
 )
 from telegram import Update
 
-# --- Import Configuration and Core Components --- 
+# --- Import Configuration and Core Components ---
+quiz_conv_handler = None # Define as None initially
 try:
     from config import (
         TELEGRAM_BOT_TOKEN, API_BASE_URL, DATABASE_URL, # Core config
@@ -34,8 +38,25 @@ try:
     )
     from database.schema import setup_database_schema, apply_schema_updates
     # Import handlers
+    print("DEBUG: Importing handlers.common...")
     from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
-    from handlers.quiz import quiz_conv_handler
+    print("DEBUG: handlers.common imported.")
+
+    # --- Wrap quiz handler import ---
+    try:
+        print("DEBUG: Attempting to import quiz_conv_handler...")
+        from handlers.quiz import quiz_conv_handler
+        print("DEBUG: Successfully imported quiz_conv_handler.")
+    except Exception as import_exc:
+        print(f"CRITICAL: Failed to import quiz_conv_handler: {import_exc}")
+        # Log the full traceback for detailed debugging
+        traceback_str = traceback.format_exc()
+        print(f"CRITICAL: Traceback:\n{traceback_str}") 
+        # Also log to the configured logger if available
+        if 'logger' in locals():
+             logger.critical(f"CRITICAL: Failed to import quiz_conv_handler: {import_exc}", exc_info=True)
+        quiz_conv_handler = None # Keep as None
+
     # from handlers.info import info_conv_handler
     # from handlers.stats import stats_conv_handler
 
@@ -50,7 +71,7 @@ except Exception as e:
     logger.critical(f"An unexpected error occurred during imports: {e}. Bot cannot start.")
     exit(1)
 
-# --- Error Handler --- 
+# --- Error Handler ---
 async def error_handler(update: object, context: CallbackContext) -> None:
     """Log Errors caused by Updates."""
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
@@ -60,12 +81,12 @@ async def error_handler(update: object, context: CallbackContext) -> None:
         except Exception as send_error:
             logger.error(f"Failed to send error message to user: {send_error}")
 
-# --- Main Function --- 
+# --- Main Function ---
 def main() -> None:
     """Start the bot."""
     logger.info("Starting bot...")
 
-    # --- Database Setup --- 
+    # --- Database Setup ---
     logger.info("Setting up database schema...")
     try:
         if not setup_database_schema():
@@ -79,7 +100,7 @@ def main() -> None:
     except Exception as db_exc:
         logger.error(f"Error during database setup: {db_exc}")
 
-    # --- Persistence --- 
+    # --- Persistence ---
     try:
         persistence_dir = os.path.join(project_root, 'persistence')
         os.makedirs(persistence_dir, exist_ok=True)
@@ -90,7 +111,7 @@ def main() -> None:
         logger.error(f"Error configuring persistence: {pers_exc}")
         persistence = None
 
-    # --- Job Queue Setup --- 
+    # --- Job Queue Setup ---
     try:
         job_queue = JobQueue()
         logger.info("JobQueue created.")
@@ -98,35 +119,42 @@ def main() -> None:
         logger.error(f"Error creating JobQueue: {jq_exc}")
         job_queue = None # Continue without JobQueue if creation fails
 
-    # --- Application Setup --- 
+    # --- Application Setup ---
     try:
         app_builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
         if persistence:
             app_builder = app_builder.persistence(persistence)
         if job_queue: # <-- Check if job_queue was created successfully
             app_builder = app_builder.job_queue(job_queue) # <-- Pass JobQueue to builder
-        
+
         application = app_builder.build()
         logger.info("Telegram Application built.")
-        
-        # --- Attach JobQueue to Application --- 
+
+        # --- Attach JobQueue to Application ---
         if job_queue: # <-- Check again before setting application
             job_queue.set_application(application) # <-- Link JobQueue to the application
             logger.info("JobQueue attached to the application.")
         else:
             logger.warning("JobQueue was not created or attached. Timed features will not work.")
-            
+
     except Exception as app_exc:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.")
         exit(1)
 
-    # --- Register Handlers Directly --- 
+    # --- Register Handlers Directly ---
     # 1. Start command handler
-        application.add_handler(start_handler)
+    print("DEBUG: Adding start_handler...")
+    application.add_handler(start_handler)
+    print("DEBUG: start_handler added.")
     # logger.debug("[DEBUG] start_handler added to application.")
 
-    # 2. Quiz conversation handler
+    # 2. Quiz conversation handler (only if imported successfully)
+    if quiz_conv_handler:
+        print("DEBUG: Adding quiz_conv_handler...")
         application.add_handler(quiz_conv_handler)
+        print("DEBUG: quiz_conv_handler added.")
+    else:
+        print("WARNING: quiz_conv_handler was not imported successfully or failed during import, skipping addition.")
     # logger.debug(f"[DEBUG] quiz_conv_handler added to application: {quiz_conv_handler}")
 
     # 3. Info conversation handler
@@ -138,10 +166,12 @@ def main() -> None:
     # logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
 
     # 5. Error handler (add last)
+    print("DEBUG: Adding error_handler...")
     application.add_error_handler(error_handler)
-    logger.debug("[DEBUG] error_handler added to application.")
+    print("DEBUG: error_handler added.")
+    # logger.debug("[DEBUG] error_handler added to application.")
 
-    # --- Start Bot --- 
+    # --- Start Bot ---
     logger.info("Bot application configured with direct handlers. Starting polling...")
     application.run_polling()
     logger.info("Bot polling stopped.")
@@ -149,4 +179,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
