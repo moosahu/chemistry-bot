@@ -14,6 +14,7 @@ async def handle_text_during_quiz(update: Update, context: CallbackContext) -> i
 import logging
 import math
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+print(f"DEBUG: Update imported: {Update}")
 from telegram.ext import (
     CallbackContext,
     ConversationHandler,
