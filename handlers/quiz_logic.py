@@ -268,4 +268,3 @@ class QuizLogic:
         logger.info(f"Quiz {self.quiz_id} starting for user {user_id} with {self.total_questions} questions of type {self.quiz_type}.")
         await self.send_question(chat_id, user_id)
         return TAKING_QUIZ
-
