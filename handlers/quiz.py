@@ -401,7 +401,7 @@ quiz_conv_handler = ConversationHandler(
         ],
         TAKING_QUIZ: [
             CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_answer_\d+$"),
-            CallbackQueryHandler(skip_question_button_handler, pattern=r"^skip_question$")
+            CallbackQueryHandler(handle_skip_question, pattern=r"^quiz_(.+)_skip_(\d+)$") # Corrected pattern and handler name
         ]
         # SHOWING_RESULTS is handled by quiz_logic returning END or MAIN_MENU
     },
