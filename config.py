@@ -15,7 +15,6 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://your-api-base-url.com/api"
 # Validate essential variables
 if not TELEGRAM_BOT_TOKEN: # Check the correct variable name
     raise ValueError("Missing required environment variable: TELEGRAM_BOT_TOKEN")
-    raise ValueError("Missing required environment variable: BOT_TOKEN")
 if not DATABASE_URL:
     # Allow running without DB for testing some features, but log a warning
     logging.warning("Missing environment variable: DATABASE_URL. Database features will be disabled.")
@@ -49,9 +48,18 @@ END = ConversationHandler.END
 
 # --- Quiz Settings --- 
 
+# Quiz Type Constants
+QUIZ_TYPE_RANDOM = "random_quiz"
+QUIZ_TYPE_CHAPTER = "chapter_quiz"
+QUIZ_TYPE_UNIT = "unit_quiz"
+QUIZ_TYPE_ALL = "all_scope_quiz"
+
+# Default time limit for questions in seconds
+DEFAULT_QUESTION_TIME_LIMIT = 60
+
 # Timer for each question in seconds. Set to 0 or False to disable.
 ENABLE_QUESTION_TIMER = True
-QUESTION_TIMER_SECONDS = 60 # e.g., 60 seconds per question
+QUESTION_TIMER_SECONDS = 60 # e.g., 60 seconds per question (Note: DEFAULT_QUESTION_TIME_LIMIT is now the primary)
 
 # Delay before showing feedback or next question (in seconds)
 FEEDBACK_DELAY = 1.5
