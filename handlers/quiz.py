@@ -1,5 +1,15 @@
+async def handle_text_during_quiz(update: Update, context: CallbackContext) -> int:
+    """Handles unexpected text messages during the quiz."""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    logger.warning(f"User {user_id} sent text during quiz: {update.message.text}")
+    await safe_send_message(context.bot, chat_id, text="⚠️ يرجى استخدام الأزرار لاختيار الإجابة أو تخطي السؤال.")
+    return TAKING_QUIZ # Stay in the quiz state
+
+
+
 # -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow (Corrected v10 - Fixed ConversationHandler Structure)."""
+"""Conversation handler for the quiz selection and execution flow (Corrected v11 - Added text handler during quiz)."""
 
 import logging
 import math
@@ -381,7 +391,16 @@ async def cancel_quiz_selection(update: Update, context: CallbackContext) -> int
         
     return END
 
-# --- Conversation Handler Definition (Corrected v10 - Fixed Brackets) --- 
+# --- New Handler Function for Text During Quiz ---
+async def handle_text_during_quiz(update: Update, context: CallbackContext) -> int:
+    """Handles unexpected text messages during the quiz."""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    logger.warning(f"User {user_id} sent text during quiz: {update.message.text}")
+    await safe_send_message(context.bot, chat_id, text="⚠️ يرجى استخدام الأزرار لاختيار الإجابة أو تخطي السؤال.")
+    return TAKING_QUIZ # Stay in the quiz state
+
+# --- Conversation Handler Definition (Corrected v11 - Added Text Handler) --- 
 
 quiz_conv_handler = ConversationHandler(
     entry_points=[
@@ -402,7 +421,8 @@ quiz_conv_handler = ConversationHandler(
         ],
         TAKING_QUIZ: [
             CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_answer_\d+$"),
-            CallbackQueryHandler(handle_skip_question, pattern=r"^quiz_(.+)_skip_(\d+)$") # Corrected pattern and handler name
+            CallbackQueryHandler(handle_skip_question, pattern=r"^quiz_(.+)_skip_(\d+)$"), # Corrected pattern and handler name
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_during_quiz) # Handle unexpected text
         ]
         # SHOWING_RESULTS is handled by quiz_logic returning END or MAIN_MENU
     },
