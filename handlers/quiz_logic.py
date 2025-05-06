@@ -279,8 +279,7 @@ class QuizLogic:
                 is_correct = True
             correct_opt_text_key = f"option{correct_answer_str}"
             correct_opt_image_key = f"option{correct_answer_str}_image"
-            correct_answer_text_or_image = question_data.get(correct_opt_text_key) or 
-                                           ("صورة صحيحة" if question_data.get(correct_opt_image_key) else "غير محدد")
+            correct_answer_text_or_image = question_data.get(correct_opt_t            correct_answer_text_or_image = question_data.get(correct_opt_text_key) or ("صورة صحيحة" if question_data.get(correct_opt_image_key) else "غير محدد")
 
         quiz_data["answers"][q_idx] = chosen_option_index # Store chosen answer index
         if is_correct:
@@ -538,6 +537,5 @@ async def question_timer_callback(context: CallbackContext):
         logger.info(f"[GLOBAL TIMER] Quiz {quiz_id} for user {user_id} ended, or q_idx {question_index_timed_out} already handled. Timer ignored.")
 
 logger.info("[QuizLogic Module] QuizLogic class and global timer callback defined.")
-
 
 
