@@ -2,69 +2,68 @@
 """Utility functions for the Chemistry Telegram Bot."""
 
 import logging
-from telegram import Update
-from telegram.ext import CallbackContext
-from telegram.error import BadRequest, TelegramError
+import re # Moved import re to the top with other imports
+import telegram # Added import telegram for error types
+from telegram import Update # Already present
+from telegram.ext import CallbackContext # Already present
+# from telegram.error import BadRequest, TelegramError # These are now handled via telegram.error.BadRequest etc.
 
-# Get logger instance
-logger = logging.getLogger(__name__)
+# Import logger from config, or define a local one if preferred
+# Assuming logger is configured and imported from config.py as we discussed
+from config import logger # Make sure this line is present and correct
 
-def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
+# Original safe_send_message - seems okay but ensure bot object is passed correctly if used elsewhere
+async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
     """Safely send a message, handling potential Telegram errors."""
     try:
-        return bot.send_message(
+        return await bot.send_message(
             chat_id=chat_id,
             text=text,
             reply_markup=reply_markup,
             parse_mode=parse_mode
         )
-    except BadRequest as e:
+    except telegram.error.BadRequest as e: # Use telegram.error.BadRequest
         logger.error(f"BadRequest sending message to {chat_id}: {e}")
-    except TelegramError as e:
+    except telegram.error.TelegramError as e: # Use telegram.error.TelegramError
         logger.error(f"TelegramError sending message to {chat_id}: {e}")
     except Exception as e:
         logger.exception(f"Unexpected error sending message to {chat_id}: {e}")
     return None
 
-def safe_edit_message_text(query_or_bot, text, chat_id=None, message_id=None, reply_markup=None, parse_mode=None):
-    """Safely edit message text, handling potential Telegram errors."""
+# NEW and CORRECTED safe_edit_message_text function
+async def safe_edit_message_text(
+    bot,  # Should be an instance of telegram.Bot
+    chat_id: int,
+    message_id: int,
+    text: str,
+    reply_markup=None, # Should be an instance of telegram.InlineKeyboardMarkup or None
+    parse_mode: str = "HTML"
+):
+    """Safely edits a message text, handling potential errors."""
     try:
-        if hasattr(query_or_bot, 'message') and query_or_bot.message:
-            if query_or_bot.message.text == text and query_or_bot.message.reply_markup == reply_markup:
-                logger.debug(f"Message {query_or_bot.message.message_id} text and markup unchanged, skipping edit.")
-                return query_or_bot.message
-            return query_or_bot.edit_message_text(
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-        elif chat_id and message_id:
-            bot = query_or_bot
-            return bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
+        # logger.debug(f"Attempting to edit message: chat_id={chat_id}, msg_id={message_id}, text='{text[:50]}...' markup={reply_markup}")
+        await bot.edit_message_text(
+            text=text,
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+        logger.debug(f"Message {message_id} in chat {chat_id} edited successfully.")
+        return True
+    except telegram.error.BadRequest as e:
+        if "message is not modified" in str(e).lower():
+            logger.warning(f"Failed to edit message {message_id} in chat {chat_id} (not modified): {e}")
+            pass # Often, not modifying is not a critical error, can be ignored silently
+        elif "message can't be edited" in str(e).lower():
+             logger.warning(f"Message {message_id} in chat {chat_id} cannot be edited (likely too old or deleted): {e}")
         else:
-            logger.error("safe_edit_message_text: Invalid arguments. Need CallbackQuery or Bot+chat_id+message_id.")
-            return None
-    except BadRequest as e:
-        if "Message is not modified" in str(e):
-            logger.warning(f"Message not modified: {e}")
-            if hasattr(query_or_bot, 'message') and query_or_bot.message:
-                return query_or_bot.message
-            return None
-        elif "message can't be edited" in str(e):
-             logger.warning(f"Message cannot be edited (likely too old or deleted): {e}")
-        else:
-            logger.error(f"BadRequest editing message: {e}")
-    except TelegramError as e:
-        logger.error(f"TelegramError editing message: {e}")
+            logger.error(f"Failed to edit message {message_id} in chat {chat_id} (BadRequest): {e}")
+    except telegram.error.TelegramError as e:
+        logger.error(f"Failed to edit message {message_id} in chat {chat_id} (TelegramError): {e}")
     except Exception as e:
-        logger.exception(f"Unexpected error editing message: {e}")
-    return None
+        logger.error(f"Unexpected error editing message {message_id} in chat {chat_id}: {e}", exc_info=True)
+    return False
 
 def remove_job_if_exists(name: str, context: CallbackContext) -> bool:
     """Remove job with given name. Returns whether job was removed."""
@@ -77,12 +76,12 @@ def remove_job_if_exists(name: str, context: CallbackContext) -> bool:
         logger.info(f"Removed job with name: {name}")
     return True
 
-import re
-
 def process_text_with_chemical_notation(text):
     if not text:
         return text
-    text = re.sub(r'([A-Za-z])(\d+)', lambda m: m.group(1) + ''.join(['₀₁₂₃₄₅₆₇₈₉'[int(d)] for d in m.group(2)]), text)
+    # Ensure subscript mapping is correct and handles all digits
+    subscript_map = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+    text = re.sub(r'([A-Za-z])(\d+)', lambda m: m.group(1) + m.group(2).translate(subscript_map), text)
     text = text.replace(' -> ', ' → ')
     text = text.replace(' => ', ' ⇒ ')
     text = text.replace(' <-> ', ' ⇄ ')
@@ -115,19 +114,16 @@ async def safe_delete_message(bot, chat_id: int, message_id: int) -> bool:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
         logger.info(f"Successfully deleted message {message_id} from chat {chat_id}")
         return True
-    except BadRequest as e:
-        if "message to delete not found" in str(e) or "message can't be deleted" in str(e):
+    except telegram.error.BadRequest as e: # Use telegram.error.BadRequest
+        if "message to delete not found" in str(e).lower() or "message can't be deleted" in str(e).lower():
             logger.warning(f"Message {message_id} in chat {chat_id} not found or already deleted: {e}")
         else:
             logger.error(f"BadRequest deleting message {message_id} in chat {chat_id}: {e}")
-    except TelegramError as e:
+    except telegram.error.TelegramError as e: # Use telegram.error.TelegramError
         logger.error(f"TelegramError deleting message {message_id} in chat {chat_id}: {e}")
     except Exception as e:
         logger.exception(f"Unexpected error deleting message {message_id} in chat {chat_id}: {e}")
     return False
-# -*- coding: utf-8 -*-
-# Add this function to your utils/helpers.py file
-# Make sure other functions like safe_send_message, format_duration etc. are also present
 
 def get_quiz_type_string(type_display_name: str) -> str:
     """Returns the quiz type display string, possibly with minor formatting."""
@@ -135,4 +131,5 @@ def get_quiz_type_string(type_display_name: str) -> str:
         return "غير محدد"
     return str(type_display_name) # Returns the name as is, assuming it's already user-friendly
 
-# ... (ensure other helper functions like safe_send_message, safe_edit_message_text, safe_delete_message, remove_job_if_exists, format_duration are also in this file) ...
+logger.info("utils/helpers.py loaded with corrected safe_edit_message_text.")
+
