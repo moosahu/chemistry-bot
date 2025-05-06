@@ -125,3 +125,14 @@ async def safe_delete_message(bot, chat_id: int, message_id: int) -> bool:
     except Exception as e:
         logger.exception(f"Unexpected error deleting message {message_id} in chat {chat_id}: {e}")
     return False
+# -*- coding: utf-8 -*-
+# Add this function to your utils/helpers.py file
+# Make sure other functions like safe_send_message, format_duration etc. are also present
+
+def get_quiz_type_string(type_display_name: str) -> str:
+    """Returns the quiz type display string, possibly with minor formatting."""
+    if not type_display_name:
+        return "غير محدد"
+    return str(type_display_name) # Returns the name as is, assuming it's already user-friendly
+
+# ... (ensure other helper functions like safe_send_message, safe_edit_message_text, safe_delete_message, remove_job_if_exists, format_duration are also in this file) ...
