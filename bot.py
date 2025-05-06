@@ -34,10 +34,10 @@ try:
     )
     from database.schema import setup_database_schema, apply_schema_updates
     # Import handlers
-    from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
-    from handlers.quiz import quiz_conv_handler
-    from handlers.info import info_conv_handler
-    from handlers.stats import stats_conv_handler
+    # from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
+    # from handlers.quiz import quiz_conv_handler
+    # from handlers.info import info_conv_handler
+    # from handlers.stats import stats_conv_handler
 
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
@@ -122,19 +122,19 @@ def main() -> None:
 
     # --- Register Handlers Directly --- 
     # 1. Start command handler
-    application.add_handler(start_handler)
+    # application.add_handler(start_handler)
     logger.debug("[DEBUG] start_handler added to application.")
 
     # 2. Quiz conversation handler
-    application.add_handler(quiz_conv_handler)
+    # application.add_handler(quiz_conv_handler)
     logger.debug(f"[DEBUG] quiz_conv_handler added to application: {quiz_conv_handler}")
 
     # 3. Info conversation handler
-    application.add_handler(info_conv_handler)
+    # application.add_handler(info_conv_handler)
     logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
 
     # 4. Stats conversation handler
-    application.add_handler(stats_conv_handler)
+    # application.add_handler(stats_conv_handler)
     logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
 
     # 5. Error handler (add last)
