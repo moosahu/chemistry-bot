@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Core logic for handling quizzes in the Chemistry Telegram Bot, now with a QuizLogic class."""
 
 import random
@@ -36,7 +37,7 @@ class QuizLogic:
         self.context = context
         self.user_data = context.user_data
         self.bot = context.bot
-        logger.debug(f"[QuizLogic] Initialized for user {self.user_data.get('_effective_user_id', 'UNKNOWN')}")
+        logger.debug(f"[QuizLogic] Initialized for user {self.user_data.get("_effective_user_id", "UNKNOWN")}")
 
     async def _send_or_edit_message(self, chat_id: int, text: str, reply_markup=None, photo_url: str | None = None, current_message_id: int | None = None):
         """Helper to send a new message or edit an existing one, managing media."""
@@ -56,7 +57,7 @@ class QuizLogic:
             if current_message_id:
                 try:
                     new_message = await safe_edit_message_text(self.bot, chat_id=chat_id, message_id=current_message_id, text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
-                except BadRequest as e: # If message didn't change or other issue
+                except BadRequest as e: # If message didn_t change or other issue
                     logger.warning(f"[QuizLogic] Failed to edit message {current_message_id}, sending new: {e}")
                     await safe_delete_message(self.bot, chat_id, current_message_id) # Clean up old message
                     new_message = await safe_send_message(self.bot, chat_id, text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
@@ -100,7 +101,7 @@ class QuizLogic:
         question_text_main = question.get("question_text", "")
         question_image_url = question.get("image_url")
 
-        header = f"<b>السؤال {q_idx + 1} من {quiz_data['total_questions']}:</b>\n"
+        header = f"<b>السؤال {q_idx + 1} من {quiz_data["total_questions"]}:</b>\n"
         full_question_text = header + question_text_main
 
         reply_markup = self._build_question_keyboard(question, quiz_id, q_idx)
@@ -140,7 +141,7 @@ class QuizLogic:
         user = update.effective_user
         chat_id = update.effective_chat.id
         user_id = user.id
-        self.user_data['_effective_user_id'] = user_id
+        self.user_data["_effective_user_id"] = user_id
 
         quiz_selection = self.user_data.get("quiz_selection")
         if not quiz_selection or "type" not in quiz_selection or "count" not in quiz_selection or "endpoint" not in quiz_selection:
@@ -162,7 +163,7 @@ class QuizLogic:
             await safe_send_message(self.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
         
-        await safe_send_message(self.bot, chat_id, text=f"🔍 جارٍ إعداد اختبارك من {get_quiz_type_string(quiz_selection.get('type_display_name', ''))} بعدد {num_questions} أسئلة...", reply_markup=None)
+        await safe_send_message(self.bot, chat_id, text=f"🔍 جارٍ إعداد اختبارك من {get_quiz_type_string(quiz_selection.get("type_display_name", ""))} بعدد {num_questions} أسئلة...", reply_markup=None)
 
         quiz_questions_raw = []
         if questions_endpoint == "random_api":
@@ -230,7 +231,7 @@ class QuizLogic:
         return TAKING_QUIZ
 
     async def handle_answer(self, update: Update, chosen_option_index: int) -> int:
-        """Handles user's answer to a question."""
+        """Handles user_s answer to a question."""
         query = update.callback_query
         user = update.effective_user
         chat_id = update.effective_chat.id
@@ -259,6 +260,7 @@ class QuizLogic:
                 is_correct = True
             correct_opt_text_key = f"option{correct_answer_str}"
             correct_opt_image_key = f"option{correct_answer_str}_image"
+            # السطر المصحح والنهائي هنا:
             correct_answer_text_or_image = question_data.get(correct_opt_text_key) or ("صورة صحيحة" if question_data.get(correct_opt_image_key) else "غير محدد")
 
         quiz_data["answers"][q_idx] = chosen_option_index
@@ -276,7 +278,7 @@ class QuizLogic:
             await safe_send_message(self.bot, chat_id, text=feedback_text)
             await asyncio.sleep(FEEDBACK_DELAY)
 
-        job_name = f"qtimer_{chat_id}_{user_id}_{quiz_data['quiz_id']}_{q_idx}"
+        job_name = f"qtimer_{chat_id}_{user_id}_{quiz_data["quiz_id"]}_{q_idx}"
         remove_job_if_exists(job_name, self.context)
 
         quiz_data["current_question_index"] += 1
@@ -372,12 +374,12 @@ class QuizLogic:
                 duration_seconds=int(duration_seconds),
                 quiz_timestamp=quiz_data["start_time"]
             )
-            logger.info(f"[QuizLogic] Quiz {quiz_data['quiz_id']} results saved for user {user_id}.")
+            logger.info(f"[QuizLogic] Quiz {quiz_data["quiz_id"]} results saved for user {user_id}.")
         except Exception as e:
             logger.error(f"[QuizLogic] Failed to save quiz results for user {user_id}: {e}")
 
         results_text = f"🏁 <b>نتائج الاختبار</b> 🏁\n\n"
-        results_text += f"<b>الموضوع:</b> {quiz_data.get('quiz_type_display', 'غير محدد')} - {quiz_data.get('quiz_scope_display', '')}\n"
+        results_text += f"<b>الموضوع:</b> {quiz_data.get("quiz_type_display", "غير محدد")} - {quiz_data.get("quiz_scope_display", "")}\n"
         results_text += f"<b>النتيجة:</b> {score} / {total_q} ({percentage:.2f}%)\n"
         results_text += f"<b>الوقت المستغرق:</b> {format_duration(int(duration_seconds))}\n\n"
         results_text += "أداء رائع! يمكنك مراجعة إجاباتك أو بدء اختبار جديد."
@@ -462,4 +464,3 @@ async def question_timer_callback(context: CallbackContext):
         logger.info(f"[GLOBAL TIMER] Quiz {quiz_id} for user {user_id} ended, or q_idx {question_index_timed_out} already handled. Timer ignored.")
 
 logger.info("[QuizLogic Module] QuizLogic class and global timer callback defined.")
-
