@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow."""
+"""Conversation handler for the quiz selection and execution flow (Corrected v4 - Full Course/Unit selection flow and API fixes)."""
 
 import logging
 import math
-import random # لاستخدامها في خلط الأسئلة إذا لزم الأمر
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CallbackContext,
@@ -16,84 +16,112 @@ from telegram.ext import (
 
 from config import (
     logger,
-    MAIN_MENU, QUIZ_MENU, SELECT_QUIZ_TYPE, SELECT_QUIZ_SCOPE, 
+    MAIN_MENU, QUIZ_MENU, SELECT_QUIZ_TYPE, 
+    SELECT_COURSE_FOR_UNIT_QUIZ, SELECT_UNIT_FOR_COURSE, # New states for unit quiz flow
+    SELECT_QUIZ_SCOPE, # Kept for other potential scoped quizzes, but unit quiz uses new states
     ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, END,
-    QUIZ_TYPE_RANDOM, QUIZ_TYPE_CHAPTER, QUIZ_TYPE_UNIT, QUIZ_TYPE_ALL, # تأكد من وجود هذه الثوابت في config.py
-    DEFAULT_QUESTION_TIME_LIMIT # تأكد من وجود هذا الثابت في config.py
+    QUIZ_TYPE_RANDOM, QUIZ_TYPE_CHAPTER, QUIZ_TYPE_UNIT, QUIZ_TYPE_ALL, 
+    DEFAULT_QUESTION_TIME_LIMIT
 )
-from utils.helpers import safe_send_message, safe_edit_message_text, get_quiz_type_string # تأكد من وجود get_quiz_type_string
-from utils.api_client import fetch_from_api # أو أي طريقة تستخدمها لجلب الأسئلة
-from handlers.common import create_main_menu_keyboard, main_menu_callback
-from .quiz_logic import QuizLogic # استيراد كلاس QuizLogic
+from utils.helpers import safe_send_message, safe_edit_message_text, get_quiz_type_string
+from utils.api_client import fetch_from_api # Synchronous API fetch function
+from handlers.common import create_main_menu_keyboard, main_menu_callback # Assuming main_menu_callback can handle being called from quiz
+from .quiz_logic import QuizLogic
 
-ITEMS_PER_PAGE = 6 # لتقسيم الخيارات إلى صفحات إذا لزم الأمر
+ITEMS_PER_PAGE = 6
 
-# --- وظائف مساعدة لإنشاء لوحات المفاتيح ---
+# --- Keyboard Creation Helper Functions ---
 
 def create_quiz_type_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
-        [InlineKeyboardButton("🎲 اختبار عشوائي شامل", callback_data=f"quiz_type_{QUIZ_TYPE_RANDOM}")],
-        [InlineKeyboardButton("📚 حسب الوحدة الدراسية", callback_data=f"quiz_type_{QUIZ_TYPE_UNIT}")],
-        # يمكنك إضافة المزيد من أنواع الاختبارات هنا
-        # [InlineKeyboardButton("챕터별 퀴즈", callback_data=f"quiz_type_{QUIZ_TYPE_CHAPTER}")],
-        # [InlineKeyboardButton("전체 범위 퀴즈", callback_data=f"quiz_type_{QUIZ_TYPE_ALL}")],
+        [InlineKeyboardButton("🎲 اختبار عشوائي شامل (كل المقررات)", callback_data=f"quiz_type_{QUIZ_TYPE_ALL}")],
+        [InlineKeyboardButton("📚 حسب الوحدة الدراسية (اختر المقرر ثم الوحدة)", callback_data=f"quiz_type_{QUIZ_TYPE_UNIT}")],
+        # Add other quiz types here if needed, e.g., by specific course directly
         [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def create_quiz_scope_keyboard(scopes: list, quiz_type: str, current_page: int = 0) -> InlineKeyboardMarkup:
+def create_course_selection_keyboard(courses: list, current_page: int = 0) -> InlineKeyboardMarkup:
     keyboard = []
     items_per_page = ITEMS_PER_PAGE
     start_index = current_page * items_per_page
     end_index = start_index + items_per_page
-    
-    for i in range(start_index, min(end_index, len(scopes))):
-        scope = scopes[i]
-        # افترض أن scope هو قاموس يحتوي على id و name
-        keyboard.append([InlineKeyboardButton(scope['name'], callback_data=f"quiz_scope_specific_{quiz_type}_{scope['id']}")])
+
+    for i in range(start_index, min(end_index, len(courses))):
+        course = courses[i]
+        keyboard.append([InlineKeyboardButton(course.get('name', f"مقرر {course.get('id')}"), callback_data=f"quiz_course_select_{course.get('id')}")])
 
     pagination_buttons = []
     if current_page > 0:
-        pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"quiz_scope_page_{quiz_type}_{current_page - 1}"))
-    if end_index < len(scopes):
-        pagination_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"quiz_scope_page_{quiz_type}_{current_page + 1}"))
+        pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"quiz_course_page_{current_page - 1}"))
+    if end_index < len(courses):
+        pagination_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"quiz_course_page_{current_page + 1}"))
     
     if pagination_buttons:
         keyboard.append(pagination_buttons)
 
-    keyboard.append([InlineKeyboardButton("🌍 كل النطاقات (لهذا النوع)", callback_data=f"quiz_scope_all_{quiz_type}")])
-    keyboard.append([InlineKeyboardButton("🔙 اختيار نوع الاختبار", callback_data=f"quiz_type_back")])
+    keyboard.append([InlineKeyboardButton("🔙 اختيار نوع الاختبار", callback_data=f"quiz_type_back_to_type_selection")])
     return InlineKeyboardMarkup(keyboard)
 
-def create_question_count_keyboard(max_questions: int, quiz_type: str, scope_id: str = None) -> InlineKeyboardMarkup:
-    counts = [1, 5, 10, 20, min(max_questions, 50)] # أعداد مقترحة
+def create_unit_selection_keyboard(units: list, course_id: int, current_page: int = 0) -> InlineKeyboardMarkup:
+    keyboard = []
+    items_per_page = ITEMS_PER_PAGE
+    start_index = current_page * items_per_page
+    end_index = start_index + items_per_page
+
+    for i in range(start_index, min(end_index, len(units))):
+        unit = units[i]
+        keyboard.append([InlineKeyboardButton(unit.get('name', f"وحدة {unit.get('id')}"), callback_data=f"quiz_unit_select_{course_id}_{unit.get('id')}")])
+
+    pagination_buttons = []
+    if current_page > 0:
+        pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"quiz_unit_page_{course_id}_{current_page - 1}"))
+    if end_index < len(units):
+        pagination_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"quiz_unit_page_{course_id}_{current_page + 1}"))
+
+    if pagination_buttons:
+        keyboard.append(pagination_buttons)
+    
+    keyboard.append([InlineKeyboardButton("🔙 اختيار المقرر", callback_data=f"quiz_unit_back_to_course_selection")])
+    return InlineKeyboardMarkup(keyboard)
+
+def create_question_count_keyboard(max_questions: int, quiz_type: str, scope_id: str = None, course_id_for_unit: str = None) -> InlineKeyboardMarkup:
+    counts = [1, 5, 10, 20, min(max_questions, 50)]
     if max_questions > 0 and max_questions not in counts:
-        counts.append(max_questions) # إضافة الحد الأقصى إذا لم يكن موجوداً وكان معقولاً
-    counts = sorted(list(set(c for c in counts if c <= max_questions and c > 0))) # إزالة المكرر والفرز والتأكد من أنها ضمن الحدود
+        counts.append(max_questions)
+    counts = sorted(list(set(c for c in counts if c <= max_questions and c > 0)))
 
     keyboard = []
     row = []
     for count in counts:
         row.append(InlineKeyboardButton(str(count), callback_data=f"num_questions_{count}"))
-        if len(row) == 3: # 3 أزرار في كل صف
+        if len(row) == 3:
             keyboard.append(row)
             row = []
-    if row: # إضافة أي أزرار متبقية
+    if row:
         keyboard.append(row)
     
-    if max_questions > counts[-1] if counts else max_questions > 0:
+    if counts and max_questions > counts[-1] if counts else max_questions > 0:
          keyboard.append([InlineKeyboardButton(f"الكل ({max_questions})", callback_data=f"num_questions_all")])
 
-    keyboard.append([InlineKeyboardButton("🔙 اختيار النطاق/النوع", callback_data=f"quiz_count_back_{quiz_type}_{scope_id if scope_id else ''}")])
+    back_callback_data = f"quiz_count_back_to_type_selection"
+    if quiz_type == QUIZ_TYPE_UNIT and course_id_for_unit and scope_id: # scope_id here is unit_id
+        back_callback_data = f"quiz_count_back_to_unit_selection_{course_id_for_unit}" 
+    elif quiz_type != QUIZ_TYPE_ALL: # For other specific scope types if any
+        # This part might need adjustment if other scoped quizzes are added
+        # For now, default to type selection if not unit or all
+        pass 
+
+    keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback_data)])
     return InlineKeyboardMarkup(keyboard)
 
-# --- معالجات حالات المحادثة ---
+# --- Conversation Handler States and Functions ---
 
 async def quiz_menu_entry(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-    logger.info(f"User {user_id} entered quiz menu via callback.")
+    logger.info(f"User {user_id} entered quiz menu (quiz_menu_entry).")
     keyboard = create_quiz_type_keyboard()
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
     return SELECT_QUIZ_TYPE
@@ -102,148 +130,209 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-    
     callback_data = query.data
+
     if callback_data == "main_menu":
-        await main_menu_callback(update, context, from_quiz=True)
-        return ConversationHandler.END # العودة إلى القائمة الرئيسية وإنهاء محادثة الاختبار
-    if callback_data == "quiz_type_back": # للعودة من اختيار النطاق إلى اختيار النوع
+        # Ensure main_menu_callback is adapted to be called with from_quiz=True if needed
+        # or handle the state transition to MAIN_MENU directly if it's simpler.
+        # For now, assuming main_menu_callback can handle it or it's a direct state transition.
+        await main_menu_callback(update, context) # Removed from_quiz, ensure it works or adjust
+        return ConversationHandler.END
+    if callback_data == "quiz_type_back_to_type_selection": # Handles back button from course/unit selection
         keyboard = create_quiz_type_keyboard()
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
         return SELECT_QUIZ_TYPE
 
-    # --- التعديل هنا --- 
-    # quiz_type_key = callback_data.split('_')[-1] # السطر القديم الخاطئ
-    quiz_type_key = callback_data.replace("quiz_type_", "", 1) # السطر الجديد المصحح
-    # --- نهاية التعديل ---
-    
+    quiz_type_key = callback_data.replace("quiz_type_", "", 1)
     context.user_data["selected_quiz_type_key"] = quiz_type_key
-    # افترض أن لديك دالة لجلب اسم العرض للنوع، أو استخدم المفتاح مباشرة
-    quiz_type_display_name = get_quiz_type_string(quiz_type_key) # تأكد أن هذه الدالة موجودة في helpers
+    quiz_type_display_name = get_quiz_type_string(quiz_type_key)
     context.user_data["selected_quiz_type_display_name"] = quiz_type_display_name
     logger.info(f"User {user_id} selected quiz type: {quiz_type_key} ({quiz_type_display_name})")
 
-    if quiz_type_key == QUIZ_TYPE_RANDOM or quiz_type_key == QUIZ_TYPE_ALL: # أنواع لا تتطلب نطاقاً محدداً
-        logger.debug(f"[API] Fetching data for quiz type: {quiz_type_key}")
-        questions_data = await fetch_from_api(f"questions/random?quiz_type={quiz_type_key}", params={'limit': 200})
+    error_message_to_user = "عذراً، حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً أو التأكد من أن خدمة الأسئلة تعمل."
+
+    if quiz_type_key == QUIZ_TYPE_ALL:
+        logger.debug("[API] QUIZ_TYPE_ALL: Fetching all courses.")
+        courses = fetch_from_api("api/v1/courses")
+        if courses == "TIMEOUT":
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="انتهت مهلة الاتصال بخادم الأسئلة أثناء جلب قائمة المقررات.", reply_markup=create_quiz_type_keyboard())
+            return SELECT_QUIZ_TYPE
+        if not courses or not isinstance(courses, list):
+            logger.error(f"[API] Failed to fetch or parse courses for QUIZ_TYPE_ALL. Received: {courses}")
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=error_message_to_user, reply_markup=create_quiz_type_keyboard())
+            return SELECT_QUIZ_TYPE
+
+        all_questions_pool = []
+        logger.info(f"[API] Fetched {len(courses)} courses. Now fetching questions for each.")
+        for course in courses:
+            course_id = course.get('id')
+            if not course_id: continue
+            current_course_questions = fetch_from_api(f"api/v1/courses/{course_id}/questions")
+            if current_course_questions == "TIMEOUT": 
+                logger.warning(f"[API] Timeout fetching questions for course {course_id} in QUIZ_TYPE_ALL. Skipping.")
+                continue 
+            if isinstance(current_course_questions, list):
+                all_questions_pool.extend(current_course_questions)
+            else:
+                logger.warning(f"[API] No questions or invalid data for course {course_id} in QUIZ_TYPE_ALL. Received: {current_course_questions}")
         
-        if not questions_data:
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لا توجد أسئلة متاحة لهذا النوع حالياً.", reply_markup=create_quiz_type_keyboard())
+        if not all_questions_pool:
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لم يتم العثور على أسئلة للاختبار الشامل.", reply_markup=create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
         
-        context.user_data["questions_for_quiz"] = questions_data
-        max_questions = len(questions_data)
-        logger.info(f"Fetched {max_questions} total questions for {quiz_type_display_name}.")
+        context.user_data["questions_for_quiz"] = all_questions_pool
+        max_questions = len(all_questions_pool)
         keyboard = create_question_count_keyboard(max_questions, quiz_type_key)
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار '{quiz_type_display_name}':", reply_markup=keyboard)
         return ENTER_QUESTION_COUNT
-    
-    elif quiz_type_key == QUIZ_TYPE_UNIT or quiz_type_key == QUIZ_TYPE_CHAPTER:
-        logger.debug(f"[API] Fetching scopes for quiz type: {quiz_type_key}")
-        scopes = await fetch_from_api(f"scopes?type={quiz_type_key}")
-        
-        if not scopes:
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لا توجد نطاقات (وحدات/فصول) متاحة لهذا النوع حالياً.", reply_markup=create_quiz_type_keyboard())
+
+    elif quiz_type_key == QUIZ_TYPE_UNIT:
+        logger.debug("[API] QUIZ_TYPE_UNIT: Fetching all courses to select from.")
+        courses = fetch_from_api("api/v1/courses")
+        if courses == "TIMEOUT":
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="انتهت مهلة الاتصال بخادم الأسئلة أثناء جلب قائمة المقررات.", reply_markup=create_quiz_type_keyboard())
+            return SELECT_QUIZ_TYPE
+        if not courses or not isinstance(courses, list) or not courses:
+            logger.error(f"[API] Failed to fetch or parse courses for unit selection. Received: {courses}")
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لا توجد مقررات متاحة حالياً أو حدث خطأ في جلبها.", reply_markup=create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
         
-        context.user_data["available_scopes"] = scopes
-        context.user_data["current_scope_page"] = 0
-        keyboard = create_quiz_scope_keyboard(scopes, quiz_type_key, 0)
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر نطاقاً لاختبار '{quiz_type_display_name}':", reply_markup=keyboard)
-        return SELECT_QUIZ_SCOPE
+        context.user_data["available_courses_for_unit_quiz"] = courses
+        context.user_data["current_course_page_for_unit_quiz"] = 0
+        keyboard = create_course_selection_keyboard(courses, 0)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="اختر المقرر الدراسي أولاً:", reply_markup=keyboard)
+        return SELECT_COURSE_FOR_UNIT_QUIZ
+
     else:
-        logger.warning(f"Unknown quiz type key: {quiz_type_key} from callback_data: {callback_data}")
+        logger.warning(f"Unknown quiz type key: {quiz_type_key}. Returning to type selection.")
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="نوع اختبار غير معروف. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
 
-async def handle_scope_pagination(update: Update, context: CallbackContext) -> int:
-    query = update.callback_query
-    await query.answer()
-    parts = query.data.split('_')
-    quiz_type_key = parts[3]
-    page = int(parts[4])
-
-    scopes = context.user_data.get("available_scopes", [])
-    context.user_data["current_scope_page"] = page
-    keyboard = create_quiz_scope_keyboard(scopes, quiz_type_key, page)
-    quiz_type_display_name = context.user_data.get("selected_quiz_type_display_name", quiz_type_key)
-    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر نطاقاً لاختبار '{quiz_type_display_name}' (صفحة {page + 1}):", reply_markup=keyboard)
-    return SELECT_QUIZ_SCOPE
-
-async def select_quiz_scope_all(update: Update, context: CallbackContext) -> int:
+async def handle_course_selection_for_unit_quiz(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-    quiz_type_key = query.data.split('_')[-1] # Assuming format quiz_scope_all_TYPE
-    context.user_data["selected_scope_id"] = "all"
-    context.user_data["selected_scope_name"] = "كل النطاقات"
-    quiz_type_display_name = context.user_data.get("selected_quiz_type_display_name", quiz_type_key)
-    logger.info(f"User {user_id} selected all scopes for quiz type {quiz_type_key}")
+    callback_data = query.data
 
-    logger.debug(f"[API] Fetching all questions for quiz type: {quiz_type_key}")
-    questions_data = await fetch_from_api(f"questions/all_by_type?quiz_type={quiz_type_key}", params={'limit': 500})
-
-    if not questions_data:
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لا توجد أسئلة متاحة لهذا النطاق حالياً.", reply_markup=create_quiz_type_keyboard())
+    if callback_data == "quiz_type_back_to_type_selection":
+        keyboard = create_quiz_type_keyboard()
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
         return SELECT_QUIZ_TYPE
+    
+    if callback_data.startswith("quiz_course_page_"):
+        page = int(callback_data.split('_')[-1])
+        courses = context.user_data.get("available_courses_for_unit_quiz", [])
+        context.user_data["current_course_page_for_unit_quiz"] = page
+        keyboard = create_course_selection_keyboard(courses, page)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر المقرر الدراسي (صفحة {page + 1}):", reply_markup=keyboard)
+        return SELECT_COURSE_FOR_UNIT_QUIZ
 
-    context.user_data["questions_for_quiz"] = questions_data
-    max_questions = len(questions_data)
-    keyboard = create_question_count_keyboard(max_questions, quiz_type_key, "all")
-    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار '{quiz_type_display_name} - كل النطاقات':", reply_markup=keyboard)
-    return ENTER_QUESTION_COUNT
+    selected_course_id = callback_data.replace("quiz_course_select_", "", 1)
+    context.user_data["selected_course_id_for_unit_quiz"] = selected_course_id
+    
+    courses_list = context.user_data.get("available_courses_for_unit_quiz", [])
+    selected_course_obj = next((c for c in courses_list if str(c.get('id')) == str(selected_course_id)), None)
+    course_name = selected_course_obj.get('name') if selected_course_obj else f"مقرر {selected_course_id}"
+    context.user_data["selected_course_name_for_unit_quiz"] = course_name
 
-async def select_quiz_scope_specific(update: Update, context: CallbackContext) -> int:
+    logger.info(f"User {user_id} selected course {selected_course_id} ({course_name}) for unit quiz.")
+    logger.debug(f"[API] Fetching units for course ID: {selected_course_id}.")
+    units = fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
+
+    if units == "TIMEOUT":
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"انتهت مهلة الاتصال بخادم الأسئلة أثناء جلب وحدات المقرر '{course_name}'.", reply_markup=create_course_selection_keyboard(courses_list, context.user_data.get("current_course_page_for_unit_quiz",0)))
+        return SELECT_COURSE_FOR_UNIT_QUIZ
+    if not units or not isinstance(units, list) or not units:
+        logger.error(f"[API] Failed to fetch or parse units for course {selected_course_id}. Received: {units}")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عذراً، لا توجد وحدات متاحة للمقرر '{course_name}' حالياً أو حدث خطأ.", reply_markup=create_course_selection_keyboard(courses_list, context.user_data.get("current_course_page_for_unit_quiz",0)))
+        return SELECT_COURSE_FOR_UNIT_QUIZ
+
+    context.user_data["available_units_for_course"] = units
+    context.user_data["current_unit_page_for_course"] = 0
+    keyboard = create_unit_selection_keyboard(units, selected_course_id, 0)
+    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر وحدة دراسية من مقرر '{course_name}':", reply_markup=keyboard)
+    return SELECT_UNIT_FOR_COURSE
+
+async def handle_unit_selection_for_course(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-    parts = query.data.split('_')
-    quiz_type_key = parts[3]
-    scope_id = parts[4]
+    callback_data = query.data
     
-    scopes = context.user_data.get("available_scopes", [])
-    selected_scope = next((s for s in scopes if str(s.get('id')) == str(scope_id)), None)
-    scope_name = selected_scope['name'] if selected_scope else f"نطاق {scope_id}"
+    selected_course_id = context.user_data.get("selected_course_id_for_unit_quiz")
+    course_name = context.user_data.get("selected_course_name_for_unit_quiz", f"مقرر {selected_course_id}")
+
+    if callback_data == "quiz_unit_back_to_course_selection":
+        courses = context.user_data.get("available_courses_for_unit_quiz", [])
+        current_page = context.user_data.get("current_course_page_for_unit_quiz", 0)
+        keyboard = create_course_selection_keyboard(courses, current_page)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="اختر المقرر الدراسي أولاً:", reply_markup=keyboard)
+        return SELECT_COURSE_FOR_UNIT_QUIZ
+
+    if callback_data.startswith("quiz_unit_page_"):
+        parts = callback_data.split('_')
+        # course_id_from_cb = parts[3] # Already have selected_course_id from context
+        page = int(parts[-1])
+        units = context.user_data.get("available_units_for_course", [])
+        context.user_data["current_unit_page_for_course"] = page
+        keyboard = create_unit_selection_keyboard(units, selected_course_id, page)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر وحدة دراسية من مقرر '{course_name}' (صفحة {page + 1}):", reply_markup=keyboard)
+        return SELECT_UNIT_FOR_COURSE
+
+    # Format: quiz_unit_select_{course_id}_{unit_id}
+    parts = callback_data.split('_')
+    selected_unit_id = parts[-1]
+    # selected_course_id_from_cb = parts[-2] # Already have from context
+
+    context.user_data["selected_scope_id"] = selected_unit_id # scope_id is unit_id here
     
-    context.user_data["selected_scope_id"] = scope_id
-    context.user_data["selected_scope_name"] = scope_name
-    quiz_type_display_name = context.user_data.get("selected_quiz_type_display_name", quiz_type_key)
-    logger.info(f"User {user_id} selected scope {scope_id} ({scope_name}) for quiz type {quiz_type_key}")
+    units_list = context.user_data.get("available_units_for_course", [])
+    selected_unit_obj = next((u for u in units_list if str(u.get('id')) == str(selected_unit_id)), None)
+    unit_name = selected_unit_obj.get('name') if selected_unit_obj else f"وحدة {selected_unit_id}"
+    context.user_data["selected_scope_name"] = unit_name # scope_name is unit_name
 
-    logger.debug(f"[API] Fetching questions for quiz type: {quiz_type_key}, scope: {scope_id}")
-    questions_data = await fetch_from_api(f"questions/by_scope?quiz_type={quiz_type_key}&scope_id={scope_id}", params={'limit': 200})
+    logger.info(f"User {user_id} selected unit {selected_unit_id} ({unit_name}) from course {selected_course_id} ({course_name}).")
+    logger.debug(f"[API] Fetching questions for unit ID: {selected_unit_id}.")
+    questions_data = fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
 
-    if not questions_data:
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عذراً، لا توجد أسئلة متاحة لـ '{scope_name}' حالياً.", reply_markup=create_quiz_scope_keyboard(scopes, quiz_type_key, context.user_data.get("current_scope_page",0)))
-        return SELECT_QUIZ_SCOPE
+    if questions_data == "TIMEOUT":
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"انتهت مهلة الاتصال بخادم الأسئلة أثناء جلب أسئلة الوحدة '{unit_name}'.", reply_markup=create_unit_selection_keyboard(units_list, selected_course_id, context.user_data.get("current_unit_page_for_course",0)))
+        return SELECT_UNIT_FOR_COURSE
+    if not questions_data or not isinstance(questions_data, list) or not questions_data:
+        logger.error(f"[API] Failed to fetch questions for unit {selected_unit_id} or no questions returned. Data: {questions_data}")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عذراً، لا توجد أسئلة متاحة للوحدة '{unit_name}' حالياً أو حدث خطأ.", reply_markup=create_unit_selection_keyboard(units_list, selected_course_id, context.user_data.get("current_unit_page_for_course",0)))
+        return SELECT_UNIT_FOR_COURSE
 
     context.user_data["questions_for_quiz"] = questions_data
     max_questions = len(questions_data)
-    keyboard = create_question_count_keyboard(max_questions, quiz_type_key, scope_id)
-    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار '{quiz_type_display_name} - {scope_name}':", reply_markup=keyboard)
+    quiz_type_key = context.user_data.get("selected_quiz_type_key") # Should be QUIZ_TYPE_UNIT
+    keyboard = create_question_count_keyboard(max_questions, quiz_type_key, selected_unit_id, selected_course_id)
+    display_name_for_count = f"{context.user_data.get('selected_quiz_type_display_name', quiz_type_key)} - {course_name} - {unit_name}"
+    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار '{display_name_for_count}':", reply_markup=keyboard)
     return ENTER_QUESTION_COUNT
 
 async def enter_question_count(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-
     callback_data = query.data
-    quiz_type_key = context.user_data.get("selected_quiz_type_key")
-    scope_id = context.user_data.get("selected_scope_id") # قد يكون None
 
-    if callback_data.startswith("quiz_count_back_"):
-        if scope_id is not None and quiz_type_key not in [QUIZ_TYPE_RANDOM, QUIZ_TYPE_ALL]:
-            scopes = context.user_data.get("available_scopes", [])
-            current_page = context.user_data.get("current_scope_page", 0)
-            keyboard = create_quiz_scope_keyboard(scopes, quiz_type_key, current_page)
-            quiz_type_display_name = context.user_data.get("selected_quiz_type_display_name", quiz_type_key)
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر نطاقاً لاختبار '{quiz_type_display_name}':", reply_markup=keyboard)
-            return SELECT_QUIZ_SCOPE
-        else:
-            keyboard = create_quiz_type_keyboard()
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
-            return SELECT_QUIZ_TYPE
+    quiz_type_key = context.user_data.get("selected_quiz_type_key")
+    scope_id = context.user_data.get("selected_scope_id") # This is unit_id if quiz_type is UNIT
+    course_id_for_unit = context.user_data.get("selected_course_id_for_unit_quiz")
+
+    if callback_data == "quiz_count_back_to_type_selection":
+        keyboard = create_quiz_type_keyboard()
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
+        return SELECT_QUIZ_TYPE
+    elif callback_data.startswith("quiz_count_back_to_unit_selection_"):
+        course_id_from_cb = callback_data.split('_')[-1]
+        units = context.user_data.get("available_units_for_course", [])
+        current_page = context.user_data.get("current_unit_page_for_course", 0)
+        course_name = context.user_data.get("selected_course_name_for_unit_quiz", f"مقرر {course_id_from_cb}")
+        keyboard = create_unit_selection_keyboard(units, course_id_from_cb, current_page)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر وحدة دراسية من مقرر '{course_name}':", reply_markup=keyboard)
+        return SELECT_UNIT_FOR_COURSE
 
     num_questions_str = callback_data.split('_')[-1]
     questions_for_quiz_pool = context.user_data.get("questions_for_quiz", [])
@@ -257,38 +346,51 @@ async def enter_question_count(update: Update, context: CallbackContext) -> int:
             num_questions = int(num_questions_str)
             if not (0 < num_questions <= max_available_questions):
                 logger.warning(f"User {user_id} selected invalid number of questions: {num_questions}. Max: {max_available_questions}")
-                await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عدد أسئلة غير صالح. يرجى اختيار عدد بين 1 و {max_available_questions}.", reply_markup=create_question_count_keyboard(max_available_questions, quiz_type_key, scope_id))
+                keyboard = create_question_count_keyboard(max_available_questions, quiz_type_key, scope_id, course_id_for_unit)
+                await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عدد أسئلة غير صالح. يرجى اختيار عدد بين 1 و {max_available_questions}.", reply_markup=keyboard)
                 return ENTER_QUESTION_COUNT
         except ValueError:
             logger.error(f"Invalid num_questions_str: {num_questions_str}")
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في اختيار عدد الأسئلة. حاول مرة أخرى.", reply_markup=create_question_count_keyboard(max_available_questions, quiz_type_key, scope_id))
+            keyboard = create_question_count_keyboard(max_available_questions, quiz_type_key, scope_id, course_id_for_unit)
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في اختيار عدد الأسئلة. حاول مرة أخرى.", reply_markup=keyboard)
             return ENTER_QUESTION_COUNT
 
-    logger.info(f"User {user_id} selected {num_questions} questions for quiz type {quiz_type_key} (scope: {scope_id if scope_id else 'N/A'}).")
+    logger.info(f"User {user_id} selected {num_questions} questions for quiz type {quiz_type_key} (Course: {course_id_for_unit if course_id_for_unit else 'N/A'}, Unit/Scope: {scope_id if scope_id else 'N/A'}).")
     
-    # اختيار الأسئلة بشكل عشوائي إذا كان العدد المطلوب أقل من المتاح
+    if num_questions == 0 and max_available_questions > 0: # Should not happen if validation above is correct
+        logger.warning("Number of questions is 0 but pool is not empty. Defaulting to 1.")
+        num_questions = 1 # Safety net
+    elif num_questions == 0 and max_available_questions == 0:
+        logger.error("No questions available to start quiz.")
+        # This case should have been caught earlier when fetching questions
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لا توجد أسئلة لبدء الاختبار. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
+        return SELECT_QUIZ_TYPE
+
     if num_questions < max_available_questions:
         selected_questions = random.sample(questions_for_quiz_pool, num_questions)
     else:
-        selected_questions = questions_for_quiz_pool # خذ كل الأسئلة المتاحة
+        selected_questions = questions_for_quiz_pool
     
-    # إنشاء كائن QuizLogic
+    quiz_display_name = context.user_data.get("selected_quiz_type_display_name", quiz_type_key)
+    if quiz_type_key == QUIZ_TYPE_UNIT:
+        scope_name = context.user_data.get("selected_scope_name", f"وحدة {scope_id}")
+        course_name = context.user_data.get("selected_course_name_for_unit_quiz", f"مقرر {course_id_for_unit}")
+        quiz_display_name = f"{quiz_display_name} - {course_name} - {scope_name}"
+
     quiz_logic_instance = QuizLogic(
         context=context,
-        bot_instance=context.bot, # تمرير كائن البوت
+        bot_instance=context.bot,
         user_id=user_id,
-        quiz_type=context.user_data.get("selected_quiz_type_display_name", quiz_type_key),
+        quiz_type=quiz_display_name,
         questions_data=selected_questions,
         total_questions=num_questions,
-        question_time_limit=context.bot_data.get("default_question_time_limit", DEFAULT_QUESTION_TIME_LIMIT) # استخدام قيمة من bot_data أو القيمة الافتراضية
+        question_time_limit=context.bot_data.get("default_question_time_limit", DEFAULT_QUESTION_TIME_LIMIT)
     )
     context.user_data['current_quiz_instance'] = quiz_logic_instance
 
     logger.info(f"Quiz instance created for user {user_id}. Starting quiz with {num_questions} questions.")
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"جاري بدء الاختبار بـ {num_questions} أسئلة...", reply_markup=None)
-    
-    # بدء الاختبار
-    return await quiz_logic_instance.start_quiz(update) # استدعاء دالة بدء الاختبار من الكائن
+    return await quiz_logic_instance.start_quiz(update)
 
 async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -298,18 +400,17 @@ async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
     if not quiz_logic_instance:
         logger.error(f"No quiz instance found for user {user_id} on callback: {query.data}")
         await query.answer("عذراً، لا يوجد اختبار نشط حالياً أو انتهت صلاحية الجلسة.", show_alert=True)
-        # يمكنك محاولة إعادة المستخدم إلى قائمة الاختبارات أو القائمة الرئيسية
         keyboard = create_quiz_type_keyboard()
-        await safe_send_message(context.bot, chat_id=query.message.chat_id, text="يبدو أنه لا يوجد اختبار نشط. يرجى اختيار نوع اختبار جديد:", reply_markup=keyboard)
-        return SELECT_QUIZ_TYPE # أو ConversationHandler.END إذا كنت تريد إنهاء المحادثة تماماً
+        # Attempt to edit the message if possible, otherwise send a new one
+        try:
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="يبدو أنه لا يوجد اختبار نشط. يرجى اختيار نوع اختبار جديد:", reply_markup=keyboard)
+        except Exception as e:
+            logger.warning(f"Failed to edit message for no active quiz, sending new: {e}")
+            await safe_send_message(context.bot, chat_id=query.message.chat_id, text="يبدو أنه لا يوجد اختبار نشط. يرجى اختيار نوع اختبار جديد:", reply_markup=keyboard)
+        return SELECT_QUIZ_TYPE
 
     logger.debug(f"Passing answer callback {query.data} to QuizLogic instance for user {user_id}")
     return await quiz_logic_instance.handle_answer(update, context)
-
-async def quiz_timeout_warning(update: Update, context: CallbackContext):
-    # هذه الدالة يمكن استخدامها لإرسال تحذير قبل انتهاء وقت السؤال
-    # لم يتم استدعاؤها في الكود الحالي ولكن يمكن إضافتها إذا أردت
-    await update.message.reply_text("الوقت المتبقي للسؤال قليل!")
 
 async def end_quiz_command(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
@@ -318,56 +419,63 @@ async def end_quiz_command(update: Update, context: CallbackContext) -> int:
 
     if quiz_logic_instance:
         logger.info(f"User {user_id} manually ended quiz {quiz_logic_instance.quiz_id}.")
-        # إزالة مؤقت السؤال إذا كان موجوداً
+        # Attempt to remove timer job
         timer_job_name = f"qtimer_{user_id}_{chat_id}_{quiz_logic_instance.quiz_id}_{quiz_logic_instance.current_question_index}"
-        remove_job_if_exists(timer_job_name, context)
-        
-        await quiz_logic_instance.show_results(chat_id, user_id) # عرض النتائج قبل الإنهاء
-        context.user_data.pop('current_quiz_instance', None) # إزالة كائن الاختبار
-        await safe_send_message(context.bot, chat_id, "تم إنهاء الاختبار بناءً على طلبك.", reply_markup=create_main_menu_keyboard())
+        # Ensure remove_job_if_exists is available and correctly imported/defined in helpers.py
+        # This might need to be context.job_queue.scheduler.remove_job(timer_job_name) or similar depending on PTB version
+        # For now, assuming a helper function `remove_job_if_exists` is defined and works with context.job_queue
+        from utils.helpers import remove_job_if_exists # Ensure this is correctly defined and available
+        remove_job_if_exists(timer_job_name, context) 
+
+        await quiz_logic_instance.show_results(chat_id, user_id)
+        context.user_data.pop('current_quiz_instance', None)
+        await safe_send_message(context.bot, chat_id, "تم إنهاء الاختبار بناءً على طلبك.", reply_markup=create_main_menu_keyboard(user_id))
     else:
-        await safe_send_message(context.bot, chat_id, "لا يوجد اختبار نشط لإنهاءه.", reply_markup=create_main_menu_keyboard())
+        await safe_send_message(context.bot, chat_id, "لا يوجد اختبار نشط لإنهاءه.", reply_markup=create_main_menu_keyboard(user_id))
     
     return ConversationHandler.END
 
-# --- بناء معالج المحادثة --- 
-
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern='^start_quiz$')],
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern=r'^start_quiz$')],
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern='^quiz_type_'),
-            CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # للعودة للقائمة الرئيسية
+            CallbackQueryHandler(select_quiz_type, pattern=r'^quiz_type_(?!back_to_type_selection).+$'), # Matches quiz_type_KEY
+            CallbackQueryHandler(main_menu_callback, pattern=r'^main_menu$') 
         ],
-        SELECT_QUIZ_SCOPE: [
-            CallbackQueryHandler(handle_scope_pagination, pattern='^quiz_scope_page_'),
-            CallbackQueryHandler(select_quiz_scope_all, pattern='^quiz_scope_all_'),
-            CallbackQueryHandler(select_quiz_scope_specific, pattern='^quiz_scope_specific_'),
-            CallbackQueryHandler(select_quiz_type, pattern='^quiz_type_back$') # للعودة لاختيار النوع
+        SELECT_COURSE_FOR_UNIT_QUIZ: [
+            CallbackQueryHandler(handle_course_selection_for_unit_quiz, pattern=r'^quiz_course_select_.+$'),
+            CallbackQueryHandler(handle_course_selection_for_unit_quiz, pattern=r'^quiz_course_page_.+$'),
+            CallbackQueryHandler(select_quiz_type, pattern=r'^quiz_type_back_to_type_selection$') # Back to type selection
         ],
+        SELECT_UNIT_FOR_COURSE: [
+            CallbackQueryHandler(handle_unit_selection_for_course, pattern=r'^quiz_unit_select_.+_.+$'),
+            CallbackQueryHandler(handle_unit_selection_for_course, pattern=r'^quiz_unit_page_.+_.+$'),
+            CallbackQueryHandler(handle_course_selection_for_unit_quiz, pattern=r'^quiz_unit_back_to_course_selection$') # Back to course selection
+        ],
+        # SELECT_QUIZ_SCOPE: [ # This state might be deprecated or used for other quiz types
+            # CallbackQueryHandler(handle_scope_pagination, pattern=r'^quiz_scope_page_.+$'),
+            # CallbackQueryHandler(select_quiz_scope_specific, pattern=r'^quiz_scope_specific_.+$'),
+            # CallbackQueryHandler(select_quiz_type, pattern=r'^quiz_type_back$') 
+        # ],
         ENTER_QUESTION_COUNT: [
-            CallbackQueryHandler(enter_question_count, pattern='^num_questions_'),
-            CallbackQueryHandler(enter_question_count, pattern='^quiz_count_back_') # للعودة لاختيار النطاق/النوع
+            CallbackQueryHandler(enter_question_count, pattern=r'^num_questions_.+$'),
+            CallbackQueryHandler(enter_question_count, pattern=r'^quiz_count_back_to_.+$') 
         ],
         TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer, pattern='^ans_')
-            # يمكنك إضافة معالج لتخطي السؤال هنا إذا أردت
-            # CallbackQueryHandler(handle_skip_question, pattern='^skip_')
+            CallbackQueryHandler(handle_quiz_answer, pattern=r'^ans_.+$')
         ],
-        # SHOWING_RESULTS: [] # لا توجد حالة منفصلة لعرض النتائج، تتم ضمنياً
     },
     fallbacks=[
-        CommandHandler('cancelquiz', end_quiz_command), # أمر لإلغاء الاختبار في أي وقت
-        CallbackQueryHandler(main_menu_callback, pattern='^main_menu$') # للعودة للقائمة الرئيسية كـ fallback
+        CommandHandler('cancelquiz', end_quiz_command),
+        CallbackQueryHandler(main_menu_callback, pattern=r'^main_menu$') 
     ],
     map_to_parent={
-        # إذا انتهت المحادثة (END)، تعود إلى الحالة التي بدأت منها (القائمة الرئيسية)
-        END: MAIN_MENU 
+        END: MAIN_MENU
     },
     per_message=False,
-    name="quiz_conversation",
-    persistent=True # أو False إذا كنت لا تريد حفظ الحالة بين إعادة تشغيل البوت
+    name="quiz_conversation_v4",
+    persistent=True
 )
 
-logger.info("Quiz conversation handler created.")
+logger.info("Quiz conversation handler (v4 - Course/Unit Flow) created.")
 
