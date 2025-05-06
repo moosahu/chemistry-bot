@@ -10,7 +10,7 @@ from telegram.ext import ConversationHandler
 # Load environment variables (consider using python-dotenv for local development)
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") # Use TELEGRAM_BOT_TOKEN
 DATABASE_URL = os.environ.get("DATABASE_URL")
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://your-api-base-url.com/api") # Provide a default or ensure it's set
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://your-api-base-url.com/api")  # Provide a default or ensure it's set
 
 # Validate essential variables
 if not TELEGRAM_BOT_TOKEN: # Check the correct variable name
@@ -20,7 +20,7 @@ if not DATABASE_URL:
     logging.warning("Missing environment variable: DATABASE_URL. Database features will be disabled.")
 if not API_BASE_URL or API_BASE_URL == "http://your-api-base-url.com/api":
     # Allow running without API for testing some features, but log a warning
-    logging.warning(f"Missing or default environment variable: API_BASE_URL (\'{API_BASE_URL}\'). API features might be disabled or use a dummy URL.")
+    logging.warning(f"Missing or default environment variable: API_BASE_URL ('{API_BASE_URL}') . API features might be disabled or use a dummy URL.") # Corrected f-string
 
 # --- Logging Configuration --- 
 
@@ -29,14 +29,14 @@ logging.basicConfig(
     level=logging.INFO # Set default level to INFO
 )
 # Set higher logging level for httpx to avoid verbose DEBUG messages
-logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx") .setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG) # Set bot's own logger to DEBUG for more details
 
 logger.info("Logging configured.")
 logger.debug(f"API_BASE_URL set to: {API_BASE_URL}")
-logger.debug(f"DATABASE_URL is {\'set\' if DATABASE_URL else \'NOT set\'}.")
+logger.debug(f"DATABASE_URL is {'set' if DATABASE_URL else 'NOT set'}.") # Corrected f-string
 
 # --- Conversation States --- 
 
