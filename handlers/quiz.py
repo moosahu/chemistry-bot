@@ -24,7 +24,7 @@ from utils.api_client import fetch_from_api
 from handlers.common import create_main_menu_keyboard, main_menu_callback
 from handlers.quiz_logic import (
     start_quiz_logic, handle_answer as handle_quiz_answer, 
-    skip_question_button_handler
+    handle_skip_question
 )
 
 ITEMS_PER_PAGE = 6
