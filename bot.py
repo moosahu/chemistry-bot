@@ -35,7 +35,7 @@ try:
     from database.schema import setup_database_schema, apply_schema_updates
     # Import handlers
     from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
-    # from handlers.quiz import quiz_conv_handler
+    from handlers.quiz import quiz_conv_handler
     # from handlers.info import info_conv_handler
     # from handlers.stats import stats_conv_handler
 
@@ -126,7 +126,7 @@ def main() -> None:
     # logger.debug("[DEBUG] start_handler added to application.")
 
     # 2. Quiz conversation handler
-    # application.add_handler(quiz_conv_handler)
+        application.add_handler(quiz_conv_handler)
     # logger.debug(f"[DEBUG] quiz_conv_handler added to application: {quiz_conv_handler}")
 
     # 3. Info conversation handler
