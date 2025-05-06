@@ -115,57 +115,99 @@ async def start_quiz_logic(update: Update, context: CallbackContext) -> int:
 
     quiz_questions = []
 
-    # --- Get Questions (API or Local Random) --- 
-    if questions_endpoint == "random_local":
-        # Use pre-fetched questions stored in user_data
-        all_random_questions = context.user_data.get("all_random_questions")
-        if not all_random_questions or not isinstance(all_random_questions, list):
-            logger.error(f"[QUIZ LOGIC] Random quiz requested but 'all_random_questions' missing or invalid in user_data for user {user_id}.")
-            await safe_send_message(context.bot, chat_id, text="حدث خطأ أثناء تحميل الأسئلة العشوائية المجمعة. يرجى المحاولة مرة أخرى.")
+    # --- Get Questions (API, Fetched Random, or Local Random [DEPRECATED]) --- 
+    if questions_endpoint == "random_api":
+        # Use questions fetched and stored in quiz_selection by quiz.py
+        all_fetched_questions = quiz_selection.get("fetched_questions")
+        if not all_fetched_questions or not isinstance(all_fetched_questions, list):
+            logger.error(f"[QUIZ LOGIC] Random API quiz requested but 'fetched_questions' missing or invalid in quiz_selection for user {user_id}.")
+            await safe_send_message(context.bot, chat_id, text="حدث خطأ أثناء تحميل الأسئلة العشوائية المجلوبة. يرجى المحاولة مرة أخرى.")
             kb = create_main_menu_keyboard(user_id)
             await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
             return MAIN_MENU
         
-        # Transform pre-fetched random questions to ensure consistent structure (important for validation)
+        # Transform fetched random questions 
+        transformed_questions = []
+        for q_data in all_fetched_questions:
+            transformed_q = transform_api_question(q_data) 
+            if transformed_q:
+                transformed_questions.append(transformed_q)
+            else:
+                 logger.warning(f"[QUIZ LOGIC] Skipping invalid fetched random question data during transformation: {q_data}")
+        all_fetched_questions = transformed_questions
+
+        # Validate transformed questions
+        valid_questions = []
+        for q_data in all_fetched_questions:
+             has_valid_options_list = isinstance(q_data.get("options"), list) and len(q_data["options"]) > 0 and any(opt.get("option_text") or opt.get("image_url") for opt in q_data["options"]) and sum(1 for opt in q_data["options"] if opt.get("is_correct")) == 1
+             has_valid_old_format = q_data.get("correct_answer") is not None and any(q_data.get(f"option{i+1}") or q_data.get(f"option{i+1}_image") for i in range(NUM_OPTIONS))
+
+             if has_valid_options_list or has_valid_old_format:
+                 valid_questions.append(q_data)
+             else:
+                  logger.warning(f"[QUIZ LOGIC] Skipping invalid transformed fetched random question (no valid options found): {q_data}")
+        all_fetched_questions = valid_questions
+
+        if len(all_fetched_questions) < num_questions:
+            logger.warning(f"[QUIZ LOGIC] Requested {num_questions} random questions, but only {len(all_fetched_questions)} valid available after fetch/transform. Using all available.")
+            num_questions = len(all_fetched_questions)
+            quiz_questions = all_fetched_questions
+        elif num_questions > 0:
+            logger.info(f"[QUIZ LOGIC] Sampling {num_questions} questions from {len(all_fetched_questions)} valid fetched random questions.")
+            quiz_questions = random.sample(all_fetched_questions, num_questions)
+        else: 
+             quiz_questions = []
+            
+        # Clear the fetched questions from selection data after sampling
+        quiz_selection.pop("fetched_questions", None)
+        logger.debug("[QUIZ LOGIC] Cleared 'fetched_questions' from quiz_selection.")
+
+    elif questions_endpoint == "random_local": # Fallback/Deprecated path
+        # Use pre-fetched questions stored in user_data (Old method, might be removed later)
+        all_random_questions = context.user_data.get("all_random_questions")
+        if not all_random_questions or not isinstance(all_random_questions, list):
+            logger.error(f"[QUIZ LOGIC] Random local quiz requested but 'all_random_questions' missing or invalid in user_data for user {user_id}.")
+            await safe_send_message(context.bot, chat_id, text="حدث خطأ أثناء تحميل الأسئلة العشوائية المجمعة (محلي). يرجى المحاولة مرة أخرى.")
+            kb = create_main_menu_keyboard(user_id)
+            await safe_send_message(context.bot, chat_id, text="القائمة الرئيسية:", reply_markup=kb)
+            return MAIN_MENU
+        
+        # Transform pre-fetched random questions
         transformed_random_questions = []
         for q_data in all_random_questions:
-            # Use transform_api_question which should handle both structures if updated correctly
             transformed_q = transform_api_question(q_data) 
             if transformed_q:
                 transformed_random_questions.append(transformed_q)
             else:
-                 logger.warning(f"[QUIZ LOGIC] Skipping invalid random question data during transformation: {q_data}")
-        all_random_questions = transformed_random_questions # Use transformed list
+                 logger.warning(f"[QUIZ LOGIC] Skipping invalid local random question data during transformation: {q_data}")
+        all_random_questions = transformed_random_questions
 
-        # Validate transformed questions (using the same logic as API questions)
+        # Validate transformed questions
         valid_random_questions = []
         for q_data in all_random_questions:
-             # Check if it has valid options (either list or old format handled by transform)
              has_valid_options_list = isinstance(q_data.get("options"), list) and len(q_data["options"]) > 0 and any(opt.get("option_text") or opt.get("image_url") for opt in q_data["options"]) and sum(1 for opt in q_data["options"] if opt.get("is_correct")) == 1
-             # Check if old format exists (assuming transform_api_question adds 'correct_answer' index for old format)
              has_valid_old_format = q_data.get("correct_answer") is not None and any(q_data.get(f"option{i+1}") or q_data.get(f"option{i+1}_image") for i in range(NUM_OPTIONS))
 
              if has_valid_options_list or has_valid_old_format:
                  valid_random_questions.append(q_data)
              else:
-                  logger.warning(f"[QUIZ LOGIC] Skipping invalid transformed random question (no valid options found): {q_data}")
+                  logger.warning(f"[QUIZ LOGIC] Skipping invalid transformed local random question (no valid options found): {q_data}")
         all_random_questions = valid_random_questions
 
         if len(all_random_questions) < num_questions:
-            logger.warning(f"[QUIZ LOGIC] Requested {num_questions} random questions, but only {len(all_random_questions)} valid available. Using all available.")
+            logger.warning(f"[QUIZ LOGIC] Requested {num_questions} local random questions, but only {len(all_random_questions)} valid available. Using all available.")
             num_questions = len(all_random_questions)
-            quiz_questions = all_random_questions # Use all if requested more than available
+            quiz_questions = all_random_questions
         elif num_questions > 0:
-            logger.info(f"[QUIZ LOGIC] Sampling {num_questions} questions from {len(all_random_questions)} valid pre-fetched random questions.")
+            logger.info(f"[QUIZ LOGIC] Sampling {num_questions} questions from {len(all_random_questions)} valid pre-fetched local random questions.")
             quiz_questions = random.sample(all_random_questions, num_questions)
-        else: # num_questions became 0
+        else:
              quiz_questions = []
             
-        # Clear the cached questions after sampling
         context.user_data.pop("all_random_questions", None)
         logger.debug("[QUIZ LOGIC] Cleared 'all_random_questions' from user_data.")
 
-    else: # Fetch from specific API endpoint
+    else: # Fetch from specific API endpoint (Lesson, Unit, Course)
         params = {"limit": num_questions}
         logger.info(f"[API] Fetching {num_questions} questions from {questions_endpoint} with params {params}")
         api_questions_response = fetch_from_api(questions_endpoint, params=params)
@@ -187,9 +229,8 @@ async def start_quiz_logic(update: Update, context: CallbackContext) -> int:
         # Transform and Validate Questions from API
         valid_api_questions = []
         for q_data in api_questions_response:
-            transformed_q = transform_api_question(q_data) # Should handle both structures
+            transformed_q = transform_api_question(q_data)
             
-            # Validate based on expected output of transform_api_question
             has_valid_options_list = isinstance(transformed_q.get("options"), list) and len(transformed_q["options"]) > 0 and any(opt.get("option_text") or opt.get("image_url") for opt in transformed_q["options"]) and sum(1 for opt in transformed_q["options"] if opt.get("is_correct")) == 1
             has_valid_old_format = transformed_q.get("correct_answer") is not None and any(transformed_q.get(f"option{i+1}") or transformed_q.get(f"option{i+1}_image") for i in range(NUM_OPTIONS))
 
@@ -204,10 +245,10 @@ async def start_quiz_logic(update: Update, context: CallbackContext) -> int:
             quiz_questions = random.sample(valid_api_questions, num_questions)
         elif len(valid_api_questions) < num_questions:
             logger.warning(f"[QUIZ LOGIC] Requested {num_questions} questions from {questions_endpoint}, but only got {len(valid_api_questions)} valid ones.")
-            num_questions = len(valid_api_questions) # Adjust count to actual number
+            num_questions = len(valid_api_questions)
             quiz_questions = valid_api_questions
         else:
-             quiz_questions = valid_api_questions # Use all fetched and valid questions
+             quiz_questions = valid_api_questions
 
     # Final check if we have any questions to proceed with
     if num_questions == 0 or not quiz_questions:

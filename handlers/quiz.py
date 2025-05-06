@@ -120,8 +120,7 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
     error_message = ""
 
     if quiz_type == "random":
-        await safe_edit_message_text(query, text="⏳ جارٍ حساب عدد الأسئلة العشوائية المتاحة...", reply_markup=None)
-        
+        # Always fetch fresh random questions from API for safety
         random_questions_endpoint = "/api/v1/questions/random"
         all_questions = fetch_from_api(random_questions_endpoint)
         
@@ -131,8 +130,9 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
             max_questions = 0
         else:
             max_questions = len(all_questions)
-            context.user_data["all_random_questions"] = all_questions 
-            logger.info(f"Fetched {max_questions} total random questions.")
+            # Store fetched questions directly for this quiz instance, avoid user_data cache
+            context.user_data["quiz_selection"]["fetched_questions"] = all_questions 
+            logger.info(f"Fetched {max_questions} total random questions for this instance.")
 
         if max_questions == 0 and not error_message:
              error_message = "⚠️ لم يتم العثور على أسئلة متاحة للاختبار العشوائي."
@@ -142,7 +142,8 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
             return SELECT_QUIZ_TYPE
             
         context.user_data["quiz_selection"]["max_questions"] = max_questions
-        context.user_data["quiz_selection"]["endpoint"] = "random_local" 
+        # Mark source as API fetched for clarity, logic in start_quiz_logic needs adjustment
+        context.user_data["quiz_selection"]["endpoint"] = "random_api" 
         logger.info(f"Random quiz selected. Max questions: {max_questions}")
         text = f"🎲 اختبار عشوائي: أدخل عدد الأسئلة التي تريدها (1-{max_questions}):"
         await safe_edit_message_text(query, text=text, reply_markup=None)
