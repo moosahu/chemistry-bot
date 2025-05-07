@@ -57,8 +57,10 @@ try:
              logger.critical(f"CRITICAL: Failed to import quiz_conv_handler: {import_exc}", exc_info=True)
         quiz_conv_handler = None # Keep as None
 
-    # from handlers.info import info_conv_handler
-    # from handlers.stats import stats_conv_handler
+    # --- MODIFIED: Uncommented info and stats handlers imports ---
+    from handlers.info import info_conv_handler
+    from handlers.stats import stats_conv_handler
+    # -----------------------------------------------------------
 
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
@@ -117,22 +119,21 @@ def main() -> None:
         logger.info("JobQueue created.")
     except Exception as jq_exc:
         logger.error(f"Error creating JobQueue: {jq_exc}")
-        job_queue = None # Continue without JobQueue if creation fails
+        job_queue = None 
 
     # --- Application Setup ---
     try:
         app_builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
         if persistence:
             app_builder = app_builder.persistence(persistence)
-        if job_queue: # <-- Check if job_queue was created successfully
-            app_builder = app_builder.job_queue(job_queue) # <-- Pass JobQueue to builder
+        if job_queue: 
+            app_builder = app_builder.job_queue(job_queue) 
 
         application = app_builder.build()
         logger.info("Telegram Application built.")
 
-        # --- Attach JobQueue to Application ---
-        if job_queue: # <-- Check again before setting application
-            job_queue.set_application(application) # <-- Link JobQueue to the application
+        if job_queue: 
+            job_queue.set_application(application) 
             logger.info("JobQueue attached to the application.")
         else:
             logger.warning("JobQueue was not created or attached. Timed features will not work.")
@@ -146,7 +147,6 @@ def main() -> None:
     print("DEBUG: Adding start_handler...")
     application.add_handler(start_handler)
     print("DEBUG: start_handler added.")
-    # logger.debug("[DEBUG] start_handler added to application.")
 
     # 2. Quiz conversation handler (only if imported successfully)
     if quiz_conv_handler:
@@ -155,23 +155,20 @@ def main() -> None:
         print("DEBUG: quiz_conv_handler added.")
     else:
         print("WARNING: quiz_conv_handler was not imported successfully or failed during import, skipping addition.")
-    # logger.debug(f"[DEBUG] quiz_conv_handler added to application: {quiz_conv_handler}")
 
-    # 3. Info conversation handler
-    # application.add_handler(info_conv_handler)
-    # logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
+    # --- MODIFIED: Uncommented info and stats handlers registration ---
+    application.add_handler(info_conv_handler)
+    logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
 
-    # 4. Stats conversation handler
-    # application.add_handler(stats_conv_handler)
-    # logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
+    application.add_handler(stats_conv_handler)
+    logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
+    # ---------------------------------------------------------------
 
     # 5. Error handler (add last)
     print("DEBUG: Adding error_handler...")
     application.add_error_handler(error_handler)
     print("DEBUG: error_handler added.")
-    # logger.debug("[DEBUG] error_handler added to application.")
 
-    # --- Start Bot ---
     logger.info("Bot application configured with direct handlers. Starting polling...")
     application.run_polling()
     logger.info("Bot polling stopped.")
@@ -179,3 +176,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
