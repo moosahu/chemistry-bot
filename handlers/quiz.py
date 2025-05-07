@@ -386,29 +386,29 @@ async def process_answer(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     logger.info(f"[quiz.py] process_answer CALLED for user {user_id} with callback_data: {query.data}") # Enhanced log
     await query.answer()
-        # query.data is "ans_QUIZID_QIDX_OPTIONID"
-        # Example: "ans_6448526509_all_scope_quiz_all_1746655909_0_99"
-        # We need to extract QUIZID. QUIZID can contain underscores.
-        # QIDX and OPTIONID are the last two parts separated by underscores.
-        
-        if not query.data.startswith("ans_"):
-            logger.error(f"Invalid callback_data prefix for answer: {query.data}")
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح PFX).", reply_markup=create_main_menu_keyboard())
-            return END
+    # query.data is "ans_QUIZID_QIDX_OPTIONID"
+    # Example: "ans_6448526509_all_scope_quiz_all_1746655909_0_99"
+    # We need to extract QUIZID. QUIZID can contain underscores.
+    # QIDX and OPTIONID are the last two parts separated by underscores.
+    
+    if not query.data.startswith("ans_"):
+        logger.error(f"Invalid callback_data prefix for answer: {query.data}")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح PFX).", reply_markup=create_main_menu_keyboard())
+        return END
 
-        # Remove "ans_" prefix
-        payload = query.data[4:]
+    # Remove "ans_" prefix
+    payload = query.data[4:]
+    
+    # Split from the right to separate q_idx and option_id from quiz_id
+    parts = payload.rsplit("_", 2)
+    if len(parts) < 3: # Expected [quiz_id_str, q_idx_str, option_id_str]
+        logger.error(f"Invalid callback_data format for answer after prefix: {payload}")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح FMT).", reply_markup=create_main_menu_keyboard())
+        return END
         
-        # Split from the right to separate q_idx and option_id from quiz_id
-        parts = payload.rsplit("_", 2)
-        if len(parts) < 3: # Expected [quiz_id_str, q_idx_str, option_id_str]
-            logger.error(f"Invalid callback_data format for answer after prefix: {payload}")
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح FMT).", reply_markup=create_main_menu_keyboard())
-            return END
-            
-        quiz_id = parts[0]
-        # The variable 'answer_data' is no longer explicitly created or needed here
-        # as QuizLogic.handle_answer will use query.data from the update object.
+    quiz_id = parts[0]
+    # The variable 'answer_data' is no longer explicitly created or needed here
+    # as QuizLogic.handle_answer will use query.data from the update object.
     quiz_instance = context.user_data.get("quiz_sessions", {}).get(quiz_id)
     if not quiz_instance or not isinstance(quiz_instance, QuizLogic) or quiz_instance.user_id != user_id:
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عفواً، هذا الاختبار لم يعد صالحاً أو لا يخصك. يرجى بدء اختبار جديد.", reply_markup=create_main_menu_keyboard())
