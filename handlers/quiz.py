@@ -475,9 +475,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
         questions_data=selected_questions_final, 
         total_questions=num_questions, 
         question_time_limit=DEFAULT_QUESTION_TIME_LIMIT, # Assuming this is defined in config
-        # Removed quiz_name, scope_identifier as QuizLogic might not need them or gets them differently
-        # Ensure QuizLogic's __init__ matches these parameters
-        context_for_job_queue=context # Pass the whole context for job_queue access
+        context=context # MODIFIED: Pass the whole context directly
     )
 
     context.user_data["current_quiz_logic"] = quiz_logic
