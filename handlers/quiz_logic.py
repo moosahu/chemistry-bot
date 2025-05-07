@@ -118,12 +118,14 @@ class QuizLogic:
                     option_image_counter += 1
                     await asyncio.sleep(0.2) # Small delay
                 except Exception as e_img_opt:
-                    logger.error(f"Failed to send image for option {i} (URL: {option_text_original}): {e_img_opt}")
+                    logger.error(f"Failed to send image for option {i} (URL: {option_text_original}): {e_img_opt}", exc_info=True) # DEBUG ENHANCEMENT
                     current_option_proc['is_image_option'] = False # Mark as not sent
             processed_options.append(current_option_proc)
+        
+        # IMPORTANT ADDITION: Update current_question_data with processed options so handle_answer and timeout can use them
+        current_question_data['options'] = processed_options
         # END OF ADDED SECTION FOR IMAGE OPTIONS PRE-SENDING
         
-        # MODIFIED: Use processed_options for keyboard creation
         options_keyboard = self.create_options_keyboard(processed_options)
         
         header = f"<b>السؤال {self.current_question_index + 1} من {self.total_questions}:</b>\n"
@@ -150,20 +152,23 @@ class QuizLogic:
                 )
                 self.last_question_is_image = True # Set flag if image sent successfully
             except telegram.error.BadRequest as e:
-                logger.error(f"Failed to send photo (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}. URL: {image_url}")
+                logger.error(f"Failed to send photo (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}. URL: {image_url}", exc_info=True) # DEBUG ENHANCEMENT
                 if "BUTTON_TEXT_EMPTY" in str(e).upper() or "TEXT IS EMPTY" in str(e).upper():
                     logger.error(f"Error sending photo for q_id {current_question_data.get('question_id', 'UNKNOWN')} was due to empty button text. This should have been caught by create_options_keyboard.")
                 
                 if question_text_from_data: # Fallback to text if photo fails
                     logger.info(f"Photo send failed for q_id {current_question_data.get('question_id', 'UNKNOWN')}, attempting to send as text.")
                     full_question_text = header + str(question_text_from_data)
-                    sent_message = await safe_send_message(
-                        self.bot,
-                        chat_id=chat_id,
-                        text=full_question_text,
-                        reply_markup=options_keyboard,
-                        parse_mode="HTML"
-                    )
+                    try: # DEBUG ENHANCEMENT
+                        sent_message = await safe_send_message(
+                            self.bot,
+                            chat_id=chat_id,
+                            text=full_question_text,
+                            reply_markup=options_keyboard,
+                            parse_mode="HTML"
+                        )
+                    except Exception as e_fallback_text: # DEBUG ENHANCEMENT
+                        logger.error(f"Fallback to text also failed for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e_fallback_text}", exc_info=True) # DEBUG ENHANCEMENT
                 else:
                     logger.error(f"Photo send failed for q_id {current_question_data.get('question_id', 'UNKNOWN')} and no fallback text available.")
             except Exception as e:
@@ -171,8 +176,11 @@ class QuizLogic:
                 # ADDED: Fallback from original if general error and text exists (was missing in one version)
                 if question_text_from_data: 
                     logger.info(f"Photo send failed (general error), sending as text for q_id {current_question_data.get('question_id', 'UNKNOWN')}.")
-                    full_question_text = header + str(question_text_from_data)
-                    sent_message = await safe_send_message(self.bot, chat_id=chat_id, text=full_question_text, reply_markup=options_keyboard, parse_mode="HTML")
+                    try: # DEBUG ENHANCEMENT
+                        full_question_text = header + str(question_text_from_data)
+                        sent_message = await safe_send_message(self.bot, chat_id=chat_id, text=full_question_text, reply_markup=options_keyboard, parse_mode="HTML")
+                    except Exception as e_fallback_general_text: # DEBUG ENHANCEMENT
+                         logger.error(f"Fallback to text (after general photo error) also failed for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e_fallback_general_text}", exc_info=True) # DEBUG ENHANCEMENT
 
         else: # Text question
             question_text_main = str(question_text_from_data if question_text_from_data is not None else "")
@@ -190,7 +198,7 @@ class QuizLogic:
                     parse_mode="HTML"
                 )
             except telegram.error.BadRequest as e:
-                logger.error(f"Failed to send text question (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}.")
+                logger.error(f"Failed to send text question (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}.", exc_info=True) # DEBUG ENHANCEMENT
                 if "BUTTON_TEXT_EMPTY" in str(e).upper() or "TEXT IS EMPTY" in str(e).upper():
                     logger.error(f"Error sending text question for q_id {current_question_data.get('question_id', 'UNKNOWN')} was due to empty button text. This should have been caught by create_options_keyboard.")
             except Exception as e:
@@ -226,11 +234,12 @@ class QuizLogic:
             else:
                 logger.error(f"JobQueue not found in context for quiz {self.quiz_id}, user {user_id}. Timer not started.")
         else:
-            logger.error(f"Failed to send question {self.current_question_index} (text or image) for quiz {self.quiz_id} to user {user_id}. No message object returned.")
+            # DEBUG ENHANCEMENT: More detailed critical failure message and logging
+            logger.error(f"CRITICAL FAILURE IN SEND_QUESTION: 'sent_message' is None for q_idx {self.current_question_index}, quiz {self.quiz_id}, user {user_id}. This means all attempts to send the question (image or text) failed. Please review preceding log entries for specific exceptions (e.g., from send_photo, safe_send_message, or option image processing). Data for current question: {current_question_data}", exc_info=True)
             try:
-                await safe_send_message(self.bot, chat_id, "عذراً، حدث خطأ أثناء إرسال السؤال الحالي. سيتم إنهاء الاختبار. يرجى المحاولة لاحقاً.")
+                await safe_send_message(self.bot, chat_id, "عذراً، حدث خطأ فادح أثناء محاولة إرسال السؤال. تم تسجيل تفاصيل الخطأ. سيتم إنهاء الاختبار. يرجى المحاولة لاحقاً.")
             except Exception as e_msg_err:
-                logger.error(f"Failed to send error message to user {user_id} after question send failure: {e_msg_err}")
+                logger.error(f"Failed to send the CRITICAL FAILURE message to user {user_id}: {e_msg_err}")
             # Clear quiz state from user_data to allow starting a new quiz
             user_data = self.context.user_data
             if user_data:
@@ -238,7 +247,7 @@ class QuizLogic:
                 user_data.pop('quiz_type', None)
                 user_data.pop('quiz_scope', None)
                 user_data.pop('question_count', None)
-                logger.info(f"Cleared quiz-related user_data for user {user_id} after question send failure.")
+                logger.info(f"Cleared quiz-related user_data for user {user_id} after CRITICAL send_question failure.")
             return END # Use END from config
 
     async def handle_answer(self, update: Update, context: CallbackContext):
@@ -261,7 +270,7 @@ class QuizLogic:
             _, question_idx_str, option_id_str = query.data.split("_")
             question_idx = int(question_idx_str)
         except ValueError:
-            logger.error(f"Error parsing callback_data: {query.data} for quiz {self.quiz_id}")
+            logger.error(f"Error parsing callback_data: {query.data} for quiz {self.quiz_id}", exc_info=True) # DEBUG ENHANCEMENT
             await safe_send_message(self.bot, chat_id, "حدث خطأ في معالجة إجابتك. يرجى المحاولة مرة أخرى.")
             return
 
@@ -286,7 +295,7 @@ class QuizLogic:
         # Assuming current_question_data.get("options") now contains the processed options with 'is_image_option' and 'image_option_display_label'
         
         options_list_for_answer_check = current_question_data.get("options", []) # This should be the processed list if send_question modified it in place, or we need to access processed_options if it was stored in self.
-        # To ensure this works, let's assume `send_question` updates `current_question_data['options']` to be `processed_options` or we fetch `processed_options` if stored in `self`.
+        # To ensure this works, let's assume `send_question` updates `self.questions_data[self.current_question_index]["options"]` to be `processed_options` or we fetch `processed_options` if stored in `self`.
         # For this iteration, we will assume `current_question_data.get("options")` has the necessary flags if they were added.
         # The most robust way is to ensure `self.questions_data[self.current_question_index]["options"]` becomes `processed_options` in `send_question`.
         # Let's refine `send_question` to update `self.questions_data[self.current_question_index]['options'] = processed_options`
@@ -397,14 +406,12 @@ class QuizLogic:
             "selected_option_text": "مهلة",
             "is_correct": False,
             "time_taken": self.question_time_limit,
-            # ADDED: Flag for image option in answer data
-            "original_selected_option_text_is_url": False # Default for timeout
+            "original_selected_option_text_is_url": False # Unlikely to be URL on timeout, but kept for consistency
         })
 
         feedback_text = "⌛️ انتهى الوقت!"
-        # MODIFIED: Display correct answer on timeout, considering image options
         correct_answer_text_on_timeout = ""
-        # Assuming current_question_data.get("options") has 'is_image_option' and 'image_option_display_label' if applicable
+        # Use the same options list that would have been used for answering (i.e., potentially processed)
         options_list_for_timeout_check = current_question_data.get("options", [])
 
         for opt_timeout in options_list_for_timeout_check:
@@ -424,7 +431,7 @@ class QuizLogic:
         
         original_question_content_for_feedback = str(q_text_from_data if q_text_from_data is not None else "")
         if question_was_image and not q_text_from_data: # If it was an image question and had no specific text
-             original_question_content_for_feedback = "" # Avoids repeating 'None' or empty string
+             original_question_content_for_feedback = ""
 
         final_feedback_message = header + original_question_content_for_feedback + "\n\n" + feedback_text
 
@@ -467,12 +474,7 @@ class QuizLogic:
         if user_data:
             user_data.pop('current_quiz_logic', None)
             user_data.pop('quiz_type', None)
-            user_data.pop('quiz_scope', None) # e.g., course_id or unit_id
+            user_data.pop('quiz_scope', None) # Ensure this is cleared if it was set
             user_data.pop('question_count', None)
-            # Potentially other keys if you store more specific quiz setup data
             logger.info(f"Cleared quiz-related user_data for user {user_id} after showing results.")
-
-        # Log detailed answers (optional, can be verbose)
-        # for ans in self.answers:
-        #     logger.debug(f"User {user_id} answer for q_id {ans['question_id']}: selected_id={ans['selected_option_id']}, correct={ans['is_correct']}")
 
