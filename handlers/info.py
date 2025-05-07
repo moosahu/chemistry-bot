@@ -93,38 +93,32 @@ async def info_menu(update: Update, context: CallbackContext) -> int:
         logger.info(f"User {user_id} entered info menu.")
         text = "📚 اختر فئة المعلومات التي تريد استعراضها:"
         keyboard = create_info_menu_keyboard()
-        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
     else:
         logger.warning("info_menu called without callback query.")
-        # If no query, it might be a direct command entry, send a new message instead of editing
         text = "📚 اختر فئة المعلومات التي تريد استعراضها:"
         keyboard = create_info_menu_keyboard()
         await safe_send_message(context.bot, update.effective_chat.id, text=text, reply_markup=keyboard)
-        # Fallback to main_menu if called without query might be too disruptive, let's send the info menu.
-        # return MAIN_MENU 
         
-    return INFO_MENU # Stay in info menu state
+    return INFO_MENU
 
 async def select_info_category(update: Update, context: CallbackContext) -> int:
     """Handles selection of an information category."""
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    data = query.data # e.g., "info_cat_elements"
+    data = query.data
     logger.info(f"User {user_id} selected info category: {data}")
 
     category = data.split("_")[-1]
     context.user_data["current_info_category"] = category
 
-    # Check if category has sub-items or is direct content
     if category in ["elements", "compounds", "concepts"]:
-        # Show list of items in this category
         text = f"اختر {INFO_CATEGORIES.get(category, category)}:"
         keyboard = create_info_detail_keyboard(category)
-        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
-        return SHOW_INFO_DETAIL # Move to detail selection state
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
+        return SHOW_INFO_DETAIL
     else:
-        # Show content directly for categories like periodic_table, calculations, bonds, laws
         content = ""
         if category == "periodic_table":
             content = PERIODIC_TABLE_INFO
@@ -134,7 +128,6 @@ async def select_info_category(update: Update, context: CallbackContext) -> int:
             content = CHEMICAL_BONDS_INFO
         elif category == "laws":
             try:
-                # Read content from the markdown file (synchronous)
                 with open("/home/ubuntu/content/laws.md", "r", encoding="utf-8") as f:
                     content = f.read()
             except FileNotFoundError:
@@ -147,58 +140,55 @@ async def select_info_category(update: Update, context: CallbackContext) -> int:
             content = "محتوى غير متوفر لهذه الفئة."
             logger.warning(f"No direct content defined for info category: {category}")
 
-        # Format content (e.g., chemical formulas)
         formatted_content = process_text_with_chemical_notation(content)
-        
-        # Send content and provide back button
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]])
-        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
-        return INFO_MENU # Stay in info menu state after showing direct content
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
+        return INFO_MENU
 
 async def show_info_detail(update: Update, context: CallbackContext) -> int:
     """Handles selection of a specific item (element, compound, concept)."""
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    data = query.data # e.g., "info_detail_elements_هيدروجين"
+    data = query.data
     logger.info(f"User {user_id} selected info detail: {data}")
 
     try:
         parts = data.split("_")
         category = parts[2]
-        item_name = "_".join(parts[3:]) # Handle names with underscores if any
+        item_name = "_".join(parts[3:])
     except (IndexError, ValueError):
         logger.error(f"Invalid info detail callback data format: {data}")
-        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في البيانات. الرجاء المحاولة مرة أخرى.", reply_markup=create_info_menu_keyboard())
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في البيانات. الرجاء المحاولة مرة أخرى.", reply_markup=create_info_menu_keyboard())
         return INFO_MENU
 
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
-        # Corrected f-string for elements to avoid backslash issues
-        content = f"*{item_name} ({details['رمز']})*\n\n- الرقم الذري: {details['رقم_ذري']}\n- الوزن الذري: {details['وزن_ذري']}"
+        content = f"*{item_name} ({details["رمز"]})*\n\n- الرقم الذري: {details["رقم_ذري"]}\n- الوزن الذري: {details["وزن_ذري"]}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
-        # Corrected f-string for compounds using intermediate variable
-        formula = process_text_with_chemical_notation(details['صيغة'])
-        content = f"*{item_name} ({formula})*\n\n- النوع: {details['نوع']}\n- الحالة (STP): {details['حالة']}"
+        formula = process_text_with_chemical_notation(details["صيغة"])
+        content = f"*{item_name} ({formula})*\n\n- النوع: {details["نوع"]}\n- الحالة (STP): {details["حالة"]}"
     elif category == "concepts" and item_name in CONCEPTS:
-        # This f-string seems fine
         content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
     else:
-        # This f-string seems fine
-        content = f"عذراً، لم يتم العثور على تفاصيل لـ '{item_name}' في فئة '{category}'."
-        logger.warning(f"Details not found for item '{item_name}' in category '{category}'.")
+        content = f"عذراً، لم يتم العثور على تفاصيل لـ 
+{item_name}
+ في فئة 
+{category}
+."
+        logger.warning(f"Details not found for item 
+{item_name}
+ in category 
+{category}
+.")
 
-    # Format content
     formatted_content = process_text_with_chemical_notation(content)
-
-    # Send content and provide back button to the item list
-    # This f-string seems fine
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"🔙 رجوع إلى {INFO_CATEGORIES.get(category, category)}", callback_data=f"info_cat_{category}")]])
-    await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
+    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
     
-    return SHOW_INFO_DETAIL # Stay in detail state, allowing further selections from the list
+    return SHOW_INFO_DETAIL
 
 # --- Conversation Handler Definition --- 
 
@@ -207,30 +197,24 @@ info_conv_handler = ConversationHandler(
     states={
         INFO_MENU: [
             CallbackQueryHandler(select_info_category, pattern="^info_cat_"),
-            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Allow returning to main menu
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
         ],
         SHOW_INFO_DETAIL: [
             CallbackQueryHandler(show_info_detail, pattern="^info_detail_"),
-            # Go back to category list (which is handled by select_info_category)
             CallbackQueryHandler(select_info_category, pattern="^info_cat_"),
-            # Go back to main info menu
             CallbackQueryHandler(info_menu, pattern="^info_menu$")
         ],
     },
     fallbacks=[
-        CommandHandler("start", main_menu_callback), # Go to main menu on /start
-        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Handle explicit main menu return
-        # Fallback within info conversation
-        CallbackQueryHandler(info_menu, pattern=".*") # Go back to info menu on any other callback
+        CommandHandler("start", main_menu_callback),
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
+        CallbackQueryHandler(info_menu, pattern=".*")
     ],
     map_to_parent={
-        # If MAIN_MENU is returned, map it to the main conversation handler's MAIN_MENU state
         MAIN_MENU: MAIN_MENU,
-        # If END is returned, end the conversation (though not used here)
-        # END: END 
     },
-    persistent=True, # Ensure persistence is enabled
-    name="info_conversation" # Ensure unique name for persistence
+    persistent=True,
+    name="info_conversation"
 )
 
 
