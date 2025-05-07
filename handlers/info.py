@@ -93,11 +93,15 @@ async def info_menu(update: Update, context: CallbackContext) -> int:
         logger.info(f"User {user_id} entered info menu.")
         text = "📚 اختر فئة المعلومات التي تريد استعراضها:"
         keyboard = create_info_menu_keyboard()
-        await safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
     else:
         logger.warning("info_menu called without callback query.")
-        await safe_send_message(context.bot, update.effective_chat.id, text="يرجى استخدام القائمة الرئيسية.")
-        return MAIN_MENU
+        # If no query, it might be a direct command entry, send a new message instead of editing
+        text = "📚 اختر فئة المعلومات التي تريد استعراضها:"
+        keyboard = create_info_menu_keyboard()
+        await safe_send_message(context.bot, update.effective_chat.id, text=text, reply_markup=keyboard)
+        # Fallback to main_menu if called without query might be too disruptive, let's send the info menu.
+        # return MAIN_MENU 
         
     return INFO_MENU # Stay in info menu state
 
@@ -117,7 +121,7 @@ async def select_info_category(update: Update, context: CallbackContext) -> int:
         # Show list of items in this category
         text = f"اختر {INFO_CATEGORIES.get(category, category)}:"
         keyboard = create_info_detail_keyboard(category)
-        await safe_edit_message_text(query, text=text, reply_markup=keyboard)
+        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
         return SHOW_INFO_DETAIL # Move to detail selection state
     else:
         # Show content directly for categories like periodic_table, calculations, bonds, laws
@@ -148,7 +152,7 @@ async def select_info_category(update: Update, context: CallbackContext) -> int:
         
         # Send content and provide back button
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")]])
-        await safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
+        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
         return INFO_MENU # Stay in info menu state after showing direct content
 
 async def show_info_detail(update: Update, context: CallbackContext) -> int:
@@ -165,7 +169,7 @@ async def show_info_detail(update: Update, context: CallbackContext) -> int:
         item_name = "_".join(parts[3:]) # Handle names with underscores if any
     except (IndexError, ValueError):
         logger.error(f"Invalid info detail callback data format: {data}")
-        await safe_edit_message_text(query, text="حدث خطأ في البيانات. الرجاء المحاولة مرة أخرى.", reply_markup=create_info_menu_keyboard())
+        await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في البيانات. الرجاء المحاولة مرة أخرى.", reply_markup=create_info_menu_keyboard())
         return INFO_MENU
 
     content = ""
@@ -192,7 +196,7 @@ async def show_info_detail(update: Update, context: CallbackContext) -> int:
     # Send content and provide back button to the item list
     # This f-string seems fine
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"🔙 رجوع إلى {INFO_CATEGORIES.get(category, category)}", callback_data=f"info_cat_{category}")]])
-    await safe_edit_message_text(query, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
+    await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=formatted_content, reply_markup=keyboard, parse_mode="Markdown")
     
     return SHOW_INFO_DETAIL # Stay in detail state, allowing further selections from the list
 
@@ -228,4 +232,5 @@ info_conv_handler = ConversationHandler(
     persistent=True, # Ensure persistence is enabled
     name="info_conversation" # Ensure unique name for persistence
 )
+
 
