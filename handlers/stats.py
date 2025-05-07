@@ -80,9 +80,7 @@ def update_user_stats_in_json(user_id: int, score: float, total_questions_in_qui
     
     quiz_history = stats.get("quiz_history", [])
     quiz_record = {
-        "quiz_id": quiz_id if quiz_id else f"quiz_{datetime.now().strftime(
-itu'%Y%m%d%H%M%S
-itu')}",
+        "quiz_id": quiz_id if quiz_id else f"quiz_{datetime.now().strftime('%Y%m%d%H%M%S')}",
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "score_percentage": score,
         "correct_answers": correct_answers_count,
@@ -93,9 +91,7 @@ itu')}",
     stats["quiz_history"] = quiz_history[-5:]
         
     save_user_stats_to_json(user_id, stats)
-    logger.info(f"JSON stats updated for user {user_id} after quiz {quiz_id if quiz_id else 
-itu'N/A
-itu'}.")
+    logger.info(f"JSON stats updated for user {user_id} after quiz {quiz_id if quiz_id else 'N/A'}.")
 
 # --- Chart Generation Functions ---
 def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: int) -> str | None:
@@ -215,12 +211,9 @@ async def stats_menu(update: Update, context: CallbackContext) -> int:
         await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
     else:
         logger.warning("stats_menu called without callback query.")
-        # If no query, it might be a direct command entry, send a new message instead of editing
         text = "🏅 اختر الإحصائيات التي تريد عرضها:"
         keyboard = create_stats_menu_keyboard()
         await safe_send_message(context.bot, update.effective_chat.id, text=text, reply_markup=keyboard)
-        # Fallback to main_menu if called without query might be too disruptive, let's send the stats menu.
-        # return MAIN_MENU 
         
     return STATS_MENU
 
@@ -238,14 +231,10 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
     if not stats_data or stats_data.get("total_quizzes_taken", 0) == 0:
         stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
     else:
-        stats_text += f"🔹 إجمالي الاختبارات المكتملة: {stats_data.get(
-itu'total_quizzes_taken
-itu', 0)}\n"
+        stats_text += f"🔹 إجمالي الاختبارات المكتملة: {stats_data.get('total_quizzes_taken', 0)}\n"
         avg_score = stats_data.get("average_score_percentage", 0.0)
         stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
-        stats_text += f"🌟 أعلى نتيجة فردية: {stats_data.get(
-itu'highest_score_percentage
-itu', 0.0):.1f}%\n\n"
+        stats_text += f"🌟 أعلى نتيجة فردية: {stats_data.get('highest_score_percentage', 0.0):.1f}%\n\n"
         total_correct = stats_data.get("total_correct_answers", 0)
         total_incorrect = stats_data.get("total_incorrect_answers", 0)
         stats_text += f"✅ مجموع الإجابات الصحيحة: {total_correct}\n"
@@ -265,31 +254,17 @@ itu', 0.0):.1f}%\n\n"
         if quiz_history:
             stats_text += "\n══════════════════════\n📜 سجل آخر اختباراتك:\n"
             for i, test in enumerate(quiz_history):
-                stats_text += f"{i+1}. بتاريخ {test.get(
-itu'date
-itu', 
-itu'N/A
-itu')}: {test.get(
-itu'score_percentage
-itu', 0):.1f}% (صحيحة: {test.get(
-itu'correct_answers
-itu',0)}، خاطئة: {test.get(
-itu'incorrect_answers
-itu',0)})\n"
+                stats_text += f"{i+1}. بتاريخ {test.get('date', 'N/A')}: {test.get('score_percentage', 0):.1f}% (صحيحة: {test.get('correct_answers',0)}، خاطئة: {test.get('incorrect_answers',0)})\n"
         stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
     
-    # إرسال الرسالة النصية أولاً
     await safe_edit_message_text(chat_id=query.message.chat_id, message_id=query.message.message_id, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
     
-    # ثم إرسال الرسوم البيانية كصور منفصلة إذا وجدت
     if attachments:
         for attachment_path in attachments:
             try:
                 await context.bot.send_photo(chat_id=query.message.chat_id, photo=open(attachment_path, "rb"))
-                # يمكنك حذف الصورة بعد إرسالها إذا أردت توفير مساحة
-                # os.remove(attachment_path)
             except Exception as e:
                 logger.error(f"Failed to send chart {attachment_path} for user {user_id}: {e}")    
         
@@ -310,21 +285,11 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
-                user_id_entry = entry.get(
-itu'user_id
-itu', 
-itu'Unknown
-itu')
-                display_name = entry.get(
-itu'user_display_name
-itu', f"User {user_id_entry}")
+                user_id_entry = entry.get('user_id', 'Unknown')
+                display_name = entry.get('user_display_name', f"User {user_id_entry}")
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
-                avg_score = entry.get(
-itu'average_score
-itu', 0.0)
-                quizzes_taken = entry.get(
-itu'quizzes_taken
-itu', 0)
+                avg_score = entry.get('average_score', 0.0)
+                quizzes_taken = entry.get('quizzes_taken', 0)
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
@@ -341,7 +306,7 @@ stats_conv_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(stats_menu, pattern="^menu_stats$")], 
     states={
         STATS_MENU: [
-            CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"), # This now calls the MODIFIED function
+            CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
             CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
             CallbackQueryHandler(stats_menu, pattern="^stats_menu$"),
             CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
@@ -350,7 +315,7 @@ stats_conv_handler = ConversationHandler(
     fallbacks=[
         CommandHandler("start", main_menu_callback),
         CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
-        CallbackQueryHandler(stats_menu, pattern=".*") # Catch-all to return to stats menu if unknown button in stats
+        CallbackQueryHandler(stats_menu, pattern=".*")
     ],
     map_to_parent={
         MAIN_MENU: MAIN_MENU,
@@ -358,6 +323,5 @@ stats_conv_handler = ConversationHandler(
     persistent=True,
     name="stats_conversation"
 )
-
 
 
