@@ -371,10 +371,10 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     quiz_instance = QuizLogic(
         user_id=user_id,
         chat_id=query.message.chat_id,
-        questions=selected_questions,
+        questions_data=selected_questions,
         quiz_id=quiz_id_str,
         quiz_name=quiz_name_for_logic,
-        time_limit_per_question=DEFAULT_QUESTION_TIME_LIMIT
+        question_time_limit=DEFAULT_QUESTION_TIME_LIMIT
     )
     context.user_data["quiz_sessions"][quiz_id_str] = quiz_instance
     logger.info(f"User {user_id} starting quiz {quiz_id_str} ({quiz_name_for_logic}) with {len(selected_questions)} questions.")
