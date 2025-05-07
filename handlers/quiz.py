@@ -378,8 +378,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     )
     context.user_data["quiz_sessions"][quiz_id_str] = quiz_instance
     logger.info(f"User {user_id} starting quiz {quiz_id_str} ({quiz_name_for_logic}) with {len(selected_questions)} questions.")
-    await quiz_instance.send_current_question(context.bot, context, query.message)
-    return TAKING_QUIZ
+    await quiz_instance.send_question(bot=context.bot, context=context, user_id=user_id)    return TAKING_QUIZ
 
 async def process_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
