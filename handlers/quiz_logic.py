@@ -228,7 +228,7 @@ class QuizLogic:
         time_taken = time.time() - self.question_start_time if self.question_start_time else -1
         
         try:
-            parts = query.data.split("_", 3) 
+            parts = query.data.rsplit("_", 3) # Corrected to use rsplit
             if len(parts) < 4 or parts[0] != 'ans':
                 raise ValueError("Callback data format error")
             cb_quiz_id, cb_q_idx_str, cb_chosen_option_id_str = parts[1], parts[2], parts[3]
