@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# handlers/quiz_logic.py (v30 - Final Merge with Enhanced Results)
+# handlers/quiz_logic.py (v31 - Cleanup Fix for quiz_sessions)
 
 import asyncio
 import logging
@@ -505,16 +505,25 @@ class QuizLogic:
         self.last_question_message_id = None
         self.question_start_time = None
         
-        if context.user_data and user_id_to_clean in context.user_data and 'active_quiz_instance' in context.user_data[user_id_to_clean]:
-            if hasattr(context.user_data[user_id_to_clean]['active_quiz_instance'], 'quiz_id') and \
-               context.user_data[user_id_to_clean]['active_quiz_instance'].quiz_id == self.quiz_id:
-                del context.user_data[user_id_to_clean]['active_quiz_instance']
-                logger.info(f"[QuizLogic {self.quiz_id}] Instance removed from context.user_data for user {user_id_to_clean}.")
+        # MODIFIED SECTION FOR CLEANUP
+        if "quiz_sessions" in context.user_data and self.quiz_id in context.user_data["quiz_sessions"]:
+            stored_instance = context.user_data["quiz_sessions"][self.quiz_id]
+            # Ensure the instance being cleaned up is the one stored and belongs to the correct user.
+            if stored_instance is self and hasattr(stored_instance, 'user_id') and str(stored_instance.user_id) == str(user_id_to_clean):
+                del context.user_data["quiz_sessions"][self.quiz_id]
+                logger.info(f"[QuizLogic {self.quiz_id}] Instance removed from context.user_data['quiz_sessions'] for quiz_id {self.quiz_id}, user {user_id_to_clean}.")
+                if not context.user_data["quiz_sessions"]: # If the dictionary becomes empty
+                    del context.user_data["quiz_sessions"]
+                    logger.info(f"[QuizLogic {self.quiz_id}] 'quiz_sessions' dictionary removed as it became empty.")
             else:
-                logger.warning(f"[QuizLogic {self.quiz_id}] Instance in context.user_data for {user_id_to_clean} is different or lacks quiz_id. Not removing.")
+                stored_instance_user_id = getattr(stored_instance, 'user_id', 'UNKNOWN_STORED_USER')
+                logger.warning(f"[QuizLogic {self.quiz_id}] Instance in context.user_data['quiz_sessions'] for quiz_id {self.quiz_id} "
+                               f"(cleaning for user: {user_id_to_clean}) did not match conditions for removal. "
+                               f"Is same object: {stored_instance is self}. Stored user: {stored_instance_user_id}. Not removing.")
         else:
-            logger.info(f"[QuizLogic {self.quiz_id}] No active_quiz_instance found in context.user_data for user {user_id_to_clean} to remove.")
-        logger.info(f"[QuizLogic {self.quiz_id}] Quiz instance data has been reset internally.")
+            logger.info(f"[QuizLogic {self.quiz_id}] No quiz instance found in context.user_data['quiz_sessions'] with quiz_id {self.quiz_id} (user: {user_id_to_clean}) to remove.")
+        # END OF MODIFIED SECTION FOR CLEANUP
+        logger.info(f"[QuizLogic {self.quiz_id}] Quiz instance data has been reset internally (attributes cleared).")
 
 async def question_timeout_callback_wrapper(context: CallbackContext):
     job_data = context.job.data
@@ -527,24 +536,30 @@ async def question_timeout_callback_wrapper(context: CallbackContext):
 
     logger.debug(f"Timeout wrapper called for quiz {quiz_id}, user {user_id}, q_idx {question_index_at_timeout}")
 
+    # MODIFIED SECTION FOR INSTANCE RETRIEVAL
     quiz_instance = None
-    if context.user_data and user_id in context.user_data and 'active_quiz_instance' in context.user_data[user_id]:
-        instance_candidate = context.user_data[user_id]['active_quiz_instance']
-        if hasattr(instance_candidate, 'quiz_id') and instance_candidate.quiz_id == quiz_id and instance_candidate.active:
-            if instance_candidate.current_question_index == question_index_at_timeout: 
-                quiz_instance = instance_candidate
-            else:
-                logger.warning(f"Timeout wrapper: Quiz {quiz_id} q_idx mismatch. Job for {question_index_at_timeout}, instance at {instance_candidate.current_question_index}. Ignoring job.")
-                return
+    if "quiz_sessions" in context.user_data and quiz_id in context.user_data["quiz_sessions"]:
+        instance_candidate = context.user_data["quiz_sessions"][quiz_id]
+        if isinstance(instance_candidate, QuizLogic) and \
+           hasattr(instance_candidate, 'user_id') and str(instance_candidate.user_id) == str(user_id) and \
+           hasattr(instance_candidate, 'active') and instance_candidate.active and \
+           hasattr(instance_candidate, 'current_question_index') and instance_candidate.current_question_index == question_index_at_timeout:
+            quiz_instance = instance_candidate
         else:
-            logger.warning(f"Timeout wrapper: Quiz {quiz_id} not active or ID mismatch for user {user_id}. Ignoring job.")
+            user_match_str = f"User match: {str(instance_candidate.user_id) == str(user_id) if hasattr(instance_candidate, 'user_id') else 'N/A'} (job user: {user_id}, instance user: {instance_candidate.user_id if hasattr(instance_candidate, 'user_id') else 'N/A'})"
+            active_str = f"Active: {instance_candidate.active if hasattr(instance_candidate, 'active') else 'N/A'}"
+            q_idx_match_str = f"Q_idx match: {instance_candidate.current_question_index == question_index_at_timeout if hasattr(instance_candidate, 'current_question_index') else 'N/A'} (job for {question_index_at_timeout}, instance at {instance_candidate.current_question_index if hasattr(instance_candidate, 'current_question_index') else 'N/A'})"
+            logger.warning(f"Timeout wrapper: Quiz {quiz_id} instance found in 'quiz_sessions' but conditions not met. "
+                           f"Is QuizLogic: {isinstance(instance_candidate, QuizLogic)}, "
+                           f"{user_match_str}, {active_str}, {q_idx_match_str}. Ignoring job.")
             return 
     else:
-        logger.warning(f"Timeout wrapper: No active quiz instance found for user {user_id}, quiz {quiz_id}. Ignoring job.")
-        return
+        logger.warning(f"Timeout wrapper: No quiz instance found in context.user_data['quiz_sessions'] for quiz_id {quiz_id} (user: {user_id}). Ignoring job.")
+        return 
+    # END OF MODIFIED SECTION FOR INSTANCE RETRIEVAL
 
     if quiz_instance:
         await quiz_instance.handle_timeout(context.bot, context, chat_id, user_id, message_id, question_was_image)
     else:
-        logger.error(f"Timeout wrapper: Could not retrieve quiz_instance for quiz {quiz_id}, user {user_id} despite checks.")
+        logger.error(f"Timeout wrapper: Could not retrieve or validate quiz_instance for quiz {quiz_id}, user {user_id} despite checks.")
 
