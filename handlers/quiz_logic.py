@@ -228,10 +228,23 @@ class QuizLogic:
         time_taken = time.time() - self.question_start_time if self.question_start_time else -1
         
         try:
-            parts = query.data.rsplit("_", 3) # Corrected to use rsplit
-            if len(parts) < 4 or parts[0] != 'ans':
-                raise ValueError("Callback data format error")
-            cb_quiz_id, cb_q_idx_str, cb_chosen_option_id_str = parts[1], parts[2], parts[3]
+            # New parsing logic
+            temp_parts = query.data.split("_", 1)
+            if len(temp_parts) < 2 or not temp_parts[0] == "ans":
+                logger.error(f"[QuizLogic {self.quiz_id}] Invalid callback prefix or structure: {query.data}. temp_parts: {temp_parts}")
+                raise ValueError("Callback data format error - prefix")
+            
+            rest_of_data = temp_parts[1]
+            quiz_id_parts = rest_of_data.rsplit("_", 2)
+
+            if len(quiz_id_parts) < 3:
+                logger.error(f"[QuizLogic {self.quiz_id}] Invalid callback structure after prefix: {rest_of_data}. quiz_id_parts: {quiz_id_parts}")
+                raise ValueError("Callback data format error - suffix")
+
+            cb_quiz_id = quiz_id_parts[0]
+            cb_q_idx_str = quiz_id_parts[1]
+            cb_chosen_option_id_str = quiz_id_parts[2]
+            # End of new parsing logic
             q_idx_answered = int(cb_q_idx_str)
         except ValueError as e:
             logger.error(f"[QuizLogic {self.quiz_id}] Invalid callback: {query.data}. Error: {e}", exc_info=True)
