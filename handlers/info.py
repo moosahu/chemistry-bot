@@ -2,12 +2,13 @@
 """Conversation handler for browsing chemical information."""
 
 import logging
+import os # Added for path joining for laws.md
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CallbackContext,
     ConversationHandler,
     CallbackQueryHandler,
-    CommandHandler # Added missing import
+    CommandHandler
 )
 
 # Import necessary components from other modules
@@ -124,7 +125,6 @@ async def select_info_category(update: Update, context: CallbackContext) -> int:
             content = CHEMICAL_BONDS_INFO
         elif category == "laws":
             try:
-                # Corrected path assuming content folder is at the root of the project, same level as handlers
                 laws_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "content", "laws.md")
                 with open(laws_file_path, "r", encoding="utf-8") as f:
                     content = f.read()
@@ -163,30 +163,30 @@ async def show_info_detail(update: Update, context: CallbackContext) -> int:
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
-        # *** Line 176 area Fix: Changed double quotes to single quotes inside f-string for dictionary keys ***
         symbol = details.get("رمز", "N/A")
         atomic_number = details.get("رقم_ذري", "N/A")
         atomic_weight = details.get("وزن_ذري", "N/A")
         content = f"*{item_name} ({symbol})*\n\n- الرقم الذري: {atomic_number}\n- الوزن الذري: {atomic_weight}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
-        # *** Fix: Changed double quotes to single quotes inside f-string for dictionary keys ***
         formula_raw = details.get("صيغة", "N/A")
         formula = process_text_with_chemical_notation(formula_raw)
         compound_type = details.get("نوع", "N/A")
         state_stp = details.get("حالة", "N/A")
         content = f"*{item_name} ({formula})*\n\n- النوع: {compound_type}\n- الحالة (STP): {state_stp}"
     elif category == "concepts" and item_name in CONCEPTS:
-        # *** Fix: Ensured content is properly fetched ***
         concept_detail = CONCEPTS.get(item_name, "المعلومات غير متوفرة لهذا المفهوم.")
         content = f"*{item_name}*\n\n{concept_detail}"
     else:
-        content = f"عذراً، لم يتم العثور على تفاصيل لـ \n`{item_name}`\n في فئة \n`{category}`\n."
-        logger.warning(f"Details not found for item 
-{item_name}
- in category 
-{category}
-.")
+        # Line 185 area: Safely construct the string to avoid "unterminated string literal"
+        part1 = "عذراً، لم يتم العثور على تفاصيل لـ \n`"
+        part2 = str(item_name) # Ensure item_name is string
+        part3 = "`\n في فئة \n`"
+        part4 = str(category)  # Ensure category is string
+        part5 = "`\n."
+        content = part1 + part2 + part3 + part4 + part5
+        # Original logger line, should be fine as it's a separate f-string.
+        logger.warning(f"Details not found for item \n{item_name}\n in category \n{category}\n.")
 
     formatted_content = process_text_with_chemical_notation(content)
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"🔙 رجوع إلى {INFO_CATEGORIES.get(category, category)}", callback_data=f"info_cat_{category}")]])
