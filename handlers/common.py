@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Common handlers like /start and main menu navigation (Corrected v4 - Fixed start_quiz callback)."""
+"""Common handlers like /start and main menu navigation (Corrected v5 - Fixed safe_edit_message_text call)."""
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -7,7 +7,7 @@ from telegram.ext import CallbackContext, CommandHandler, CallbackQueryHandler
 
 # Import necessary components from other modules
 try:
-    from config import logger, MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU
+    from config import logger, MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END # Added END
     from utils.helpers import safe_send_message, safe_edit_message_text # Ensure these are async
     from database.manager import DB_MANAGER # Import the initialized DB_MANAGER instance
 except ImportError as e:
@@ -16,14 +16,15 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.error(f"Error importing modules in handlers.common: {e}. Using placeholders.")
     # Define placeholders for constants and functions
-    MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU = 0, 1, 7, 8 # Match config.py
+    MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END = 0, 1, 7, 8, -1 # Match config.py, added END
     async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
         logger.error("Placeholder safe_send_message called!")
         try: await bot.send_message(chat_id=chat_id, text="Error: Bot function unavailable.")
         except: pass
-    async def safe_edit_message_text(query, text, reply_markup=None, parse_mode=None):
-        logger.error("Placeholder safe_edit_message_text called!")
-        try: await query.edit_message_text(text="Error: Bot function unavailable.")
+    async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
+        logger.error("Placeholder safe_edit_message_text called with new signature!")
+        # This placeholder now matches the likely signature that caused the error
+        try: await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="Error: Bot function unavailable.", reply_markup=reply_markup, parse_mode=parse_mode)
         except: pass
     # Dummy DB_MANAGER
     class DummyDBManager:
@@ -34,16 +35,10 @@ except ImportError as e:
 def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard, potentially showing admin options."""
     keyboard = [
-        # Use callback_data that matches the entry point patterns of the handlers
-        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")], # ***CORRECTED***: Matches quiz.py pattern="^start_quiz$"
+        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")], 
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")], 
-        # Add other main menu items here
     ]
-    # Example: Add an admin button if the user is an admin
-    # if DB_MANAGER and DB_MANAGER.is_user_admin(user_id):
-    #     keyboard.append([InlineKeyboardButton("⚙️ لوحة الإدارة", callback_data="admin_menu")]) 
-    
     return InlineKeyboardMarkup(keyboard)
 
 async def start_command(update: Update, context: CallbackContext) -> int:
@@ -52,7 +47,6 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     chat_id = update.effective_chat.id
     logger.info(f"User {user.id} ({user.username or user.first_name}) started the bot in chat {chat_id}.")
 
-    # Register or update user in the database
     if DB_MANAGER:
         DB_MANAGER.register_or_update_user(
             user_id=user.id,
@@ -64,37 +58,35 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     else:
         logger.warning("DB_MANAGER not available, skipping user registration.")
 
-    # Send welcome message and main menu
     welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
                    "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
     keyboard = create_main_menu_keyboard(user.id)
+    # Clear any existing quiz logic from user_data to ensure a fresh start
+    if "current_quiz_logic" in context.user_data:
+        logger.info(f"Clearing existing current_quiz_logic for user {user.id} from /start command.")
+        del context.user_data["current_quiz_logic"]
+    if "quiz_instance_id" in context.user_data:
+        del context.user_data["quiz_instance_id"]
+        
     await safe_send_message(context.bot, chat_id, text=welcome_text, reply_markup=keyboard)
-
-    return MAIN_MENU # Set the initial state
+    return MAIN_MENU
 
 async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     """Handles callbacks from the main menu keyboard or returns to the main menu."""
     query = update.callback_query
     user = update.effective_user
-    state_to_return = MAIN_MENU # Default state
+    state_to_return = MAIN_MENU 
 
     if query:
-        await query.answer() # Answer callback query
+        await query.answer()
         data = query.data
         logger.info(f"Main menu callback: User {user.id} chose 	'{data}'.") 
 
-        if data == "start_quiz": # ***CORRECTED*** to handle the new callback for quiz entry
-            logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Quiz ConversationHandler should take over.")
-            # The ConversationHandler for quiz should be triggered directly by its pattern 'start_quiz'.
-            # This function (main_menu_callback) might not even be strictly necessary for 'start_quiz' 
-            # if the quiz_conv_handler is added directly to the application and its entry point is 'start_quiz'.
-            # However, returning a state that the quiz handler expects as an entry or a known state can be a fallback.
-            # For now, we assume the quiz_conv_handler will intercept 'start_quiz' before this.
-            # If this code IS reached for 'start_quiz', it means the quiz_conv_handler did not intercept it as an entry point.
-            # This would imply an issue with how handlers are ordered or structured in bot.py.
-            # Let's return QUIZ_MENU, which is the state quiz_menu_entry in quiz.py expects to transition to SELECT_QUIZ_TYPE.
+        if data == "start_quiz":
+            logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Transitioning to QUIZ_MENU state for quiz handler.")
+            # This will be handled by the quiz ConversationHandler's entry point
+            # Returning QUIZ_MENU which should be the entry state for quiz selection flow
             return QUIZ_MENU 
-
         elif data == "menu_info": 
             state_to_return = INFO_MENU
         elif data == "menu_stats": 
@@ -108,14 +100,35 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     if state_to_return == MAIN_MENU:
         menu_text = "القائمة الرئيسية:"
         keyboard = create_main_menu_keyboard(user.id)
-        if query:
-            await safe_edit_message_text(query, text=menu_text, reply_markup=keyboard)
-        else: 
+        if query and query.message: # Ensure query.message exists
+            # *** CORRECTED THE CALL TO safe_edit_message_text ***
+            await safe_edit_message_text(context.bot, query.message.chat_id, query.message.message_id, text=menu_text, reply_markup=keyboard)
+        elif update.effective_chat: # Fallback for cases where query might not be available but we want to send a new menu
             await safe_send_message(context.bot, update.effective_chat.id, text=menu_text, reply_markup=keyboard)
+        else:
+            logger.error(f"Cannot send main menu for user {user.id}: no query.message and no update.effective_chat.")
 
     logger.debug(f"[DEBUG] main_menu_callback attempting to return state: {state_to_return}")
+    # If the quiz ended and the user clicks "Main Menu" from the quiz results,
+    # we need to ensure the conversation handler for the quiz is truly ended.
+    if data == "main_menu" and context.user_data.get("current_quiz_logic"):
+        logger.info(f"User {user.id} returning to main menu from quiz. Clearing quiz logic.")
+        del context.user_data["current_quiz_logic"]
+        if "quiz_instance_id" in context.user_data:
+            del context.user_data["quiz_instance_id"]
+        return END # Explicitly end any active conversation if 'main_menu' is chosen after a quiz
+        
     return state_to_return
 
 start_handler = CommandHandler('start', start_command)
-main_menu_handler = CallbackQueryHandler(main_menu_callback, pattern='^main_menu$')
+# This handler will catch 'main_menu' from quiz results or other places
+main_menu_nav_handler = CallbackQueryHandler(main_menu_callback, pattern='^main_menu$')
+
+# It's assumed that quiz.py (or similar) will have its own ConversationHandler
+# with an entry point for 'start_quiz', e.g.:
+# CallbackQueryHandler(quiz_menu_entry, pattern='^start_quiz$')
+# And that ConversationHandler will manage its own states, including QUIZ_MENU.
+
+# The main_menu_callback here is primarily for navigating *to* the main menu
+# or handling other main menu items not covered by other conversation handlers.
 
