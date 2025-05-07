@@ -384,7 +384,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
 async def process_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
-    logger.info(f"[quiz.py] process_answer called for user {user_id} with callback_data: {query.data}")
+    logger.info(f"[quiz.py] process_answer CALLED for user {user_id} with callback_data: {query.data}") # Enhanced log
     await query.answer()
     quiz_id, answer_data = query.data.split(":", 1)
     quiz_instance = context.user_data.get("quiz_sessions", {}).get(quiz_id)
@@ -476,7 +476,7 @@ quiz_conv_handler = ConversationHandler(
         SELECT_UNIT_FOR_COURSE: [CallbackQueryHandler(select_unit_for_course)],
         ENTER_QUESTION_COUNT: [CallbackQueryHandler(select_question_count)],
         TAKING_QUIZ: [
-            CallbackQueryHandler(process_answer, pattern=r"^quiz_.+:.+$"),
+            CallbackQueryHandler(process_answer, pattern=r"^ans_.*"),
         ],
     },
     fallbacks=[
