@@ -14,7 +14,7 @@ from telegram.ext import (
 try:
     from config import logger, MAIN_MENU, INFO_MENU, SHOW_INFO_DETAIL
     from utils.helpers import safe_send_message, safe_edit_message_text, process_text_with_chemical_notation
-    from handlers.common import main_menu_callback # For returning to main menu (ensure it's async)
+    from handlers.common import main_menu_callback # For returning to main menu (ensure it"s async)
     # Import content data
     from content.data import ELEMENTS, COMPOUNDS, CONCEPTS, PERIODIC_TABLE_INFO, CHEMICAL_CALCULATIONS_INFO, CHEMICAL_BONDS_INFO
 except ImportError as e:
@@ -70,14 +70,10 @@ def create_info_detail_keyboard(category: str) -> InlineKeyboardMarkup:
         items = list(COMPOUNDS.keys())
     elif category == "concepts":
         items = list(CONCEPTS.keys())
-    # Add other categories if they have sub-items (like laws if split into individual laws)
     
-    # Simple list for now, pagination could be added if lists become long
     for item_name in items:
-        # Corrected: Ensure no newlines in callback_data
         keyboard.append([InlineKeyboardButton(item_name, callback_data=f"{callback_prefix}{item_name}")])
 
-    # Back button to the main info menu
     keyboard.append([InlineKeyboardButton("🔙 رجوع لقائمة المعلومات", callback_data="info_menu")])
     return InlineKeyboardMarkup(keyboard)
 
@@ -128,10 +124,12 @@ async def select_info_category(update: Update, context: CallbackContext) -> int:
             content = CHEMICAL_BONDS_INFO
         elif category == "laws":
             try:
-                with open("/home/ubuntu/content/laws.md", "r", encoding="utf-8") as f:
+                # Corrected path assuming content folder is at the root of the project, same level as handlers
+                laws_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "content", "laws.md")
+                with open(laws_file_path, "r", encoding="utf-8") as f:
                     content = f.read()
             except FileNotFoundError:
-                logger.error("laws.md file not found in /home/ubuntu/content/")
+                logger.error(f"laws.md file not found at {laws_file_path}")
                 content = "عذراً، لم يتم العثور على ملف قوانين الكيمياء."
             except Exception as e:
                 logger.exception(f"Error reading laws.md: {e}")
@@ -156,7 +154,7 @@ async def show_info_detail(update: Update, context: CallbackContext) -> int:
     try:
         parts = data.split("_")
         category = parts[2]
-        item_name = "_".join(parts[3:])
+        item_name = "_".join(parts[3:]) # Handles item names with underscores
     except (IndexError, ValueError):
         logger.error(f"Invalid info detail callback data format: {data}")
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في البيانات. الرجاء المحاولة مرة أخرى.", reply_markup=create_info_menu_keyboard())
@@ -165,19 +163,25 @@ async def show_info_detail(update: Update, context: CallbackContext) -> int:
     content = ""
     if category == "elements" and item_name in ELEMENTS:
         details = ELEMENTS[item_name]
-        content = f"*{item_name} ({details["رمز"]})*\n\n- الرقم الذري: {details["رقم_ذري"]}\n- الوزن الذري: {details["وزن_ذري"]}"
+        # *** Line 176 area Fix: Changed double quotes to single quotes inside f-string for dictionary keys ***
+        symbol = details.get("رمز", "N/A")
+        atomic_number = details.get("رقم_ذري", "N/A")
+        atomic_weight = details.get("وزن_ذري", "N/A")
+        content = f"*{item_name} ({symbol})*\n\n- الرقم الذري: {atomic_number}\n- الوزن الذري: {atomic_weight}"
     elif category == "compounds" and item_name in COMPOUNDS:
         details = COMPOUNDS[item_name]
-        formula = process_text_with_chemical_notation(details["صيغة"])
-        content = f"*{item_name} ({formula})*\n\n- النوع: {details["نوع"]}\n- الحالة (STP): {details["حالة"]}"
+        # *** Fix: Changed double quotes to single quotes inside f-string for dictionary keys ***
+        formula_raw = details.get("صيغة", "N/A")
+        formula = process_text_with_chemical_notation(formula_raw)
+        compound_type = details.get("نوع", "N/A")
+        state_stp = details.get("حالة", "N/A")
+        content = f"*{item_name} ({formula})*\n\n- النوع: {compound_type}\n- الحالة (STP): {state_stp}"
     elif category == "concepts" and item_name in CONCEPTS:
-        content = f"*{item_name}*\n\n{CONCEPTS[item_name]}"
+        # *** Fix: Ensured content is properly fetched ***
+        concept_detail = CONCEPTS.get(item_name, "المعلومات غير متوفرة لهذا المفهوم.")
+        content = f"*{item_name}*\n\n{concept_detail}"
     else:
-        content = f"عذراً، لم يتم العثور على تفاصيل لـ 
-{item_name}
- في فئة 
-{category}
-."
+        content = f"عذراً، لم يتم العثور على تفاصيل لـ \n`{item_name}`\n في فئة \n`{category}`\n."
         logger.warning(f"Details not found for item 
 {item_name}
  in category 
@@ -201,14 +205,14 @@ info_conv_handler = ConversationHandler(
         ],
         SHOW_INFO_DETAIL: [
             CallbackQueryHandler(show_info_detail, pattern="^info_detail_"),
-            CallbackQueryHandler(select_info_category, pattern="^info_cat_"),
-            CallbackQueryHandler(info_menu, pattern="^info_menu$")
+            CallbackQueryHandler(select_info_category, pattern="^info_cat_"), # Allow going back to category list
+            CallbackQueryHandler(info_menu, pattern="^info_menu$") # Allow going back to main info menu
         ],
     },
     fallbacks=[
         CommandHandler("start", main_menu_callback),
         CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
-        CallbackQueryHandler(info_menu, pattern=".*")
+        CallbackQueryHandler(info_menu, pattern=".*") # Default to info_menu if no other match
     ],
     map_to_parent={
         MAIN_MENU: MAIN_MENU,

@@ -79,7 +79,7 @@ def update_user_stats_in_json(user_id: int, score: float, total_questions_in_qui
     stats["highest_score_percentage"] = max(stats.get("highest_score_percentage", 0), score)
     
     quiz_history = stats.get("quiz_history", [])
-    # *** Line 83 Fix: Changed f-string to concatenation for quiz_id generation ***
+    # *** Line 83 Fix: Changed f-string to concatenation for quiz_id generation to ensure robustness ***
     generated_quiz_id = "quiz_" + datetime.now().strftime('%Y%m%d%H%M%S')
     quiz_record = {
         "quiz_id": quiz_id if quiz_id else generated_quiz_id,
@@ -93,7 +93,7 @@ def update_user_stats_in_json(user_id: int, score: float, total_questions_in_qui
     stats["quiz_history"] = quiz_history[-5:]
         
     save_user_stats_to_json(user_id, stats)
-    logger.info(f"JSON stats updated for user {user_id} after quiz {quiz_id if quiz_id else 'N/A'}.") # This f-string is usually fine.
+    logger.info(f"JSON stats updated for user {user_id} after quiz {quiz_id if quiz_id else 'N/A'}.")
 
 # --- Chart Generation Functions ---
 def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: int) -> str | None:
@@ -210,7 +210,6 @@ async def stats_menu(update: Update, context: CallbackContext) -> int:
         logger.info(f"User {user_id} entered stats menu.")
         text = "🏅 اختر الإحصائيات التي تريد عرضها:"
         keyboard = create_stats_menu_keyboard()
-        # *** safe_edit_message_text fix: Added context.bot ***
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
     else:
         logger.warning("stats_menu called without callback query.")
@@ -260,7 +259,6 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
         stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    # *** safe_edit_message_text fix: Added context.bot ***
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
     
     if attachments:
@@ -299,7 +297,6 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
         leaderboard_text += "عذراً، لا يمكن استرجاع لوحة الصدارة حالياً (مشكلة في قاعدة البيانات)."
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    # *** safe_edit_message_text fix: Added context.bot ***
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
     
     return STATS_MENU
