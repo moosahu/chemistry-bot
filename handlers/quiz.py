@@ -499,7 +499,7 @@ quiz_conv_handler = ConversationHandler(
         SELECT_UNIT_FOR_COURSE: [CallbackQueryHandler(select_unit_for_course)],
         ENTER_QUESTION_COUNT: [CallbackQueryHandler(select_question_count)],
         TAKING_QUIZ: [
-            CallbackQueryHandler(process_answer, pattern=r"^quiz_.+:.+$"),
+            CallbackQueryHandler(process_answer, pattern=r"^ans_.*"),
         ],
     },
     fallbacks=[
