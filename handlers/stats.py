@@ -230,10 +230,10 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
     if not stats_data or stats_data.get("total_quizzes_taken", 0) == 0:
         stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
     else:
-        stats_text += f"🔹 إجمالي الاختبارات المكتملة: {stats_data.get("total_quizzes_taken", 0)}\n"
+        stats_text += f"🔹 إجمالي الاختبارات المكتملة: {stats_data.get('total_quizzes_taken', 0)}\n"
         avg_score = stats_data.get("average_score_percentage", 0.0)
         stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
-        stats_text += f"🌟 أعلى نتيجة فردية: {stats_data.get("highest_score_percentage", 0.0):.1f}%\n\n"
+        stats_text += f"🌟 أعلى نتيجة فردية: {stats_data.get('highest_score_percentage', 0.0):.1f}%\n\n"
         total_correct = stats_data.get("total_correct_answers", 0)
         total_incorrect = stats_data.get("total_incorrect_answers", 0)
         stats_text += f"✅ مجموع الإجابات الصحيحة: {total_correct}\n"
@@ -253,7 +253,7 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
         if quiz_history:
             stats_text += "\n══════════════════════\n📜 سجل آخر اختباراتك:\n"
             for i, test in enumerate(quiz_history):
-                stats_text += f"{i+1}. بتاريخ {test.get("date", "N/A")}: {test.get("score_percentage", 0):.1f}% (صحيحة: {test.get("correct_answers",0)}، خاطئة: {test.get("incorrect_answers",0)})\n"
+                stats_text += f"{i+1}. بتاريخ {test.get('date', 'N/A')}: {test.get('score_percentage', 0):.1f}% (صحيحة: {test.get('correct_answers',0)}، خاطئة: {test.get('incorrect_answers',0)})\n"
         stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
@@ -288,11 +288,11 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
-                user_id_entry = entry.get("user_id", "Unknown")
-                display_name = entry.get("user_display_name", f"User {user_id_entry}")
+                user_id_entry = entry.get('user_id', 'Unknown')
+                display_name = entry.get('user_display_name', f"User {user_id_entry}")
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
-                avg_score = entry.get("average_score", 0.0)
-                quizzes_taken = entry.get("quizzes_taken", 0)
+                avg_score = entry.get('average_score', 0.0)
+                quizzes_taken = entry.get('quizzes_taken', 0)
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
@@ -326,5 +326,6 @@ stats_conv_handler = ConversationHandler(
     persistent=True,
     name="stats_conversation"
 )
+
 
 
