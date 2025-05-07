@@ -384,6 +384,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
 async def process_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
+    logger.info(f"[quiz.py] process_answer called for user {user_id} with callback_data: {query.data}")
     await query.answer()
     quiz_id, answer_data = query.data.split(":", 1)
     quiz_instance = context.user_data.get("quiz_sessions", {}).get(quiz_id)
