@@ -13,7 +13,7 @@ from utils.helpers import safe_send_message, safe_edit_message_text, remove_job_
 
 class QuizLogic:
     # Corrected list for Arabic choice lettering
-    ARABIC_CHOICE_LETTERS = ["أ", "ب", "ت", "ث", "ج", "ح", "خ", "د", "ذ", "ر", "ز", "س", "ش", "ص", "ض", "ط", "ظ", "ع", "غ", "ف", "ق", "ك", "ل", "م", "ن", "ه", "و", "ي"]
+    ARABIC_CHOICE_LETTERS = ["أ", "ب", "ج", "د", "ج", "ح", "خ", "د", "ذ", "ر", "ز", "س", "ش", "ص", "ض", "ط", "ظ", "ع", "غ", "ف", "ق", "ك", "ل", "م", "ن", "ه", "و", "ي"]
 
     def __init__(self, user_id=None, quiz_type=None, questions_data=None, total_questions=0, question_time_limit=60, quiz_id=None):
         self.user_id = user_id
