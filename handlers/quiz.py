@@ -378,49 +378,50 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     )
     context.user_data["quiz_sessions"][quiz_id_str] = quiz_instance
     logger.info(f"User {user_id} starting quiz {quiz_id_str} ({quiz_name_for_logic}) with {len(selected_questions)} questions.")
-    await quiz_instance.send_question(bot=context.bot, context=context, user_id=user_id)
+    await quiz_instance.send_current_question(context.bot, context, query.message)
     return TAKING_QUIZ
 
 async def process_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
-    logger.info(f"[quiz.py] process_answer CALLED for user {user_id} with callback_data: {query.data}") # Enhanced log
+    logger.info(f"[quiz.py] process_answer CALLED for user {user_id} with callback_data: {query.data}")
     await query.answer()
+
+    # Corrected callback_data parsing
     # query.data is "ans_QUIZID_QIDX_OPTIONID"
     # Example: "ans_6448526509_all_scope_quiz_all_1746655909_0_99"
-    # We need to extract QUIZID. QUIZID can contain underscores.
-    # QIDX and OPTIONID are the last two parts separated by underscores.
     
     if not query.data.startswith("ans_"):
         logger.error(f"Invalid callback_data prefix for answer: {query.data}")
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح PFX).", reply_markup=create_main_menu_keyboard())
-        return END
+        return END 
 
-    # Remove "ans_" prefix
-    payload = query.data[4:]
-    
-    # Split from the right to separate q_idx and option_id from quiz_id
-    parts = payload.rsplit("_", 2)
-    if len(parts) < 3: # Expected [quiz_id_str, q_idx_str, option_id_str]
+    payload = query.data[4:] 
+    parts = payload.rsplit("_", 2) 
+    if len(parts) < 3:
         logger.error(f"Invalid callback_data format for answer after prefix: {payload}")
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح FMT).", reply_markup=create_main_menu_keyboard())
-        return END
-        
-    quiz_id = parts[0]
-    # The variable 'answer_data' is no longer explicitly created or needed here
-    # as QuizLogic.handle_answer will use query.data from the update object.
-    quiz_instance = context.user_data.get("quiz_sessions", {}).get(quiz_id)
+        return END 
+
+    quiz_id_str_from_callback = parts[0]
+    quiz_instance = context.user_data.get("quiz_sessions", {}).get(quiz_id_str_from_callback)
+
     if not quiz_instance or not isinstance(quiz_instance, QuizLogic) or quiz_instance.user_id != user_id:
+        logger.warning(f"Quiz session {quiz_id_str_from_callback} not found or doesn't belong to user {user_id}.")
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عفواً، هذا الاختبار لم يعد صالحاً أو لا يخصك. يرجى بدء اختبار جديد.", reply_markup=create_main_menu_keyboard())
         return MAIN_MENU 
-    timer_job_name = f"qtimer_{user_id}_{query.message.chat_id}_{quiz_id}_{quiz_instance.current_question_index}"
+
+    timer_job_name = f"qtimer_{user_id}_{query.message.chat_id}_{quiz_id_str_from_callback}_{quiz_instance.current_question_index}"
     remove_job_if_exists(timer_job_name, context)
-    await quiz_instance.process_answer(context.bot, context, query.message, answer_data)
+    logger.debug(f"Removed timer job {timer_job_name} before processing answer for quiz {quiz_id_str_from_callback}")
+
+    await quiz_instance.handle_answer(update, context)
+
     if quiz_instance.is_finished():
-        logger.info(f"Quiz {quiz_id} finished for user {user_id}. Preparing to update stats.")
+        logger.info(f"Quiz {quiz_id_str_from_callback} finished for user {user_id}. Preparing to update stats.")
         try:
             final_score_percentage = getattr(quiz_instance, "score_percentage", 0.0)
-            total_questions_in_quiz = getattr(quiz_instance, "total_questions", len(quiz_instance.questions))
+            total_questions_in_quiz = getattr(quiz_instance, "total_questions", len(quiz_instance.questions_data)) 
             correct_answers_count = getattr(quiz_instance, "correct_answers_count", 0)
             incorrect_answers_count = getattr(quiz_instance, "incorrect_answers_count", 0)
             quiz_name_for_stats = getattr(quiz_instance, "quiz_name", "unknown_quiz") 
@@ -437,14 +438,14 @@ async def process_answer(update: Update, context: CallbackContext) -> int:
         except Exception as e_stats:
             logger.error(f"Failed to update JSON stats for user {user_id} for quiz {quiz_name_for_stats}: {e_stats}", exc_info=True)
         
-        if "quiz_sessions" in context.user_data and quiz_id in context.user_data["quiz_sessions"]:
-            del context.user_data["quiz_sessions"][quiz_id]
+        if "quiz_sessions" in context.user_data and quiz_id_str_from_callback in context.user_data["quiz_sessions"]:
+            del context.user_data["quiz_sessions"][quiz_id_str_from_callback]
             if not context.user_data["quiz_sessions"]:
                 del context.user_data["quiz_sessions"]
-        logger.info(f"Cleaned up quiz session {quiz_id} for user {user_id} after normal completion.")
+        logger.info(f"Cleaned up quiz session {quiz_id_str_from_callback} for user {user_id} after normal completion.")
         return MAIN_MENU 
     else:
-        await quiz_instance.send_current_question(context.bot, context, query.message)
+        await quiz_instance.send_question(bot=context.bot, context=context, user_id=user_id)
         return TAKING_QUIZ
 
 async def handle_quiz_timeout_in_conv_handler(update: Update, context: CallbackContext) -> int:
@@ -498,7 +499,7 @@ quiz_conv_handler = ConversationHandler(
         SELECT_UNIT_FOR_COURSE: [CallbackQueryHandler(select_unit_for_course)],
         ENTER_QUESTION_COUNT: [CallbackQueryHandler(select_question_count)],
         TAKING_QUIZ: [
-            CallbackQueryHandler(process_answer, pattern=r"^ans_.*"),
+            CallbackQueryHandler(process_answer, pattern=r"^quiz_.+:.+$"),
         ],
     },
     fallbacks=[
