@@ -415,7 +415,7 @@ async def process_answer(update: Update, context: CallbackContext) -> int:
     remove_job_if_exists(timer_job_name, context)
     logger.debug(f"Removed timer job {timer_job_name} before processing answer for quiz {quiz_id_str_from_callback}")
 
-    await quiz_instance.handle_answer(update, context)
+    await quiz_instance.handle_answer(bot=context.bot, context=context, update=update)
 
     if quiz_instance.is_finished():
         logger.info(f"Quiz {quiz_id_str_from_callback} finished for user {user_id}. Preparing to update stats.")
