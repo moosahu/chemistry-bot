@@ -445,7 +445,7 @@ async def process_answer(update: Update, context: CallbackContext) -> int:
         logger.info(f"Cleaned up quiz session {quiz_id_str_from_callback} for user {user_id} after normal completion.")
         return MAIN_MENU 
     else:
-        await quiz_instance.send_question(bot=context.bot, context=context, user_id=user_id)
+        # await quiz_instance.send_question(bot=context.bot, context=context, user_id=user_id) # Removed redundant call, quiz_logic.handle_answer now manages sending the next question or results.
         return TAKING_QUIZ
 
 async def handle_quiz_timeout_in_conv_handler(update: Update, context: CallbackContext) -> int:
