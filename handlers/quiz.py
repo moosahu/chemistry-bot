@@ -249,10 +249,8 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
 
         max_questions = len(all_questions_pool)
         keyboard = create_question_count_keyboard(max_questions, quiz_type_key, unit_id="all")
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار 
-'{quiz_type_display_name}
-':", reply_markup=keyboard)
-        return ENTER_QUESTION_COUNT
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"""اختر عدد الأسئلة لاختبار 
+'{quiz_type_display_name}':""", reply_markup=keyboard)   return ENTER_QUESTION_COUNT
 
     elif quiz_type_key == QUIZ_TYPE_UNIT:
         logger.debug("[API] QUIZ_TYPE_UNIT: Fetching all courses to select from.")
