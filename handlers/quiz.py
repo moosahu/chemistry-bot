@@ -158,7 +158,7 @@ async def quiz_menu_entry(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-    logger.info(f"User {user_id} entered quiz menu (quiz_menu_entry).")
+    logger.info(f"User {user_id} entered quiz menu (quiz_menu_entry) via {query.data}.") # Log which callback triggered it
     # Clear any lingering quiz setup data before starting a new selection process
     keys_to_clear_on_entry = [
         'selected_quiz_type_key', 'selected_quiz_type_display_name', 'questions_for_quiz',
@@ -361,7 +361,7 @@ async def select_unit_for_course(update: Update, context: CallbackContext) -> in
         parts = callback_data.split('_')
         # course_id_from_cb = parts[-2] # Not strictly needed
         selected_unit_id = parts[-1]
-        selected_unit = next((u for u in available_units if str(u.get('id')) == selected_unit_id), None)
+        selected_unit = next((u for u in available_units if str(u.get("id")) == selected_unit_id), None)
 
         if not selected_unit:
             logger.error(f"User {user_id} selected a unit ID ({selected_unit_id}) that was not found for course {selected_course_id}.")
@@ -596,15 +596,18 @@ async def end_quiz_conversation(update: Update, context: CallbackContext) -> int
     logger.info(f"All quiz-related user_data cleared for user {user_id} at end_quiz_conversation.")
 
     if message_id: # If we have a message to edit (likely from a button press)
-        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=message_id, text="تم إنهاء جلسة الاختبار. شكراً لك!", reply_markup=create_main_menu_keyboard())
+        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=message_id, text="تم إنهاء جلسة الاختبار. شكراً لك!", reply_markup=create_main_menu_keyboard(user_id))
     else: # If no specific message to edit, send a new one
-        await safe_send_message(context.bot, chat_id=chat_id, text="تم إنهاء جلسة الاختبار. شكراً لك!", reply_markup=create_main_menu_keyboard())
+        await safe_send_message(context.bot, chat_id=chat_id, text="تم إنهاء جلسة الاختبار. شكراً لك!", reply_markup=create_main_menu_keyboard(user_id))
     
     return ConversationHandler.END
 
 # --- Conversation Handler Definition ---
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern='^quiz_menu$')],
+    entry_points=[
+        CallbackQueryHandler(quiz_menu_entry, pattern='^quiz_menu$'),
+        CallbackQueryHandler(quiz_menu_entry, pattern='^start_quiz$') # Added to handle start_quiz from common.py
+    ],
     states={
         SELECT_QUIZ_TYPE: [
             CallbackQueryHandler(select_quiz_type, pattern='^quiz_type_.*$'),
