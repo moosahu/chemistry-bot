@@ -29,6 +29,24 @@ class QuizLogic:
         self.last_question_is_image = False # Added to track if the last question was an image
         logger.debug(f"[QuizLogic] Initialized for quiz {self.quiz_id}, user {self.user_id if self.user_id else 'UNKNOWN'}")
 
+    async def start_quiz(self, update: Update, chat_id: int, user_id: int) -> int:
+        """Starts the quiz by sending the first question."""
+        logger.info(f"[QuizLogic] start_quiz called for quiz {self.quiz_id}, user {user_id}, chat {chat_id}")
+        if not self.questions_data or self.total_questions == 0:
+            logger.warning(f"[QuizLogic] start_quiz called for quiz {self.quiz_id} but no questions available. Ending quiz.")
+            message_to_edit_id = None
+            if update and update.callback_query and update.callback_query.message: # Check if update and its attributes exist
+                message_to_edit_id = update.callback_query.message.message_id
+            
+            if message_to_edit_id:
+                await safe_edit_message_text(self.bot, chat_id=chat_id, message_id=message_to_edit_id, text="عذراً، لا توجد أسئلة لبدء هذا الاختبار. يرجى المحاولة مرة أخرى.")
+            else:
+                await safe_send_message(self.bot, chat_id=chat_id, text="عذراً، لا توجد أسئلة لبدء هذا الاختبار. يرجى المحاولة مرة أخرى.")
+            return END 
+        
+        # Call send_question to send the first question and get the next state
+        return await self.send_question(chat_id, user_id)
+    
     def create_options_keyboard(self, options_data):
         keyboard = []
         # ADDED: Arabic alphabet for fallback if image_option_display_label is somehow not set
@@ -52,27 +70,27 @@ class QuizLogic:
             # ORIGINAL LOGIC BELOW (KEPT AS IS)
             elif isinstance(option_text_original, str) and not option_text_original.strip():
                 button_text = f"خيار {i + 1}"
-                logger.warning(f"Option text was empty for option_id {option_id} in quiz {self.quiz_id}. Using default: '{button_text}'")
+                logger.warning(f"Option text was empty for option_id {option_id} in quiz {self.quiz_id}. Using default: \'{button_text}\"")
             elif isinstance(option_text_original, str) and (option_text_original.startswith("http://") or option_text_original.startswith("https://")):
                 button_text = f"خيار {i + 1} (صورة)"
-                logger.info(f"Option text for option_id {option_id} in quiz {self.quiz_id} appears to be a URL. Using placeholder: '{button_text}'")
+                logger.info(f"Option text for option_id {option_id} in quiz {self.quiz_id} appears to be a URL. Using placeholder: \'{button_text}\"")
             elif isinstance(option_text_original, str):
                 button_text = option_text_original
             else: # Not a string, or None
                 button_text = f"خيار {i + 1} (بيانات غير نصية)"
-                logger.warning(f"Option text for option_id {option_id} in quiz {self.quiz_id} was not a string (type: {type(option_text_original)}). Using default: '{button_text}'")
+                logger.warning(f"Option text for option_id {option_id} in quiz {self.quiz_id} was not a string (type: {type(option_text_original)}). Using default: \'{button_text}\"")
             
             # Ensure button_text is a string before encoding
             button_text_str = str(button_text)
-            if len(button_text_str.encode('utf-8')) > 64: # Telegram's limit for button text
+            if len(button_text_str.encode(\'utf-8\')) > 64: # Telegram's limit for button text
                 # Truncate carefully to avoid splitting multi-byte characters
-                temp_bytes = button_text_str.encode('utf-8')[:60] # truncate bytes
-                button_text = temp_bytes.decode('utf-8', 'ignore') + "..."
-                logger.warning(f"Option text was too long for option_id {option_id} in quiz {self.quiz_id}. Truncated to: '{button_text}'")
+                temp_bytes = button_text_str.encode(\'utf-8\')[:60] # truncate bytes
+                button_text = temp_bytes.decode(\'utf-8\', \'ignore\') + "..."
+                logger.warning(f"Option text was too long for option_id {option_id} in quiz {self.quiz_id}. Truncated to: \'{button_text}\"")
 
             if not button_text_str.strip(): # Final check if button text became empty after processing
                  button_text = f"خيار {i + 1}" # Fallback if all else fails
-                 logger.error(f"Critical: Button text became empty after processing for option_id {option_id}. Final fallback to: '{button_text}'")
+                 logger.error(f"Critical: Button text became empty after processing for option_id {option_id}. Final fallback to: \'{button_text}\"")
 
             callback_data = f"ans_{self.current_question_index}_{option_id}"
             keyboard.append([InlineKeyboardButton(text=button_text, callback_data=callback_data)])
@@ -113,17 +131,17 @@ class QuizLogic:
                         photo=option_text_original,
                         caption=display_label
                     )
-                    current_option_proc['is_image_option'] = True
-                    current_option_proc['image_option_display_label'] = display_label
+                    current_option_proc[\'is_image_option\'] = True
+                    current_option_proc[\'image_option_display_label\'] = display_label
                     option_image_counter += 1
                     await asyncio.sleep(0.2) # Small delay
                 except Exception as e_img_opt:
                     logger.error(f"Failed to send image for option {i} (URL: {option_text_original}): {e_img_opt}", exc_info=True) # DEBUG ENHANCEMENT
-                    current_option_proc['is_image_option'] = False # Mark as not sent
+                    current_option_proc[\'is_image_option\'] = False # Mark as not sent
             processed_options.append(current_option_proc)
         
         # IMPORTANT ADDITION: Update current_question_data with processed options so handle_answer and timeout can use them
-        current_question_data['options'] = processed_options
+        current_question_data[\'options\'] = processed_options
         # END OF ADDED SECTION FOR IMAGE OPTIONS PRE-SENDING
         
         options_keyboard = self.create_options_keyboard(processed_options)
@@ -152,12 +170,12 @@ class QuizLogic:
                 )
                 self.last_question_is_image = True # Set flag if image sent successfully
             except telegram.error.BadRequest as e:
-                logger.error(f"Failed to send photo (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}. URL: {image_url}", exc_info=True) # DEBUG ENHANCEMENT
+                logger.error(f"Failed to send photo (BadRequest) for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}: {e}. URL: {image_url}", exc_info=True) # DEBUG ENHANCEMENT
                 if "BUTTON_TEXT_EMPTY" in str(e).upper() or "TEXT IS EMPTY" in str(e).upper():
-                    logger.error(f"Error sending photo for q_id {current_question_data.get('question_id', 'UNKNOWN')} was due to empty button text. This should have been caught by create_options_keyboard.")
+                    logger.error(f"Error sending photo for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')} was due to empty button text. This should have been caught by create_options_keyboard.")
                 
                 if question_text_from_data: # Fallback to text if photo fails
-                    logger.info(f"Photo send failed for q_id {current_question_data.get('question_id', 'UNKNOWN')}, attempting to send as text.")
+                    logger.info(f"Photo send failed for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}, attempting to send as text.")
                     full_question_text = header + str(question_text_from_data)
                     try: # DEBUG ENHANCEMENT
                         sent_message = await safe_send_message(
@@ -168,24 +186,24 @@ class QuizLogic:
                             parse_mode="HTML"
                         )
                     except Exception as e_fallback_text: # DEBUG ENHANCEMENT
-                        logger.error(f"Fallback to text also failed for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e_fallback_text}", exc_info=True) # DEBUG ENHANCEMENT
+                        logger.error(f"Fallback to text also failed for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}: {e_fallback_text}", exc_info=True) # DEBUG ENHANCEMENT
                 else:
-                    logger.error(f"Photo send failed for q_id {current_question_data.get('question_id', 'UNKNOWN')} and no fallback text available.")
+                    logger.error(f"Photo send failed for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')} and no fallback text available.")
             except Exception as e:
-                logger.error(f"Unexpected error sending photo for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}. URL: {image_url}", exc_info=True)
+                logger.error(f"Unexpected error sending photo for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}: {e}. URL: {image_url}", exc_info=True)
                 # ADDED: Fallback from original if general error and text exists (was missing in one version)
                 if question_text_from_data: 
-                    logger.info(f"Photo send failed (general error), sending as text for q_id {current_question_data.get('question_id', 'UNKNOWN')}.")
+                    logger.info(f"Photo send failed (general error), sending as text for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}.")
                     try: # DEBUG ENHANCEMENT
                         full_question_text = header + str(question_text_from_data)
                         sent_message = await safe_send_message(self.bot, chat_id=chat_id, text=full_question_text, reply_markup=options_keyboard, parse_mode="HTML")
                     except Exception as e_fallback_general_text: # DEBUG ENHANCEMENT
-                         logger.error(f"Fallback to text (after general photo error) also failed for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e_fallback_general_text}", exc_info=True) # DEBUG ENHANCEMENT
+                         logger.error(f"Fallback to text (after general photo error) also failed for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}: {e_fallback_general_text}", exc_info=True) # DEBUG ENHANCEMENT
 
         else: # Text question
             question_text_main = str(question_text_from_data if question_text_from_data is not None else "")
             if not question_text_from_data:
-                logger.warning(f"Question text is None/empty for TEXT q_id: {current_question_data.get('question_id', 'UNKNOWN')}. Sending header or minimal text.")
+                logger.warning(f"Question text is None/empty for TEXT q_id: {current_question_data.get(\'question_id\', \'UNKNOWN\')}. Sending header or minimal text.")
 
             full_question_text = header + question_text_main
             logger.info(f"Attempting to send text question for quiz {self.quiz_id}, q_idx {self.current_question_index}: {full_question_text[:100]}...")
@@ -198,11 +216,11 @@ class QuizLogic:
                     parse_mode="HTML"
                 )
             except telegram.error.BadRequest as e:
-                logger.error(f"Failed to send text question (BadRequest) for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}.", exc_info=True) # DEBUG ENHANCEMENT
+                logger.error(f"Failed to send text question (BadRequest) for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}: {e}.", exc_info=True) # DEBUG ENHANCEMENT
                 if "BUTTON_TEXT_EMPTY" in str(e).upper() or "TEXT IS EMPTY" in str(e).upper():
-                    logger.error(f"Error sending text question for q_id {current_question_data.get('question_id', 'UNKNOWN')} was due to empty button text. This should have been caught by create_options_keyboard.")
+                    logger.error(f"Error sending text question for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')} was due to empty button text. This should have been caught by create_options_keyboard.")
             except Exception as e:
-                 logger.error(f"Unexpected error sending text question for q_id {current_question_data.get('question_id', 'UNKNOWN')}: {e}.", exc_info=True)
+                 logger.error(f"Unexpected error sending text question for q_id {current_question_data.get(\'question_id\', \'UNKNOWN\')}: {e}.", exc_info=True)
 
 
         if sent_message:
@@ -233,248 +251,222 @@ class QuizLogic:
                  logger.info(f"Question timer ({self.question_time_limit}s) started for q:{self.current_question_index} quiz:{self.quiz_id} user:{user_id} (Job: {timer_job_name})")
             else:
                 logger.error(f"JobQueue not found in context for quiz {self.quiz_id}, user {user_id}. Timer not started.")
+            return TAKING_QUIZ # Return TAKING_QUIZ to stay in the quiz state
         else:
             # DEBUG ENHANCEMENT: More detailed critical failure message and logging
-            logger.error(f"CRITICAL FAILURE IN SEND_QUESTION: 'sent_message' is None for q_idx {self.current_question_index}, quiz {self.quiz_id}, user {user_id}. This means all attempts to send the question (image or text) failed. Please review preceding log entries for specific exceptions (e.g., from send_photo, safe_send_message, or option image processing). Data for current question: {current_question_data}", exc_info=True)
+            logger.error(f"CRITICAL FAILURE IN SEND_QUESTION: \'sent_message\' is None for q_idx {self.current_question_index}, quiz {self.quiz_id}, user {user_id}. This means all attempts to send the question (image or text) failed. Please review preceding log entries for specific exceptions (e.g., from send_photo, safe_send_message, or option image processing). Data for current question: {current_question_data}", exc_info=True)
             try:
                 await safe_send_message(self.bot, chat_id, "عذراً، حدث خطأ فادح أثناء محاولة إرسال السؤال. تم تسجيل تفاصيل الخطأ. سيتم إنهاء الاختبار. يرجى المحاولة لاحقاً.")
             except Exception as e_msg_err:
                 logger.error(f"Failed to send the CRITICAL FAILURE message to user {user_id}: {e_msg_err}")
             # Clear quiz state from user_data to allow starting a new quiz
             user_data = self.context.user_data
-            if user_data:
-                user_data.pop('current_quiz_logic', None)
-                user_data.pop('quiz_type', None)
-                user_data.pop('quiz_scope', None)
-                user_data.pop('question_count', None)
-                logger.info(f"Cleared quiz-related user_data for user {user_id} after CRITICAL send_question failure.")
-            return END # Use END from config
+            if \'current_quiz_logic\' in user_data:
+                del user_data[\'current_quiz_logic\']
+            return END # End the conversation if question sending fails critically
 
-    async def handle_answer(self, update: Update, context: CallbackContext):
-        query = update.callback_query
-        await query.answer() # Acknowledge callback query
-        user_id = query.from_user.id
+    async def handle_answer(self, update: Update, callback_data: str):
+        query = update.callback_query # If called from callback query
         chat_id = query.message.chat_id
-        
-        # Ensure quiz_id is set, otherwise this instance is not properly initialized for this user
-        if not hasattr(self, 'quiz_id') or not self.quiz_id:
-            logger.warning(f"handle_answer called for user {user_id} but quiz_id is not set in QuizLogic instance. Current quiz index: {self.current_question_index}. Ignoring.")
-            # Optionally, send a message to the user if this state is unexpected
-            # await safe_send_message(self.bot, chat_id, "حدث خطأ ما، يرجى محاولة بدء اختبار جديد.")
-            return
+        user_id = query.from_user.id
+        message_id_to_edit = query.message.message_id
 
+        # Stop the timer for the current question
         timer_job_name = f"qtimer_{user_id}_{chat_id}_{self.quiz_id}_{self.current_question_index}"
-        remove_job_if_exists(timer_job_name, context)
+        remove_job_if_exists(timer_job_name, self.context)
 
-        try:
-            _, question_idx_str, option_id_str = query.data.split("_")
-            question_idx = int(question_idx_str)
-        except ValueError:
-            logger.error(f"Error parsing callback_data: {query.data} for quiz {self.quiz_id}", exc_info=True) # DEBUG ENHANCEMENT
-            await safe_send_message(self.bot, chat_id, "حدث خطأ في معالجة إجابتك. يرجى المحاولة مرة أخرى.")
-            return
+        parts = callback_data.split("_")
+        question_idx_answered = int(parts[1])
+        selected_option_id = parts[2] # This is the ID from the database/API
 
-        # Check if the answer is for the current question
-        if question_idx != self.current_question_index:
-            logger.warning(f"Received answer for q_idx {question_idx} but current is {self.current_question_index} for quiz {self.quiz_id}. Ignoring.")
-            # await safe_send_message(self.bot, chat_id, "لقد استلمت إجابة لسؤال سابق. يتم عرض السؤال الحالي.") # Avoid spamming user
-            return
+        if question_idx_answered != self.current_question_index:
+            logger.warning(f"User {user_id} answered question {question_idx_answered} but current is {self.current_question_index}. Ignoring.")
+            await query.answer("إجابة لسؤال قديم، تم تجاهلها.")
+            return TAKING_QUIZ # Stay in the current state
 
         current_question_data = self.questions_data[self.current_question_index]
-        selected_option_id_str = option_id_str # This is the ID from the button callback
+        options = current_question_data.get("options", [])
+        selected_option_data = None
+        correct_option_data = None
+
+        for opt in options:
+            # Compare with string representation of option_id from data
+            if str(opt.get("option_id")) == str(selected_option_id):
+                selected_option_data = opt
+            if opt.get("is_correct"): # Assuming boolean or truthy value
+                correct_option_data = opt
+        
         is_correct = False
-        selected_option_text_for_display = "غير محدد"
-        # ADDED: Flag for storing if the original selected option was an image URL (for self.answers)
-        original_selected_option_text_is_url = False
-
-        # Find the selected option and determine if it's correct
-        # MODIFIED: Iterate through processed_options (which has 'is_image_option' and 'image_option_display_label')
-        # This requires that processed_options is available here or that the original options list is augmented similarly.
-        # For simplicity, we'll re-check based on original options and the 'is_image_option' flag from current_question_data's options if it was set by send_question.
-        # A cleaner way would be to pass processed_options or ensure current_question_data.options is the processed list.
-        # Assuming current_question_data.get("options") now contains the processed options with 'is_image_option' and 'image_option_display_label'
+        if selected_option_data and selected_option_data.get("is_correct"):
+            self.score += 1
+            is_correct = True
         
-        options_list_for_answer_check = current_question_data.get("options", []) # This should be the processed list if send_question modified it in place, or we need to access processed_options if it was stored in self.
-        # To ensure this works, let's assume `send_question` updates `self.questions_data[self.current_question_index]["options"]` to be `processed_options` or we fetch `processed_options` if stored in `self`.
-        # For this iteration, we will assume `current_question_data.get("options")` has the necessary flags if they were added.
-        # The most robust way is to ensure `self.questions_data[self.current_question_index]["options"]` becomes `processed_options` in `send_question`.
-        # Let's refine `send_question` to update `self.questions_data[self.current_question_index]['options'] = processed_options`
-
-        for opt_idx, opt in enumerate(options_list_for_answer_check): # Use the (potentially) processed options list
-            if str(opt.get("option_id", -1)) == selected_option_id_str:
-                is_correct = opt.get("is_correct", False)
-                original_opt_text = opt.get("option_text", "")
-                
-                # ADDED: Determine display text for feedback, considering pre-sent images
-                if opt.get("is_image_option"):
-                    selected_option_text_for_display = opt.get("image_option_display_label", f"خيار {opt_idx + 1}") # Use the letter/fallback
-                    original_selected_option_text_is_url = True 
-                # ORIGINAL LOGIC (KEPT AS IS)
-                elif isinstance(original_opt_text, str) and (original_opt_text.startswith("http://") or original_opt_text.startswith("https://")) and original_opt_text.strip():
-                    selected_option_text_for_display = f"خيار {opt_idx + 1} (صورة)" 
-                    original_selected_option_text_is_url = True # Also a URL
-                elif isinstance(original_opt_text, str) and not original_opt_text.strip():
-                    selected_option_text_for_display = f"خيار {opt_idx + 1}"
-                elif isinstance(original_opt_text, str):
-                    selected_option_text_for_display = original_opt_text
-                else: # Not a string or None
-                    selected_option_text_for_display = f"خيار {opt_idx + 1} (بيانات غير نصية)"
-                break
-        
-        time_taken = time.time() - self.question_start_time
+        time_taken = time.time() - self.question_start_time if self.question_start_time else 0
 
         self.answers.append({
             "question_id": current_question_data.get("question_id"),
             "question_text": current_question_data.get("question_text", "N/A"),
-            "selected_option_id": selected_option_id_str,
-            "selected_option_text": selected_option_text_for_display, # Use the processed text for display
+            "selected_option_id": selected_option_id,
+            "selected_option_text": selected_option_data.get("option_text", "N/A") if selected_option_data else "N/A",
             "is_correct": is_correct,
-            "time_taken": time_taken,
-            # ADDED: Store if original was URL (image or not)
-            "original_selected_option_text_is_url": original_selected_option_text_is_url
+            "correct_option_id": correct_option_data.get("option_id", "N/A") if correct_option_data else "N/A",
+            "correct_option_text": correct_option_data.get("option_text", "N/A") if correct_option_data else "N/A",
+            "time_taken": time_taken
         })
 
-        if is_correct:
-            self.score += 1
-            feedback_text = "✅ إجابة صحيحة!"
-        else:
-            feedback_text = "❌ إجابة خاطئة."
+        # Edit the last question message to show feedback (e.g., remove keyboard or show correct answer)
+        feedback_text = "إجابتك: " + (selected_option_data.get("option_text", "غير محدد") if selected_option_data else "غير محدد")
+        feedback_text += " ✅" if is_correct else " ❌"
         
-        header = f"<b>السؤال {self.current_question_index + 1} من {self.total_questions}:</b>\n"
-        q_text_from_data = current_question_data.get("question_text")
-        
-        original_question_content_for_feedback = str(q_text_from_data if q_text_from_data is not None else "")
-        if self.last_question_is_image and not q_text_from_data: # If it was an image question and had no specific text
-             original_question_content_for_feedback = "" # Avoids repeating 'None' or empty string
-        
-        feedback_part = f"\n\n<i>إجابتك: {selected_option_text_for_display}</i>\n<b>{feedback_text}</b>"
-
-        # MODIFIED: Display correct answer if wrong, considering image options
-        if not is_correct:
-            correct_answer_text = ""
-            # Iterate through the same options list used for checking the answer
-            for opt_correct in options_list_for_answer_check:
-                if opt_correct.get("is_correct"):
-                    if opt_correct.get("is_image_option"):
-                        correct_answer_text = opt_correct.get("image_option_display_label", "الخيار المصور الصحيح")
-                    elif isinstance(opt_correct.get("option_text"), str) and opt_correct.get("option_text").strip():
-                        correct_answer_text = opt_correct.get("option_text")
-                    else:
-                        correct_answer_text = f"الخيار الصحيح (بيانات غير نصية أو صورة لم ترسل)"
-                    break
-            if correct_answer_text:
-                feedback_part += f"\n<i>الإجابة الصحيحة: {correct_answer_text}</i>"
-
-        if self.last_question_is_image:
-            final_caption = header + original_question_content_for_feedback + feedback_part
-            await safe_edit_message_text(bot=self.bot, chat_id=chat_id, message_id=self.last_question_message_id, text=final_caption, reply_markup=None, parse_mode="HTML", is_caption=True)
-        else:
-            final_text = header + original_question_content_for_feedback + feedback_part
-            await safe_edit_message_text(bot=self.bot, chat_id=chat_id, message_id=self.last_question_message_id, text=final_text, reply_markup=None, parse_mode="HTML")
+        # If the question was an image, we edit the caption of that image message.
+        # If it was text, we edit the text message.
+        # The options keyboard should be removed.
+        try:
+            if self.last_question_is_image and self.last_question_message_id:
+                 await self.bot.edit_message_caption(chat_id=chat_id, message_id=self.last_question_message_id, caption=feedback_text, reply_markup=None)
+            elif self.last_question_message_id: # Text question
+                 await self.bot.edit_message_text(text=feedback_text, chat_id=chat_id, message_id=self.last_question_message_id, reply_markup=None)
+            await query.answer("تم تسجيل إجابتك!") # Acknowledge the button press
+        except telegram.error.BadRequest as e_edit:
+            if "MESSAGE_NOT_MODIFIED" in str(e_edit).upper():
+                logger.info(f"Message not modified for feedback (q_idx {self.current_question_index}), likely already edited or no change.")
+                await query.answer("تم تسجيل إجابتك!") # Still acknowledge
+            else:
+                logger.error(f"Error editing message for feedback (q_idx {self.current_question_index}): {e_edit}")
+                await query.answer("خطأ بسيط، تم تسجيل إجابتك.") # Acknowledge with error hint
+        except Exception as e_edit_gen:
+            logger.error(f"Unexpected error editing message for feedback (q_idx {self.current_question_index}): {e_edit_gen}")
+            await query.answer("خطأ، تم تسجيل إجابتك.")
 
         self.current_question_index += 1
-        # ADDED: Small delay (good practice)
-        await asyncio.sleep(1.5) 
-        await self.send_question(chat_id, user_id)
+        return await self.send_question(chat_id, user_id)
 
     async def question_timeout_callback(self, context: CallbackContext):
         job_data = context.job.data
-        quiz_id_from_job = job_data["quiz_id"]
-        question_idx = job_data["question_index"]
-        user_id = job_data["user_id"]
-        chat_id = job_data["chat_id"]
-        message_id = job_data["message_id"]
+        quiz_id_from_job = job_data.get("quiz_id")
+        question_idx_from_job = job_data.get("question_index")
+        user_id_from_job = job_data.get("user_id")
+        chat_id_from_job = job_data.get("chat_id")
+        message_id_to_edit = job_data.get("message_id")
         question_was_image = job_data.get("question_was_image", False)
 
-        # Ensure quiz_id is set, otherwise this instance is not properly initialized for this user
-        if not hasattr(self, 'quiz_id') or self.quiz_id != quiz_id_from_job:
-            logger.warning(f"Timeout for quiz {quiz_id_from_job}, q_idx {question_idx} but current quiz is {getattr(self, 'quiz_id', 'None')}. User {user_id}. Sending message.")
-            await safe_send_message(self.bot, chat_id, "انتهى وقت هذا السؤال، وربما تم إيقاف الاختبار أو بدء اختبار جديد.")
+        # Verify this timeout belongs to the current active question of this QuizLogic instance
+        if self.quiz_id != quiz_id_from_job or self.current_question_index != question_idx_from_job or self.user_id != user_id_from_job:
+            logger.info(f"Stale timeout job executed for quiz {quiz_id_from_job}, q_idx {question_idx_from_job}, user {user_id_from_job}. Current state: quiz {self.quiz_id}, q_idx {self.current_question_index}. Ignoring.")
             return
 
-        if question_idx != self.current_question_index:
-            logger.warning(f"Timeout for q_idx {question_idx} but current is {self.current_question_index}. Quiz {self.quiz_id}. Ignoring.")
-            return
-
-        logger.info(f"Question {question_idx} timed out for user {user_id}, quiz {self.quiz_id}.")
-        current_question_data = self.questions_data[question_idx]
+        logger.info(f"Timeout for user {self.user_id}, quiz {self.quiz_id}, question {self.current_question_index + 1}")
         
+        current_question_data = self.questions_data[self.current_question_index]
+        correct_option_data = next((opt for opt in current_question_data.get("options", []) if opt.get("is_correct")), None)
+
         self.answers.append({
             "question_id": current_question_data.get("question_id"),
             "question_text": current_question_data.get("question_text", "N/A"),
-            "selected_option_id": None,
-            "selected_option_text": "مهلة",
+            "selected_option_id": "TIMEOUT",
+            "selected_option_text": "انتهى الوقت",
             "is_correct": False,
-            "time_taken": self.question_time_limit,
-            "original_selected_option_text_is_url": False # Unlikely to be URL on timeout, but kept for consistency
+            "correct_option_id": correct_option_data.get("option_id", "N/A") if correct_option_data else "N/A",
+            "correct_option_text": correct_option_data.get("option_text", "N/A") if correct_option_data else "N/A",
+            "time_taken": self.question_time_limit
         })
 
-        feedback_text = "⌛️ انتهى الوقت!"
-        correct_answer_text_on_timeout = ""
-        # Use the same options list that would have been used for answering (i.e., potentially processed)
-        options_list_for_timeout_check = current_question_data.get("options", [])
-
-        for opt_timeout in options_list_for_timeout_check:
-            if opt_timeout.get("is_correct"):
-                if opt_timeout.get("is_image_option"):
-                    correct_answer_text_on_timeout = opt_timeout.get("image_option_display_label", "الخيار المصور الصحيح")
-                elif isinstance(opt_timeout.get("option_text"), str) and opt_timeout.get("option_text").strip():
-                    correct_answer_text_on_timeout = opt_timeout.get("option_text")
-                else:
-                    correct_answer_text_on_timeout = f"الخيار الصحيح (بيانات غير نصية أو صورة لم ترسل)"
-                break
-        if correct_answer_text_on_timeout:
-            feedback_text += f"\n<i>الإجابة الصحيحة: {correct_answer_text_on_timeout}</i>"
-
-        header = f"<b>السؤال {self.current_question_index + 1} من {self.total_questions}:</b>\n"
-        q_text_from_data = current_question_data.get("question_text")
-        
-        original_question_content_for_feedback = str(q_text_from_data if q_text_from_data is not None else "")
-        if question_was_image and not q_text_from_data: # If it was an image question and had no specific text
-             original_question_content_for_feedback = ""
-
-        final_feedback_message = header + original_question_content_for_feedback + "\n\n" + feedback_text
-
-        if question_was_image:
-            await safe_edit_message_text(bot=self.bot, chat_id=chat_id, message_id=message_id, text=final_feedback_message, reply_markup=None, parse_mode="HTML", is_caption=True)
-        else:
-            await safe_edit_message_text(bot=self.bot, chat_id=chat_id, message_id=message_id, text=final_feedback_message, reply_markup=None, parse_mode="HTML")
+        timeout_message = "انتهى الوقت للسؤال الحالي! ⌛"
+        try:
+            if question_was_image and message_id_to_edit:
+                await self.bot.edit_message_caption(chat_id=chat_id_from_job, message_id=message_id_to_edit, caption=timeout_message, reply_markup=None)
+            elif message_id_to_edit: # Text question
+                await self.bot.edit_message_text(text=timeout_message, chat_id=chat_id_from_job, message_id=message_id_to_edit, reply_markup=None)
+        except telegram.error.BadRequest as e_edit_timeout:
+            if "MESSAGE_NOT_MODIFIED" not in str(e_edit_timeout).upper():
+                 logger.error(f"Error editing message on timeout: {e_edit_timeout}")
+        except Exception as e_edit_timeout_gen:
+            logger.error(f"Unexpected error editing message on timeout: {e_edit_timeout_gen}")
 
         self.current_question_index += 1
-        # ADDED: Small delay (good practice)
-        await asyncio.sleep(1.5) 
-        await self.send_question(chat_id, user_id)
+        # Need to call send_question within an async context, which this callback is.
+        # The state transition is handled by what send_question returns.
+        # We don\'t have \'update\' here, but send_question doesn\'t strictly need it if it\'s only for query.message.chat_id etc.
+        # which we have from job_data.
+        next_state = await self.send_question(chat_id_from_job, user_id_from_job)
+        
+        # If send_question returns END, we need to ensure the conversation handler is properly ended.
+        # This is tricky as this callback is not directly part of the ConversationHandler flow.
+        # The ConversationHandler might not know the state changed to END here.
+        # For now, QuizLogic itself will manage its state. The ConversationHandler in quiz.py
+        # will eventually timeout or be ended by user action if this path leads to END.
+        if next_state == END:
+            logger.info(f"Quiz {self.quiz_id} ended via timeout path for user {user_id_from_job}.")
+            # Potentially clean up user_data if QuizLogic is responsible for it
+            if \'current_quiz_logic\' in self.context.user_data and self.context.user_data[\'current_quiz_logic\'] is self:
+                del self.context.user_data[\'current_quiz_logic\']
+                logger.debug(f"Cleaned up current_quiz_logic from user_data for user {user_id_from_job} after quiz end via timeout.")
 
     async def show_results(self, chat_id: int, user_id: int):
-        logger.info(f"Showing results for quiz {self.quiz_id} to user {user_id}. Score: {self.score}/{self.total_questions}")
-        if self.total_questions == 0:
-            results_text = "لم يتم العثور على أسئلة لهذا الاختبار."
-        else:
-            percentage = (self.score / self.total_questions) * 100 if self.total_questions > 0 else 0
-            results_text = f"🎉 **نتائج الاختبار** 🎉\n\n"
-            results_text += f"✨ لقد أكملت الاختبار بنجاح! ✨\n"
-            results_text += f"🔢 إجمالي الأسئلة: {self.total_questions}\n"
-            results_text += f"✅ الإجابات الصحيحة: {self.score}\n"
-            results_text += f"❌ الإجابات الخاطئة: {self.total_questions - self.score}\n"
-            results_text += f"📊 النسبة المئوية: {percentage:.2f}%\n\n"
-            
-            if percentage >= 80:
-                results_text += "🥳 ممتاز! أداء رائع!"
-            elif percentage >= 60:
-                results_text += "👍 جيد جداً! استمر في التقدم!"
-            elif percentage >= 40:
-                results_text += "😐 لا بأس، يمكنك التحسن في المرة القادمة."
-            else:
-                results_text += "😔 حظ أوفر في المرة القادمة. حاول مرة أخرى!"
+        logger.info(f"Showing results for quiz {self.quiz_id}, user {user_id}. Score: {self.score}/{self.total_questions}")
+        results_text = f"🎉 *نتائج الاختبار* 🎉\n\n"
+        results_text += f"المستخدم: {user_id}\n"
+        results_text += f"نوع الاختبار: {self.quiz_type}\n"
+        results_text += f"النتيجة: {self.score} من {self.total_questions}\n\n"
+        results_text += "*تفاصيل الإجابات:*
+"
+        for i, ans in enumerate(self.answers):
+            q_text = ans.get("question_text", f"سؤال {i+1}")
+            sel_text = ans.get("selected_option_text", "لم يتم الاختيار")
+            corr_text = ans.get("correct_option_text", "غير محدد")
+            status = "✅ صحيح" if ans.get("is_correct") else ("⌛ انتهى الوقت" if ans.get("selected_option_id") == "TIMEOUT" else "❌ خطأ")
+            results_text += f"\n*{q_text[:50]}...*
+إجابتك: {sel_text[:50]}... ({status})
+" 
+            if not ans.get("is_correct") and ans.get("selected_option_id") != "TIMEOUT":
+                results_text += f"الإجابة الصحيحة: {corr_text[:50]}...
+"
 
-        await safe_send_message(self.bot, chat_id, results_text, parse_mode="Markdown")
+        # Clean up the quiz instance from user_data
+        if \'current_quiz_logic\' in self.context.user_data and self.context.user_data[\'current_quiz_logic\'] is self:
+            del self.context.user_data[\'current_quiz_logic\']
+            logger.debug(f"Cleaned up current_quiz_logic from user_data for user {user_id} after showing results.")
         
-        # Clear quiz state from user_data to allow starting a new quiz
-        user_data = self.context.user_data
-        if user_data:
-            user_data.pop('current_quiz_logic', None)
-            user_data.pop('quiz_type', None)
-            user_data.pop('quiz_scope', None) # Ensure this is cleared if it was set
-            user_data.pop('question_count', None)
-            logger.info(f"Cleared quiz-related user_data for user {user_id} after showing results.")
+        # Ensure any lingering timers for this quiz are stopped.
+        # This is a safeguard; timers should be stopped per question.
+        for i in range(self.total_questions):
+            timer_job_name = f"qtimer_{user_id}_{chat_id}_{self.quiz_id}_{i}"
+            remove_job_if_exists(timer_job_name, self.context)
+
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu_from_quiz_results")
+        ]])
+        try:
+            # If the last interaction was an edit (e.g. feedback on last answer), we might need to send a new message for results.
+            # Or, if called from send_question when quiz ends, it might edit the last question message.
+            # For simplicity, let\'s assume we always send a new message for results to avoid complex message_id tracking here.
+            await safe_send_message(self.bot, chat_id, results_text, reply_markup=keyboard, parse_mode="Markdown")
+        except Exception as e_results:
+            logger.error(f"Failed to send quiz results for quiz {self.quiz_id} to user {user_id}: {e_results}")
+            await safe_send_message(self.bot, chat_id, "حدث خطأ أثناء عرض النتائج. نتيجتك هي {self.score}/{self.total_questions}.")
+
+    def get_final_results_text_and_markup(self):
+        # This method can be called by the quiz handler if it needs to display results again
+        results_text = f"🎉 *نتائج الاختبار (معادة)* 🎉\n\n"
+        results_text += f"المستخدم: {self.user_id}\n"
+        results_text += f"نوع الاختبار: {self.quiz_type}\n"
+        results_text += f"النتيجة: {self.score} من {self.total_questions}\n\n"
+        results_text += "*تفاصيل الإجابات:*
+"
+        for i, ans in enumerate(self.answers):
+            q_text = ans.get("question_text", f"سؤال {i+1}")
+            sel_text = ans.get("selected_option_text", "لم يتم الاختيار")
+            corr_text = ans.get("correct_option_text", "غير محدد")
+            status = "✅ صحيح" if ans.get("is_correct") else ("⌛ انتهى الوقت" if ans.get("selected_option_id") == "TIMEOUT" else "❌ خطأ")
+            results_text += f"\n*{q_text[:50]}...*
+إجابتك: {sel_text[:50]}... ({status})
+" 
+            if not ans.get("is_correct") and ans.get("selected_option_id") != "TIMEOUT":
+                results_text += f"الإجابة الصحيحة: {corr_text[:50]}...
+"
+        
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu_from_quiz_results")
+        ]])
+        return results_text, keyboard
 
