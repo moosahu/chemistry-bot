@@ -80,7 +80,7 @@ def update_user_stats_in_json(user_id: int, score: float, total_questions_in_qui
     
     quiz_history = stats.get("quiz_history", [])
     quiz_record = {
-        "quiz_id": quiz_id if quiz_id else f"quiz_{datetime.now().strftime("%Y%m%d%H%M%S")}",
+        "quiz_id": quiz_id if quiz_id else f"quiz_{datetime.now().strftime('%Y%m%d%H%M%S')}",
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "score_percentage": score,
         "correct_answers": correct_answers_count,
@@ -91,7 +91,7 @@ def update_user_stats_in_json(user_id: int, score: float, total_questions_in_qui
     stats["quiz_history"] = quiz_history[-5:]
         
     save_user_stats_to_json(user_id, stats)
-    logger.info(f"JSON stats updated for user {user_id} after quiz {quiz_id if quiz_id else "N/A"}.")
+    logger.info(f"JSON stats updated for user {user_id} after quiz {quiz_id if quiz_id else 'N/A'}.")
 
 # --- Chart Generation Functions ---
 def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: int) -> str | None:
@@ -318,7 +318,7 @@ stats_conv_handler = ConversationHandler(
     fallbacks=[
         CommandHandler("start", main_menu_callback),
         CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
-        CallbackQueryHandler(stats_menu, pattern=".*")
+        CallbackQueryHandler(stats_menu, pattern=".*") # Catch-all to return to stats menu if unknown button in stats
     ],
     map_to_parent={
         MAIN_MENU: MAIN_MENU,
@@ -326,4 +326,5 @@ stats_conv_handler = ConversationHandler(
     persistent=True,
     name="stats_conversation"
 )
+
 
