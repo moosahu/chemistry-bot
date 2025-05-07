@@ -390,7 +390,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     logger.info(f"Quiz instance created for user {user_id}. Starting quiz with {num_questions} questions.")
 
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"⏳ يتم الآن إعداد اختبارك ({quiz_type_display}{scope_display}) بـ {num_questions} سؤال. لحظات قليلة...")
-     return await quiz_logic.start_quiz(update) # This will send the first question and return TAKING_QUIZ
+    return await quiz_logic.start_quiz(update) # This will send the first question and return TAKING_QUIZ
 
 async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
