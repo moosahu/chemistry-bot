@@ -6,7 +6,7 @@ import os
 
 # Import connection details from db_setup
 # Assuming data_logger.py is in the same directory as db_setup.py
-from db_setup import get_db_connection_string # MODIFIED: Removed relative import
+from .db_setup import get_db_connection_string # MODIFIED: Changed to relative import
 
 def get_db_connection():
     """Establishes a connection to the PostgreSQL database."""

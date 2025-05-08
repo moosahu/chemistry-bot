@@ -444,7 +444,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     context.user_data["quiz_sessions"][quiz_instance.quiz_id] = quiz_instance
     context.user_data[f"quiz_message_id_to_edit_{user_id}_{chat_id}"] = query.message.message_id
 
-    logger.info(f"User {user_id} starting quiz '{quiz_instance.quiz_name}' (ID: {quiz_instance.quiz_id}) with {len(questions_to_use)} questions. DB Session: {db_quiz_session_id}")
+    logger.info(f"User {user_id} starting quiz 	'{quiz_instance.quiz_name}	' (ID: {quiz_instance.quiz_id}) with {len(questions_to_use)} questions. DB Session: {db_quiz_session_id}")
     return await quiz_instance.start_quiz(context.bot, context, update, user_id)
 
 async def process_answer(update: Update, context: CallbackContext) -> int:
@@ -473,4 +473,96 @@ async def show_quiz_results(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     await query.answer()
     # This state is primarily for handling callbacks from buttons shown by QuizLogic.show_results
-    # (e.g., 
+    # (e.g., "restart_quiz", "main_menu")
+    callback_data = query.data
+    logger.info(f"User {user_id} in SHOWING_RESULTS state, callback_data: {callback_data}")
+
+    if callback_data == "restart_quiz":
+        logger.info(f"User {user_id} chose to restart quiz from results.")
+        # Simulate going back to the quiz menu entry to clear things and start fresh
+        # We need to pass the original message object if possible, or at least the chat_id and message_id
+        # to edit the message correctly.
+        # This might need a slight refactor if quiz_menu_entry expects a specific query object structure.
+        # For now, let's try to call it directly. We might need to store the original message to edit.
+        # A simpler way is to just send a new message for the quiz menu.
+        
+        # Clean up any lingering quiz instance data for this user if it wasn't fully cleaned by QuizLogic
+        # This is a safety measure.
+        if "quiz_sessions" in context.user_data:
+            for q_id, q_instance in list(context.user_data["quiz_sessions"].items()):
+                if isinstance(q_instance, QuizLogic) and q_instance.user_id == user_id:
+                    await q_instance.cleanup_quiz_data(context, user_id, "restart_quiz_from_results_cleanup")
+                    logger.info(f"Cleaned up quiz session {q_id} for user {user_id} before restarting.")
+        
+        # Reset quiz selection data
+        keys_to_clear_on_restart = [
+            "selected_quiz_type_key", "selected_quiz_type_display_name", "questions_for_quiz",
+            "selected_course_id_for_unit_quiz", "available_courses_for_unit_quiz",
+            "current_course_page_for_unit_quiz", "selected_course_name_for_unit_quiz",
+            "available_units_for_course", "current_unit_page_for_course",
+            "selected_unit_id", "selected_unit_name", "question_count_for_quiz",
+            "db_quiz_session_id"
+        ]
+        for key in keys_to_clear_on_restart:
+            context.user_data.pop(key, None)
+        logger.debug(f"Cleared quiz setup data for user {user_id} before restarting quiz.")
+
+        keyboard = create_quiz_type_keyboard()
+        # Edit the current message (results message) to show the quiz type selection
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
+        return SELECT_QUIZ_TYPE
+
+    elif callback_data == "main_menu":
+        logger.info(f"User {user_id} chose main_menu from results.")
+        await main_menu_callback(update, context)
+        return ConversationHandler.END
+    else:
+        logger.warning(f"User {user_id} sent unexpected callback_data in SHOWING_RESULTS: {callback_data}")
+        # Potentially do nothing or send a generic message
+        return SHOWING_RESULTS # Stay in this state if callback is not recognized
+
+# Define the ConversationHandler for the quiz
+quiz_conv_handler = ConversationHandler(
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_menu$")],
+    states={
+        SELECT_QUIZ_TYPE: [
+            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_.+$"),
+            CallbackQueryHandler(select_quiz_type, pattern="^main_menu$") # Allow going to main menu
+        ],
+        SELECT_COURSE_FOR_UNIT_QUIZ: [
+            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_course_select_.+$"),
+            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_course_page_.+$"),
+            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_type_back_to_type_selection$")
+        ],
+        SELECT_UNIT_FOR_COURSE: [
+            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_select_.+_.+$"),
+            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_page_.+_.+$"),
+            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_back_to_course_selection$")
+        ],
+        ENTER_QUESTION_COUNT: [
+            CallbackQueryHandler(select_question_count, pattern="^num_questions_.+$"),
+            CallbackQueryHandler(select_question_count, pattern="^quiz_count_back_to_unit_selection_.+$"),
+            CallbackQueryHandler(select_question_count, pattern="^quiz_type_back_to_type_selection$") # For QUIZ_TYPE_ALL back
+        ],
+        TAKING_QUIZ: [
+            CallbackQueryHandler(process_answer, pattern="^ans_.+_.+_.+$")
+        ],
+        SHOWING_RESULTS: [
+            CallbackQueryHandler(show_quiz_results, pattern="^restart_quiz$"),
+            CallbackQueryHandler(show_quiz_results, pattern="^main_menu$")
+        ]
+    },
+    fallbacks=[
+        CommandHandler("start", start_command_fallback_for_quiz), # Handles /start during quiz
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # General fallback to main menu if other patterns fail in states
+    ],
+    map_to_parent={
+        # If the conversation ends (e.g. by returning ConversationHandler.END), return to MAIN_MENU state in parent
+        ConversationHandler.END: MAIN_MENU,
+        # Or if you want to go to a specific state after quiz, define it here
+    },
+    per_message=False,
+    per_user=True,
+    allow_reentry=True # Important to allow re-entering the quiz menu
+)
+
