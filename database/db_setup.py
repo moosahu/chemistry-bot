@@ -45,16 +45,16 @@ def create_tables(conn, drop_first=False):
             conn.commit() # Commit the drop operations
             print("Finished attempting to drop tables.")
 
-        # User Data Table - MODIFIED TO INCLUDE first_name, last_name, language_code
+        # User Data Table - MODIFIED TO INCLUDE first_name, last_name, language_code, and last_interaction_date
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id BIGINT PRIMARY KEY,
             username TEXT,
-            first_name TEXT,          -- Added column
-            last_name TEXT,           -- Added column
-            language_code TEXT,       -- Added column
+            first_name TEXT,
+            last_name TEXT,
+            language_code TEXT,
             first_seen_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            last_active_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            last_interaction_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP -- Changed from last_active_timestamp and ensured it's present
         );
         """)
 
@@ -89,7 +89,7 @@ def create_tables(conn, drop_first=False):
         """)
 
         # Create indexes for faster queries on frequently used columns
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_last_active ON users (last_active_timestamp DESC NULLS LAST);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_last_interaction ON users (last_interaction_date DESC NULLS LAST);") -- Changed from idx_users_last_active
         # Add indexes for new columns if they will be frequently queried/filtered on
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);") # Example for username
 
