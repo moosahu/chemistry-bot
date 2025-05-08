@@ -5,7 +5,7 @@ import datetime
 import os
 
 # Import connection details from db_setup
-from db_setup import get_db_connection_string, create_connection as get_raw_connection # Renaming to avoid conflict if any
+from .db_setup import get_db_connection_string, create_connection as get_raw_connection # Renaming to avoid conflict if any
 
 def get_db_connection():
     """Establishes a connection to the PostgreSQL database and returns a cursor that returns dicts."""

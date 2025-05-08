@@ -4,7 +4,7 @@ import psycopg2.extras # For DictCursor
 import datetime
 
 # Import connection details from db_setup
-from db_setup import get_db_connection_string
+from database.db_setup import get_db_connection_string
 
 def get_db_connection():
     """Establishes a connection to the PostgreSQL database."""

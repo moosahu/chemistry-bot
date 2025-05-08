@@ -34,7 +34,8 @@ try:
         logger, # Logger instance
         MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END # Conversation states
     )
-    from database.schema import setup_database_schema, apply_schema_updates
+    # MODIFIED IMPORT FOR DB SETUP
+    from database.db_setup import create_connection, create_tables # WAS: from database.schema import setup_database_schema, apply_schema_updates
     # Import handlers
     print("DEBUG: Importing handlers.common...")
     from handlers.common import start_handler, main_menu_callback # Keep main_menu_callback for fallbacks
@@ -96,19 +97,27 @@ def main() -> None:
     """Start the bot."""
     logger.info("Starting bot...")
 
-    # --- Database Setup ---
-    logger.info("Setting up database schema...")
+    # --- Database Setup --- MODIFIED BLOCK
+    logger.info("Setting up database connection and tables...")
+    conn = None 
     try:
-        if not setup_database_schema():
-            logger.error("Database initial schema setup failed.")
+        conn = create_connection()
+        if conn:
+            logger.info("Database connected successfully.")
+            # When calling from bot.py, it's safer to default drop_first to False.
+            # The user can change this to True for an initial clean setup if needed,
+            # or manage it via the __main__ in db_setup.py for manual setup.
+            create_tables(conn, drop_first=False) 
+            logger.info("Database tables checked/created successfully.")
         else:
-            logger.info("Initial schema setup/check successful.")
-            if not apply_schema_updates():
-                logger.warning("Applying schema updates failed.")
-            else:
-                logger.info("Schema updates applied successfully.")
+            logger.error("Failed to create database connection. Bot may not function correctly with database features.")
     except Exception as db_exc:
-        logger.error(f"Error during database setup: {db_exc}")
+        logger.error(f"Error during database setup: {db_exc}", exc_info=True)
+    finally:
+        if conn:
+            conn.close()
+            logger.info("Database connection closed after setup.")
+    # --- END OF MODIFIED DB SETUP BLOCK ---
 
     # --- Persistence ---
     try:
