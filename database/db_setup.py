@@ -9,7 +9,7 @@ DB_USER = os.environ.get("DB_USER", "chemistry_db_user")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "2ewIvDpOHiKe8pFVVz15pba6FVDTKaB1")
 
 def get_db_connection_string():
-    return f"dbname='{DB_NAME}' user='{DB_USER}' host='{DB_HOST}' password='{DB_PASSWORD}'"
+    return f"dbname=\'{DB_NAME}\' user=\'{DB_USER}\' host=\'{DB_HOST}\' password=\'{DB_PASSWORD}\'"
 
 def create_connection():
     """Create a database connection to the PostgreSQL database."""
@@ -89,7 +89,8 @@ def create_tables(conn, drop_first=False):
         """)
 
         # Create indexes for faster queries on frequently used columns
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_last_interaction ON users (last_interaction_date DESC NULLS LAST);") -- Changed from idx_users_last_active
+        # Changed from idx_users_last_active
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_last_interaction ON users (last_interaction_date DESC NULLS LAST);")
         # Add indexes for new columns if they will be frequently queried/filtered on
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);") # Example for username
 
