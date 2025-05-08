@@ -30,9 +30,6 @@ def drop_existing_tables(cursor):
             print(f"Table {table} dropped successfully (if it existed).")
         except psycopg2.Error as e:
             print(f"Error dropping table {table}: {e}")
-            # Depending on the error, you might want to raise it or handle it
-            # For now, we'll print and continue, assuming it might be a non-critical issue
-            # if the table didn't exist or had no dependents to cascade.
 
 def create_tables(conn, drop_first=False):
     """Create tables in the PostgreSQL database. Optionally drop them first."""
@@ -48,11 +45,14 @@ def create_tables(conn, drop_first=False):
             conn.commit() # Commit the drop operations
             print("Finished attempting to drop tables.")
 
-        # User Data Table
+        # User Data Table - MODIFIED TO INCLUDE first_name, last_name, language_code
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id BIGINT PRIMARY KEY,
             username TEXT,
+            first_name TEXT,          -- Added column
+            last_name TEXT,           -- Added column
+            language_code TEXT,       -- Added column
             first_seen_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             last_active_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -89,9 +89,10 @@ def create_tables(conn, drop_first=False):
         """)
 
         # Create indexes for faster queries on frequently used columns
-        # Note: PostgreSQL automatically creates indexes for PRIMARY KEY and UNIQUE constraints.
-        # Explicitly creating indexes for foreign keys or frequently queried columns is good practice.
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_last_active ON users (last_active_timestamp DESC NULLS LAST);")
+        # Add indexes for new columns if they will be frequently queried/filtered on
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);") # Example for username
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sessions_user_id ON quiz_sessions (user_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sessions_unit_id ON quiz_sessions (unit_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_quiz_sessions_start_timestamp ON quiz_sessions (start_timestamp DESC NULLS LAST);")
@@ -113,10 +114,12 @@ if __name__ == '__main__':
     print(f"Attempting to set up PostgreSQL database '{DB_NAME}' on host '{DB_HOST}'")
     conn = create_connection()
     if conn is not None:
-        # Set drop_first=True if you want to ensure a clean setup, 
-        # but be VERY CAREFUL with this in a production environment as it deletes data.
-        # For development and initial setup, it can be useful.
-        create_tables(conn, drop_first=True) 
+        # IMPORTANT: For the schema change to take effect on an existing database,
+        # you MUST run this with drop_first=True ONCE to delete and recreate tables.
+        # BE VERY CAREFUL: THIS WILL DELETE ALL EXISTING DATA IN THESE TABLES.
+        # After the first successful run with drop_first=True, change it back to False.
+        # Alternatively, manually apply ALTER TABLE commands to your production DB if you cannot lose data.
+        create_tables(conn, drop_first=True) # Set to True for the first run to apply schema changes
         conn.close()
         print(f"Database setup process finished for {DB_NAME}.")
     else:
