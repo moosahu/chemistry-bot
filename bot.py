@@ -60,6 +60,16 @@ try:
     from handlers.stats import stats_conv_handler
     # -----------------------------------------------------------
 
+    # +++ ADDED: Import for Admin Statistics Handlers +++
+    from handlers.admin_interface import (
+        stats_admin_panel_command_handler, 
+        stats_menu_callback_handler, 
+        stats_fetch_stats_callback_handler, 
+        STATS_PREFIX_MAIN_MENU, 
+        STATS_PREFIX_FETCH
+    )
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++
+
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger(__name__)
@@ -161,6 +171,14 @@ def main() -> None:
     application.add_handler(stats_conv_handler)
     logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
     # ---------------------------------------------------------------
+
+    # +++ ADDED: Admin Statistics Handlers +++
+    logger.info("Adding Admin Statistics handlers...")
+    application.add_handler(CommandHandler("adminstats", stats_admin_panel_command_handler))
+    application.add_handler(CallbackQueryHandler(stats_menu_callback_handler, pattern=f"^{STATS_PREFIX_MAIN_MENU}"))
+    application.add_handler(CallbackQueryHandler(stats_fetch_stats_callback_handler, pattern=f"^{STATS_PREFIX_FETCH}"))
+    logger.info("Admin Statistics handlers added.")
+    # ++++++++++++++++++++++++++++++++++++++++
 
     # --- ADDED GLOBAL HANDLER FOR MAIN MENU ---
     logger.info("Adding global main_menu_callback handler...")
