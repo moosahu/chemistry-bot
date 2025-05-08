@@ -49,14 +49,14 @@ class DatabaseManager:
             if commit:
                 conn.commit()
                 logger.debug("[DB Manager] Query committed successfully.")
-                result = True
+                result = True # Indicate success for commit operations
             elif fetch_one:
                 result = cur.fetchone()
                 logger.debug(f"[DB Manager] Fetched one row: {dict(result) if result else None}")
             elif fetch_all:
-                result = cur.fetchall()
-                logger.debug(f"[DB Manager] Fetched {len(result)} rows.")
-                result = [dict(row) for row in result] if result else []
+                result_list = cur.fetchall()
+                logger.debug(f"[DB Manager] Fetched {len(result_list)} rows.")
+                result = [dict(row) for row in result_list] if result_list else []
             
             return result
         except (Exception, psycopg2.DatabaseError) as error:
@@ -68,7 +68,7 @@ class DatabaseManager:
             logger.error(f"[DB Manager] Database query error: {error}\nFailed Query: {failed_query}")
             if conn:
                 conn.rollback()
-            return None
+            return None # Indicate failure for commit or fetch operations
         finally:
             if cur:
                 cur.close()
@@ -101,7 +101,7 @@ class DatabaseManager:
         logger.debug(f"[DB User] Checking admin status for user {user_id}.")
         query = "SELECT is_admin FROM users WHERE user_id = %s;"
         result = self._execute_query(query, (user_id,), fetch_one=True)
-        is_admin = result["is_admin"] if result and result["is_admin"] else False
+        is_admin = result["is_admin"] if result and result["is_admin"] is True else False
         logger.debug(f"[DB User] Admin status for user {user_id}: {is_admin}")
         return is_admin
 
@@ -148,7 +148,7 @@ class DatabaseManager:
         logger.info(f"[DB Questions] Found {count} questions in DB for type=\"{scope_type}\" id={scope_id}")
         return count
 
-    # --- Quiz Results (MODIFIED FUNCTION) --- 
+    # --- Quiz Results (MODIFIED FUNCTION from original user file) --- 
     def save_quiz_result(self, user_id: int, quiz_type: str, quiz_scope_id: int | None, 
                            total_questions: int, correct_count: int, wrong_count: int, skipped_count: int, 
                            score_percentage_calculated: float, start_time: datetime, end_time: datetime, details: dict):
@@ -158,15 +158,27 @@ class DatabaseManager:
         time_taken_seconds_val = 0
         if start_time and end_time:
             time_taken_seconds_val = int((end_time - start_time).total_seconds())
+        
+        # Assuming `quiz_sessions` table is used and `db_quiz_session_id` is passed from quiz_logic
+        # For now, let's assume the `quiz_results` table is self-contained for simplicity as per original user file.
+        # If `quiz_sessions` is involved, this query and parameters would need adjustment.
 
         query = """
         INSERT INTO quiz_results 
             (user_id, quiz_type, filter_id, total_questions, score, 
-             score_percentage, time_taken_seconds, completed_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
+             score_percentage, time_taken_seconds, completed_at, answers_details, quiz_name, quiz_id_uuid)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s);
         """
+        # Parameters need to match the columns in your quiz_results table
+        # The original user file for save_quiz_result didn't include quiz_name or quiz_id_uuid, 
+        # but data_logger.py (which calls this) does. We add them here.
+        # `details` is assumed to be `answers_details`
+        quiz_name_from_details = details.get("quiz_name", quiz_type) # Fallback for quiz_name
+        quiz_id_uuid_from_details = details.get("quiz_id_uuid")
+
         params = (user_id, quiz_type, quiz_scope_id, total_questions, correct_count, 
-                  score_percentage_calculated, time_taken_seconds_val)
+                  score_percentage_calculated, time_taken_seconds_val, json.dumps(details.get("answers", [])), 
+                  quiz_name_from_details, quiz_id_uuid_from_details)
         
         success = self._execute_query(query, params, commit=True)
         if success:
@@ -175,31 +187,62 @@ class DatabaseManager:
             logger.error(f"[DB Results] Failed to save result to DB for user {user_id}, type {quiz_type}.")
         return success
 
-    # --- User Stats (MODIFIED FUNCTION) --- 
-    def get_user_stats(self, user_id: int):
-        """Retrieves aggregated statistics for a specific user."""
-        logger.info(f"[DB Stats] Fetching stats for user_id: {user_id}")
+    # --- User Stats (MODIFIED FUNCTION from original user file, now get_user_overall_stats) --- 
+    def get_user_overall_stats(self, user_id: int):
+        """Retrieves aggregated overall statistics for a specific user."""
+        logger.info(f"[DB Stats] Fetching overall stats for user_id: {user_id}")
         query = """
         SELECT 
-            COUNT(*) as total_quizzes_taken,
-            COALESCE(SUM(score), 0) as total_correct, 
-            COALESCE(AVG(score_percentage), 0.0) as average_score,
+            COUNT(result_id) as total_quizzes_taken,
+            COALESCE(SUM(score), 0) as total_correct_answers, 
+            COALESCE(SUM(total_questions), 0) as total_questions_attempted,
+            COALESCE(AVG(score_percentage), 0.0) as average_score_percentage,
+            COALESCE(MAX(score_percentage), 0.0) as highest_score_percentage,
             COALESCE(SUM(time_taken_seconds), 0) as total_time_seconds
         FROM quiz_results
         WHERE user_id = %s;
         """
         stats = self._execute_query(query, (user_id,), fetch_one=True)
-        if stats:
-            logger.info(f"[DB Stats] Stats found for user {user_id}: {dict(stats)}")
+        if stats and stats["total_quizzes_taken"] > 0:
+            logger.info(f"[DB Stats] Overall stats found for user {user_id}: {dict(stats)}")
             return dict(stats)
         else:
-            logger.warning(f"[DB Stats] No stats found for user {user_id} or query failed.")
+            logger.warning(f"[DB Stats] No overall stats found for user {user_id} or query failed.")
             return {
                 "total_quizzes_taken": 0,
-                "total_correct": 0,
-                "average_score": 0.0,
+                "total_correct_answers": 0,
+                "total_questions_attempted": 0,
+                "average_score_percentage": 0.0,
+                "highest_score_percentage": 0.0,
                 "total_time_seconds": 0
             }
+
+    # --- NEW FUNCTION for recent quiz history ---
+    def get_user_recent_quiz_history(self, user_id: int, limit: int = 5):
+        """Retrieves recent quiz history for a specific user."""
+        logger.info(f"[DB Stats] Fetching recent quiz history for user_id: {user_id}, limit: {limit}")
+        query = """
+        SELECT 
+            result_id,
+            quiz_name,
+            quiz_type,
+            total_questions,
+            score, 
+            score_percentage as percentage, 
+            completed_at as completion_timestamp,
+            answers_details
+        FROM quiz_results
+        WHERE user_id = %s
+        ORDER BY completed_at DESC
+        LIMIT %s;
+        """
+        history = self._execute_query(query, (user_id, limit), fetch_all=True)
+        if history:
+            logger.info(f"[DB Stats] Found {len(history)} recent quizzes for user {user_id}.")
+            return history # Already a list of dicts
+        else:
+            logger.warning(f"[DB Stats] No recent quiz history found for user {user_id} or query failed.")
+            return []
 
     def get_leaderboard(self, limit: int = 10):
         logger.info(f"[DB Stats] Fetching top {limit} users for leaderboard.")
@@ -207,13 +250,13 @@ class DatabaseManager:
         SELECT 
             r.user_id,
             COALESCE(u.username, u.first_name, CAST(r.user_id AS VARCHAR)) as user_display_name,
-            AVG(r.score_percentage) as average_score,
-            COUNT(r.result_id) as quizzes_taken
+            AVG(r.score_percentage) as average_score_percentage, -- Ensure key matches stats.py
+            COUNT(r.result_id) as total_quizzes_taken -- Ensure key matches stats.py
         FROM quiz_results r
         LEFT JOIN users u ON r.user_id = u.user_id
-        GROUP BY r.user_id, user_display_name
+        GROUP BY r.user_id, u.username, u.first_name
         HAVING COUNT(r.result_id) > 0
-        ORDER BY average_score DESC, quizzes_taken DESC
+        ORDER BY average_score_percentage DESC, total_quizzes_taken DESC
         LIMIT %s;
         """
         leaderboard = self._execute_query(query, (limit,), fetch_all=True)
@@ -226,4 +269,5 @@ class DatabaseManager:
 
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager] Global instance created.")
+
 
