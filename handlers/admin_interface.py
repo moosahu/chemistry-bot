@@ -6,8 +6,8 @@ from utils.admin_auth import is_admin
 from utils import admin_logic
 
 # Callback data prefixes
-PREFIX_MAIN_MENU = "stats_menu_"
-PREFIX_FETCH_STAT = "stats_fetch_"
+STATS_PREFIX_MAIN_MENU = "stats_menu_"
+STATS_PREFIX_FETCH_STAT = "stats_fetch_"
 PREFIX_TIME_FILTER = "filter_"
 
 # Time filter options
