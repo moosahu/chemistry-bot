@@ -38,7 +38,7 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")], 
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")], 
-        [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]  # Added About Bot button
+        [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]  # MODIFIED: Added About Bot button
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -77,6 +77,7 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user = update.effective_user
     state_to_return = MAIN_MENU 
+    data = "" # Initialize data
 
     if query:
         await query.answer()
@@ -85,18 +86,21 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
 
         if data == "start_quiz":
             logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Transitioning to QUIZ_MENU state for quiz handler.")
-            # This will be handled by the quiz ConversationHandler's entry point
-            # Returning QUIZ_MENU which should be the entry state for quiz selection flow
             return QUIZ_MENU 
         elif data == "menu_info": 
             state_to_return = INFO_MENU
         elif data == "menu_stats": 
             state_to_return = STATS_MENU
-        elif data == "about_bot":  # Handle new About Bot button
-            about_text = "تطوير الاستاذ حسين علي الموسى"
+        elif data == "about_bot": # MODIFIED: Handle new About Bot button
+            about_text = ("**حول بوت كيمياء تحصيلي**\n\n" 
+                          "يهدف هذا البوت إلى مساعدتك في الاستعداد لاختبار التحصيلي في مادة الكيمياء "
+                          "من خلال توفير مجموعة متنوعة من الأسئلة التدريبية التي تغطي مختلف جوانب المقرر. "
+                          "يمكنك اختيار اختبارات عشوائية شاملة أو اختبارات مخصصة لوحدات دراسية معينة.\n\n"
+                          "نتمنى لك كل التوفيق في رحلتك التعليمية!\n\n"
+                          "**تطوير:** الأستاذ حسين علي الموسى")
             # Send the about text as a new message, then show the main menu again
-            await safe_send_message(context.bot, query.message.chat_id, text=about_text)
-            # Fall through to re-display main menu
+            await safe_send_message(context.bot, query.message.chat_id, text=about_text, parse_mode="Markdown")
+            # Fall through to re-display main menu by ensuring state_to_return is MAIN_MENU
             state_to_return = MAIN_MENU 
         elif data == "main_menu": 
             state_to_return = MAIN_MENU
@@ -108,7 +112,6 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         menu_text = "القائمة الرئيسية:"
         keyboard = create_main_menu_keyboard(user.id)
         if query and query.message: # Ensure query.message exists
-            # *** CORRECTED THE CALL TO safe_edit_message_text ***
             await safe_edit_message_text(context.bot, query.message.chat_id, query.message.message_id, text=menu_text, reply_markup=keyboard)
         elif update.effective_chat: # Fallback for cases where query might not be available but we want to send a new menu
             await safe_send_message(context.bot, update.effective_chat.id, text=menu_text, reply_markup=keyboard)
@@ -128,8 +131,7 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     return state_to_return
 
 start_handler = CommandHandler('start', start_command)
-# This handler will catch 'main_menu' from quiz results or other places
-# It will also catch 'about_bot' now
+# MODIFIED: This handler will catch 'main_menu' and 'about_bot'
 main_menu_nav_handler = CallbackQueryHandler(main_menu_callback, pattern='^(main_menu|about_bot)$')
 
 # It's assumed that quiz.py (or similar) will have its own ConversationHandler

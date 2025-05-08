@@ -164,7 +164,7 @@ def main() -> None:
 
     # --- ADDED GLOBAL HANDLER FOR MAIN MENU ---
     logger.info("Adding global main_menu_callback handler...")
-    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"))
+    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
     # ------------------------------------------
 
