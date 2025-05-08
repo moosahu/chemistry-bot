@@ -403,7 +403,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     questions_to_use = random.sample(all_questions_for_quiz, num_questions) if num_questions < max_questions and max_questions > 0 else all_questions_for_quiz
     
     telegram_user = query.from_user
-    db_quiz_session_id = None
+    # db_quiz_session_id = None # Commented out as it might not be used by the original quiz_logic.py
     try:
         log_user_activity(
             user_id=telegram_user.id,
@@ -414,17 +414,17 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
         )
         log_quiz_name = context.user_data.get("selected_unit_name") or context.user_data.get("selected_quiz_type_display_name", "اختبار عام")
         
-        db_quiz_session_id = log_quiz_start(
-            user_id=telegram_user.id,
-            quiz_name=log_quiz_name, 
-            total_questions=num_questions,
-            quiz_type=selected_quiz_type_key
-        )
-        if db_quiz_session_id:
-            context.user_data["db_quiz_session_id"] = db_quiz_session_id
-            logger.info(f"User {user_id}: DB quiz session started with ID: {db_quiz_session_id}")
-        else:
-            logger.error(f"User {user_id}: Failed to get db_quiz_session_id from log_quiz_start.")
+        # db_quiz_session_id = log_quiz_start(
+        #     user_id=telegram_user.id,
+        #     quiz_name=log_quiz_name, 
+        #     total_questions=num_questions,
+        #     quiz_type=selected_quiz_type_key
+        # )
+        # if db_quiz_session_id:
+        #     context.user_data["db_quiz_session_id"] = db_quiz_session_id
+        #     logger.info(f"User {user_id}: DB quiz session started with ID: {db_quiz_session_id}")
+        # else:
+        #     logger.error(f"User {user_id}: Failed to get db_quiz_session_id from log_quiz_start.")
     except Exception as e_db_log:
         logger.error(f"User {user_id}: Error during DB logging (user_activity/quiz_start): {e_db_log}", exc_info=True)
 
@@ -435,13 +435,13 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
         quiz_type=selected_quiz_type_key,
         questions_data=questions_to_use,
         question_time_limit=DEFAULT_QUESTION_TIME_LIMIT, 
-        quiz_name=quiz_name_for_logic, 
-        db_quiz_session_id=db_quiz_session_id 
+        quiz_name=quiz_name_for_logic 
+        # db_quiz_session_id=db_quiz_session_id # Removed to match original quiz_logic.py
     )
     context.user_data["quiz_sessions"][quiz_instance.quiz_id] = quiz_instance
     context.user_data[f"quiz_message_id_to_edit_{user_id}_{chat_id}"] = query.message.message_id
 
-    logger.info(f"User {user_id} starting quiz 	'{quiz_instance.quiz_name}	' (ID: {quiz_instance.quiz_id}) with {len(questions_to_use)} questions. DB Session: {db_quiz_session_id}")
+    logger.info(f"User {user_id} starting quiz 	'{quiz_instance.quiz_name}	' (ID: {quiz_instance.quiz_id}) with {len(questions_to_use)} questions.") # Removed DB Session from log
     return await quiz_instance.start_quiz(context.bot, context, update, user_id)
 
 async def process_answer(update: Update, context: CallbackContext) -> int:
