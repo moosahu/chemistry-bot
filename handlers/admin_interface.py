@@ -65,11 +65,11 @@ def stats_menu_callback_handler(update: Update, context: CallbackContext):
         return
 
     # Extract stat category, e.g., "usage_overview" from "stats_menu_usage_overview"
-    stat_category_base = callback_data.replace(PREFIX_MAIN_MENU, "") 
+    stat_category_base = callback_data.replace(PREFIX_MAIN_MENU, "")
     # Now, instead of fetching, show time filter options for this category
     # The base for fetch will be PREFIX_FETCH_STAT + stat_category_base
     fetch_base_callback = f"{PREFIX_FETCH_STAT}{stat_category_base}"
-    
+
     reply_markup = get_time_filter_buttons(fetch_base_callback)
     query.edit_message_text(text=f"اختر الفترة الزمنية لـ: {stat_category_base.replace('_', ' ').title()}", reply_markup=reply_markup)
 
@@ -88,7 +88,7 @@ def fetch_stats_callback_handler(update: Update, context: CallbackContext):
         stat_category = parts[2:-3] # e.g. ["usage", "overview"]
     else:
         stat_category = parts[2:-1] # e.g. ["usage", "overview"]
-    
+
     stat_category_str = "_".join(stat_category) # e.g., "usage_overview"
     time_filter_text = TIME_FILTERS.get(time_filter_key, "كل الوقت")
 
@@ -122,9 +122,9 @@ def send_actual_stats(update: Update, context: CallbackContext, stat_category: s
         difficult_units = admin_logic.get_difficulty_units(time_filter=time_filter, limit=3, easiest=False)
         easiest_units = admin_logic.get_difficulty_units(time_filter=time_filter, limit=3, easiest=True)
 
-        pop_units_str = "\n".join([f"  - {pu["unit_id"]} ({pu["quiz_count"]} مرة)" for pu in popular_units]) or "  لا توجد بيانات"
-        diff_units_str = "\n".join([f"  - {du["unit_id"]} ({du["average_score_percent"]}٪)" for du in difficult_units]) or "  لا توجد بيانات"
-        easy_units_str = "\n".join([f"  - {eu["unit_id"]} ({eu["average_score_percent"]}٪)" for eu in easiest_units]) or "  لا توجد بيانات"
+        pop_units_str = "\n".join([f"  - {pu['unit_id']} ({pu['quiz_count']} مرة)" for pu in popular_units]) or "  لا توجد بيانات"
+        diff_units_str = "\n".join([f"  - {du['unit_id']} ({du['average_score_percent']}٪)" for du in difficult_units]) or "  لا توجد بيانات"
+        easy_units_str = "\n".join([f"  - {eu['unit_id']} ({eu['average_score_percent']}٪)" for eu in easiest_units]) or "  لا توجد بيانات"
 
         text_response = (f"📈 **أداء الاختبارات ({current_filter_text}):**\n"
                          f"- متوسط نسبة الإجابات الصحيحة: {avg_correct}%\n"
@@ -143,8 +143,8 @@ def send_actual_stats(update: Update, context: CallbackContext, stat_category: s
         difficult_questions = admin_logic.get_question_difficulty(time_filter=time_filter, limit=3, easiest=False)
         easiest_questions = admin_logic.get_question_difficulty(time_filter=time_filter, limit=3, easiest=True)
 
-        diff_q_str = "\n".join([f"  - {dq["question_id"]} ({dq["correct_percentage"]}٪ صحيحة)" for dq in difficult_questions]) or "  لا توجد بيانات"
-        easy_q_str = "\n".join([f"  - {eq["question_id"]} ({eq["correct_percentage"]}٪ صحيحة)" for eq in easiest_questions]) or "  لا توجد بيانات"
+        diff_q_str = "\n".join([f"  - {dq['question_id']} ({dq['correct_percentage']}٪ صحيحة)" for dq in difficult_questions]) or "  لا توجد بيانات"
+        easy_q_str = "\n".join([f"  - {eq['question_id']} ({eq['correct_percentage']}٪ صحيحة)" for eq in easiest_questions]) or "  لا توجد بيانات"
 
         text_response = (f"❓ **إحصائيات الأسئلة ({current_filter_text}):**\n"
                          f"- الأسئلة الأكثر صعوبة (أقل 3):\n{diff_q_str}\n"
