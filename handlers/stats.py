@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Handles displaying user statistics and leaderboards."""
 
 import logging
@@ -10,14 +9,11 @@ from telegram.ext import (
     CommandHandler
 )
 
-# --- New imports for advanced stats ---
-import json
 import os
 from datetime import datetime
 import matplotlib
 matplotlib.use("Agg") # Use Agg backend for non-interactive plotting
 import matplotlib.pyplot as plt
-# --- End of new imports ---
 
 # Import necessary components from other modules
 try:
@@ -37,65 +33,24 @@ except ImportError as e:
     def format_duration(seconds): logger.warning("Placeholder format_duration called!"); return f"{seconds}s"
     async def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
 
-# --- Directory for user stats (JSON files and charts) ---
-USER_STATS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user_data", "stats")
-os.makedirs(USER_STATS_DIR, exist_ok=True)
+# --- Directory for charts (JSON stats are deprecated) ---
+CHARTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user_data", "charts")
+os.makedirs(CHARTS_DIR, exist_ok=True)
 
-# --- Helper Functions for Advanced Stats (JSON based) ---
+# --- Deprecated JSON functions (to be removed or kept as dummy for compatibility) ---
 def load_user_stats_from_json(user_id: int) -> dict:
-    stats_file = os.path.join(USER_STATS_DIR, f"{user_id}.json")
-    if os.path.exists(stats_file):
-        try:
-            with open(stats_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Error loading stats for user {user_id} from JSON: {e}")
-            return {}
+    logger.warning(f"Deprecated: load_user_stats_from_json called for user {user_id}. Personal stats are now DB-driven.")
     return {}
 
 def save_user_stats_to_json(user_id: int, stats_data: dict) -> None:
-    stats_file = os.path.join(USER_STATS_DIR, f"{user_id}.json")
-    try:
-        with open(stats_file, "w", encoding="utf-8") as f:
-            json.dump(stats_data, f, ensure_ascii=False, indent=4)
-    except IOError as e:
-        logger.error(f"Error saving stats for user {user_id} to JSON: {e}")
+    logger.warning(f"Deprecated: save_user_stats_to_json called for user {user_id}. Personal stats are now DB-driven.")
+    pass
 
 def update_user_stats_in_json(user_id: int, score: float, total_questions_in_quiz: int, correct_answers_count: int, incorrect_answers_count: int, quiz_id: str = None):
-    stats = load_user_stats_from_json(user_id)
-    
-    stats["total_quizzes_taken"] = stats.get("total_quizzes_taken", 0) + 1
-    stats["total_correct_answers"] = stats.get("total_correct_answers", 0) + correct_answers_count
-    stats["total_incorrect_answers"] = stats.get("total_incorrect_answers", 0) + incorrect_answers_count
-    
-    stats["sum_of_scores_achieved"] = stats.get("sum_of_scores_achieved", 0) + (score / 100 * total_questions_in_quiz)
-    stats["sum_of_total_possible_scores"] = stats.get("sum_of_total_possible_scores", 0) + total_questions_in_quiz
-    
-    if stats["sum_of_total_possible_scores"] > 0:
-        stats["average_score_percentage"] = (stats["sum_of_scores_achieved"] / stats["sum_of_total_possible_scores"]) * 100
-    else:
-        stats["average_score_percentage"] = 0
-        
-    stats["highest_score_percentage"] = max(stats.get("highest_score_percentage", 0), score)
-    
-    quiz_history = stats.get("quiz_history", [])
-    # *** Line 83 Fix: Changed f-string to concatenation for quiz_id generation to ensure robustness ***
-    generated_quiz_id = "quiz_" + datetime.now().strftime('%Y%m%d%H%M%S')
-    quiz_record = {
-        "quiz_id": quiz_id if quiz_id else generated_quiz_id,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "score_percentage": score,
-        "correct_answers": correct_answers_count,
-        "incorrect_answers": incorrect_answers_count,
-        "total_questions": total_questions_in_quiz
-    }
-    quiz_history.append(quiz_record)
-    stats["quiz_history"] = quiz_history[-5:]
-        
-    save_user_stats_to_json(user_id, stats)
-    logger.info(f"JSON stats updated for user {user_id} after quiz {quiz_id if quiz_id else 'N/A'}.")
+    logger.warning(f"Deprecated: update_user_stats_in_json called for user {user_id}. Quiz results are logged directly to DB.")
+    pass
 
-# --- Chart Generation Functions ---
+# --- Chart Generation Functions (Modified to use CHARTS_DIR) ---
 def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: int) -> str | None:
     if correct == 0 and incorrect == 0:
         return None
@@ -112,7 +67,7 @@ def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: 
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.05 * max(counts) if max(counts)>0 else 0.5, int(yval), ha="center", va="bottom", fontsize=11)
     
-    chart_path = os.path.join(USER_STATS_DIR, f"{user_id}_correct_incorrect_chart.png")
+    chart_path = os.path.join(CHARTS_DIR, f"{user_id}_correct_incorrect_chart.png")
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
@@ -149,7 +104,7 @@ def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> 
         xval = bar.get_width()
         ax.text(xval + 0.02 * max(counts) if max(counts)>0 else 0.2, i, int(xval), ha="left", va="center", fontsize=11)
 
-    chart_path = os.path.join(USER_STATS_DIR, f"{user_id}_grades_dist_chart.png")
+    chart_path = os.path.join(CHARTS_DIR, f"{user_id}_grades_dist_chart.png")
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
@@ -179,7 +134,7 @@ def generate_line_chart_performance_trend(user_id: int, quiz_history: list) -> s
     for i, score_val in enumerate(scores):
         ax.text(test_numbers[i], score_val + 2, f"{score_val:.1f}%", ha="center", fontsize=10)
 
-    chart_path = os.path.join(USER_STATS_DIR, f"{user_id}_performance_trend_chart.png")
+    chart_path = os.path.join(CHARTS_DIR, f"{user_id}_performance_trend_chart.png")
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
@@ -219,54 +174,102 @@ async def stats_menu(update: Update, context: CallbackContext) -> int:
         
     return STATS_MENU
 
-# --- MODIFIED show_my_stats function with advanced logic and charts ---
+# --- MODIFIED show_my_stats function to use DB_MANAGER ---
 async def show_my_stats(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    logger.info(f"User {user_id} requested personal stats (advanced).")
+    user_first_name = update.effective_user.first_name
+    logger.info(f"User {user_id} requested personal stats (DB-driven).")
 
-    stats_data = load_user_stats_from_json(user_id)
     attachments = []
-    stats_text = f"📊 *إحصائياتك المفصلة يا {update.effective_user.first_name}* 📊\n\n══════════════════════\n📝 ملخص الأداء العام:\n"
+    stats_text = f"📊 *إحصائياتك المفصلة يا {user_first_name}* 📊\n\n══════════════════════\n📝 ملخص الأداء العام:\n"
 
-    if not stats_data or stats_data.get("total_quizzes_taken", 0) == 0:
-        stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
+    if not DB_MANAGER:
+        stats_text += "عذراً، خدمة الإحصائيات غير متاحة حالياً بسبب مشكلة في الاتصال بقاعدة البيانات."
     else:
-        stats_text += f"🔹 إجمالي الاختبارات المكتملة: {stats_data.get('total_quizzes_taken', 0)}\n"
-        avg_score = stats_data.get("average_score_percentage", 0.0)
-        stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
-        stats_text += f"🌟 أعلى نتيجة فردية: {stats_data.get('highest_score_percentage', 0.0):.1f}%\n\n"
-        total_correct = stats_data.get("total_correct_answers", 0)
-        total_incorrect = stats_data.get("total_incorrect_answers", 0)
-        stats_text += f"✅ مجموع الإجابات الصحيحة: {total_correct}\n"
-        stats_text += f"❌ مجموع الإجابات الخاطئة: {total_incorrect}\n"
+        # These functions need to be implemented in database/manager.py
+        user_overall_stats = DB_MANAGER.get_user_overall_stats(user_id)
+        user_quiz_history_raw = DB_MANAGER.get_user_recent_quiz_history(user_id, limit=5)
 
-        chart1_path = generate_bar_chart_correct_incorrect(user_id, total_correct, total_incorrect)
-        if chart1_path: attachments.append(chart1_path)
+        if not user_overall_stats or user_overall_stats.get("total_quizzes_taken", 0) == 0:
+            stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
+        else:
+            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get('total_quizzes_taken', 0)}\n"
+            avg_score = user_overall_stats.get("average_score_percentage", 0.0)
+            stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
+            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get('highest_score_percentage', 0.0):.1f}%\n\n"
+            
+            total_correct = user_overall_stats.get("total_correct_answers", 0)
+            # Calculate total_incorrect from total_questions_attempted and total_correct
+            total_questions_attempted = user_overall_stats.get("total_questions_attempted", 0)
+            total_incorrect = total_questions_attempted - total_correct
+            
+            stats_text += f"✅ مجموع الإجابات الصحيحة: {total_correct}\n"
+            stats_text += f"❌ مجموع الإجابات الخاطئة: {total_incorrect}\n"
 
-        quiz_history = stats_data.get("quiz_history", [])
-        chart2_path = generate_bar_chart_grades_distribution(user_id, quiz_history)
-        if chart2_path: attachments.append(chart2_path)
-        
-        chart3_path = generate_line_chart_performance_trend(user_id, quiz_history)
-        if chart3_path: attachments.append(chart3_path)
+            chart1_path = generate_bar_chart_correct_incorrect(user_id, total_correct, total_incorrect)
+            if chart1_path: attachments.append(chart1_path)
 
-        if quiz_history:
-            stats_text += "\n══════════════════════\n📜 سجل آخر اختباراتك:\n"
-            for i, test in enumerate(quiz_history):
-                stats_text += f"{i+1}. بتاريخ {test.get('date', 'N/A')}: {test.get('score_percentage', 0):.1f}% (صحيحة: {test.get('correct_answers',0)}، خاطئة: {test.get('incorrect_answers',0)})\n"
-        stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
+            # Prepare quiz_history for chart functions
+            quiz_history_for_charts = []
+            if user_quiz_history_raw:
+                for qh_entry in user_quiz_history_raw:
+                    # Ensure qh_entry has 'score', 'total_questions', 'percentage', 'completion_timestamp'
+                    correct_count = qh_entry.get("score", 0) # Assuming 'score' from DB is correct count
+                    total_q_in_quiz = qh_entry.get("total_questions", 0)
+                    quiz_history_for_charts.append({
+                        "score_percentage": qh_entry.get("percentage", 0.0),
+                        "correct_answers": correct_count,
+                        "incorrect_answers": total_q_in_quiz - correct_count,
+                        "total_questions": total_q_in_quiz,
+                        "date": qh_entry.get("completion_timestamp").strftime("%Y-%m-%d %H:%M:%S") if qh_entry.get("completion_timestamp") else "N/A"
+                    })
+            
+            chart2_path = generate_bar_chart_grades_distribution(user_id, quiz_history_for_charts)
+            if chart2_path: attachments.append(chart2_path)
+            
+            chart3_path = generate_line_chart_performance_trend(user_id, quiz_history_for_charts)
+            if chart3_path: attachments.append(chart3_path)
+
+            if user_quiz_history_raw:
+                stats_text += "\n══════════════════════\n📜 سجل آخر اختباراتك:\n"
+                for i, test_entry in enumerate(user_quiz_history_raw):
+                    test_date = test_entry.get("completion_timestamp").strftime("%Y-%m-%d %H:%M:%S") if test_entry.get("completion_timestamp") else "N/A"
+                    score_percent = test_entry.get("percentage", 0.0)
+                    correct_ans = test_entry.get("score", 0)
+                    total_q = test_entry.get("total_questions", 0)
+                    incorrect_ans = total_q - correct_ans
+                    stats_text += f"{i+1}. بتاريخ {test_date}: {score_percent:.1f}% (صحيحة: {correct_ans}، خاطئة: {incorrect_ans})\n"
+            stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
     
+    # Ensure message_id is available for editing
+    message_id_to_edit = None
+    if query and query.message:
+        message_id_to_edit = query.message.message_id
+    
+    if message_id_to_edit:
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=message_id_to_edit, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
+    else:
+        logger.warning(f"show_my_stats: No message to edit for user {user_id}. Sending new message.")
+        await safe_send_message(context.bot, chat_id=update.effective_chat.id, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
+
     if attachments:
         for attachment_path in attachments:
             try:
-                await context.bot.send_photo(chat_id=query.message.chat_id, photo=open(attachment_path, "rb"))
+                with open(attachment_path, "rb") as photo_file:
+                    await context.bot.send_photo(chat_id=query.message.chat_id, photo=photo_file)
             except Exception as e:
                 logger.error(f"Failed to send chart {attachment_path} for user {user_id}: {e}")    
+            finally:
+                # Clean up chart file after sending
+                if os.path.exists(attachment_path):
+                    try:
+                        os.remove(attachment_path)
+                    except OSError as e_remove:
+                        logger.error(f"Error removing chart file {attachment_path}: {e_remove}")
         
     return STATS_MENU
 
@@ -281,15 +284,18 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     rank_emojis = ["🥇", "🥈", "🥉"] + ["🏅"] * (LEADERBOARD_LIMIT - 3)
 
     if DB_MANAGER:
+        # This function get_leaderboard() needs to be implemented in database/manager.py
+        # It should query quiz_results, group by user_id, calculate average percentage, count quizzes, and get user display name.
         leaderboard_data = DB_MANAGER.get_leaderboard(limit=LEADERBOARD_LIMIT)
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
                 user_id_entry = entry.get('user_id', 'Unknown')
-                display_name = entry.get('user_display_name', f"User {user_id_entry}")
+                # Fetch user_display_name from users table or have it joined in get_leaderboard query
+                display_name = entry.get('user_display_name', f"User {user_id_entry}") 
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
-                avg_score = entry.get('average_score', 0.0)
-                quizzes_taken = entry.get('quizzes_taken', 0)
+                avg_score = entry.get('average_score_percentage', 0.0) # Ensure key matches what get_leaderboard returns
+                quizzes_taken = entry.get('total_quizzes_taken', 0) # Ensure key matches
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
@@ -308,19 +314,20 @@ stats_conv_handler = ConversationHandler(
         STATS_MENU: [
             CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
             CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
-            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"),
+            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"), # Allow returning to stats menu from itself (e.g. after viewing chart)
             CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
         ],
     },
     fallbacks=[
         CommandHandler("start", main_menu_callback),
         CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
-        CallbackQueryHandler(stats_menu, pattern=".*")
+        # Fallback to stats_menu for any other unhandled callback in STATS_MENU state
+        CallbackQueryHandler(stats_menu, pattern=".*") 
     ],
     map_to_parent={
         MAIN_MENU: MAIN_MENU,
     },
-    persistent=True,
+    persistent=True, # Consider if persistence is truly needed here or if it causes issues
     name="stats_conversation"
 )
 
