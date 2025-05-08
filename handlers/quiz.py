@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow (v9 - Handler Fix)."""
+"""Conversation handler for the quiz selection and execution flow (v10 - Global Main Menu Fix)."""
 
 import logging
 import math
@@ -27,6 +27,7 @@ from config import (
 )
 from utils.helpers import safe_send_message, safe_edit_message_text, get_quiz_type_string, remove_job_if_exists
 from utils.api_client import fetch_from_api
+# Ensure main_menu_callback is imported, it will be used by the global handler
 from handlers.common import create_main_menu_keyboard, main_menu_callback 
 from .quiz_logic import QuizLogic, question_timeout_callback_wrapper 
 
@@ -40,14 +41,22 @@ async def start_command_fallback_for_quiz(update: Update, context: CallbackConte
     user_id = update.effective_user.id
     logger.info(f"User {user_id} sent /start during an active or lingering quiz conversation. Ending current quiz conversation and showing main menu.")
     
+    # Cleanup logic for quiz sessions and user_data
     if "quiz_sessions" in context.user_data:
         for quiz_id, quiz_instance in list(context.user_data["quiz_sessions"].items()): 
             if isinstance(quiz_instance, QuizLogic) and quiz_instance.user_id == user_id:
                 try:
                     timer_job_name = f"qtimer_{user_id}_{update.effective_chat.id}_{quiz_instance.quiz_id}_{quiz_instance.current_question_index}"
                     remove_job_if_exists(timer_job_name, context)
-                    await quiz_instance.end_quiz(context.bot, context, update, manual_end=True, reason_suffix="start_fallback")
-                    logger.info(f"Cleaned up quiz session {quiz_id} for user {user_id} during /start fallback via QuizLogic.end_quiz.")
+                    # Assuming QuizLogic has an end_quiz or similar cleanup method
+                    # If not, direct cleanup here or ensure quiz_instance.active = False
+                    if hasattr(quiz_instance, 'end_quiz') and callable(getattr(quiz_instance, 'end_quiz')):
+                         await quiz_instance.end_quiz(context.bot, context, update, manual_end=True, reason_suffix="start_fallback_quiz_handler")
+                    else:
+                         quiz_instance.active = False # Fallback to mark as inactive
+                         await quiz_instance.cleanup_quiz_data(context, user_id, "start_fallback_quiz_handler_direct_cleanup")
+
+                    logger.info(f"Cleaned up quiz session {quiz_id} for user {user_id} during /start fallback.")
                 except Exception as e_cleanup:
                     logger.error(f"Error during quiz_logic cleanup for quiz {quiz_id} in start_command_fallback: {e_cleanup}")
                     if quiz_id in context.user_data["quiz_sessions"]:
@@ -60,15 +69,20 @@ async def start_command_fallback_for_quiz(update: Update, context: CallbackConte
         "selected_course_id_for_unit_quiz", "available_courses_for_unit_quiz",
         "current_course_page_for_unit_quiz", "selected_course_name_for_unit_quiz",
         "available_units_for_course", "current_unit_page_for_course",
-        "selected_unit_id", "selected_unit_name", "question_count_for_quiz"
+        "selected_unit_id", "selected_unit_name", "question_count_for_quiz",
+        # Ensure any quiz_instance key is also cleared if not handled by quiz_sessions loop
+        f"quiz_instance_{user_id}_{update.effective_chat.id}" 
     ]
     for key in list(context.user_data.keys()):
-        if key.startswith("quiz_setup_") or key.startswith("qtimer_") or key in keys_to_pop:
+        if key.startswith("quiz_setup_") or key.startswith("qtimer_") or key in keys_to_pop or key.startswith(f"quiz_instance_{user_id}_"):
              context.user_data.pop(key, None)
 
     logger.info(f"Cleared quiz-related user_data for user {user_id} due to /start fallback in quiz conversation.")
-    await main_menu_callback(update, context) 
+    # Call the global main_menu_callback directly
+    await main_menu_callback(update, context, called_from_fallback=True) 
     return ConversationHandler.END
+
+# ... (rest of the functions like create_quiz_type_keyboard, select_quiz_type, etc. remain the same)
 
 def create_quiz_type_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
@@ -162,9 +176,13 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
     user_id = query.from_user.id
     await query.answer()
     callback_data = query.data
+    # No need to handle 'main_menu' here if a global handler is added, 
+    # but it's good for clarity within the conversation flow.
     if callback_data == "main_menu":
+        logger.info(f"[select_quiz_type] User {user_id} selected main_menu. Ending quiz conversation.")
         await main_menu_callback(update, context) 
         return ConversationHandler.END
+        
     if callback_data == "quiz_type_back_to_type_selection": 
         keyboard = create_quiz_type_keyboard()
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
@@ -269,7 +287,7 @@ async def select_course_for_unit_quiz(update: Update, context: CallbackContext) 
         keyboard = create_unit_selection_keyboard(units, selected_course_id, 0)
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية للمقرر \"{selected_course_name}\":", reply_markup=keyboard)
         return SELECT_UNIT_FOR_COURSE
-    return SELECT_COURSE_FOR_UNIT_QUIZ 
+    return SELECT_COURSE_FOR_UNIT_QUIZ # Fallback
 
 async def select_unit_for_course(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -287,13 +305,16 @@ async def select_unit_for_course(update: Update, context: CallbackContext) -> in
         return SELECT_COURSE_FOR_UNIT_QUIZ
     if callback_data.startswith("quiz_unit_page_"):
         parts = callback_data.split("_")
+        # course_id_from_cb = parts[-2] # Not strictly needed if selected_course_id is reliable
         new_page = int(parts[-1])
         context.user_data["current_unit_page_for_course"] = new_page
         keyboard = create_unit_selection_keyboard(units, selected_course_id, new_page)
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية للمقرر \"{context.user_data.get('selected_course_name_for_unit_quiz', '')}\":", reply_markup=keyboard)
+        selected_course_name = context.user_data.get("selected_course_name_for_unit_quiz", f"مقرر {selected_course_id}")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية للمقرر \"{selected_course_name}\":", reply_markup=keyboard)
         return SELECT_UNIT_FOR_COURSE
     elif callback_data.startswith("quiz_unit_select_"):
         parts = callback_data.split("_")
+        # selected_course_id_from_cb = parts[-2] # Ensure it matches context if used
         selected_unit_id = parts[-1]
         selected_unit = next((u for u in units if str(u.get("id")) == selected_unit_id), None)
         if not selected_unit:
@@ -311,15 +332,16 @@ async def select_unit_for_course(update: Update, context: CallbackContext) -> in
         if not questions or not isinstance(questions, list) or not questions:
             await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=error_message_to_user, reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
             return SELECT_UNIT_FOR_COURSE
+        quiz_name = f"{context.user_data.get('selected_course_name_for_unit_quiz', '')} - {selected_unit_name}"
         context.user_data[f"quiz_setup_{context.user_data['selected_quiz_type_key']}_{selected_unit_id}"] = {
             "questions": questions,
-            "quiz_name": f"{context.user_data.get('selected_course_name_for_unit_quiz', '')}: {selected_unit_name}"
+            "quiz_name": quiz_name
         }
         max_questions = len(questions)
-        keyboard = create_question_count_keyboard(max_questions, context.user_data["selected_quiz_type_key"], selected_unit_id, selected_course_id)
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار \n\"{context.user_data.get('selected_course_name_for_unit_quiz', '')}: {selected_unit_name}\":", reply_markup=keyboard)
+        keyboard = create_question_count_keyboard(max_questions, context.user_data["selected_quiz_type_key"], unit_id=selected_unit_id, course_id_for_unit=selected_course_id)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار \"{selected_unit_name}\":", reply_markup=keyboard)
         return ENTER_QUESTION_COUNT
-    return SELECT_UNIT_FOR_COURSE 
+    return SELECT_UNIT_FOR_COURSE # Fallback
 
 async def select_question_count(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -327,107 +349,153 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     await query.answer()
     callback_data = query.data
     quiz_type = context.user_data.get("selected_quiz_type_key")
-    unit_id = context.user_data.get("selected_unit_id") 
-    course_id_for_unit = context.user_data.get("selected_course_id_for_unit_quiz") 
-    quiz_setup_key = f"quiz_setup_{quiz_type}_{unit_id}"
-    quiz_data = context.user_data.get(quiz_setup_key, {})
-    all_questions = quiz_data.get("questions", [])
-    max_questions = len(all_questions)
+    unit_id = context.user_data.get("selected_unit_id") # This will be 'all' for QUIZ_TYPE_ALL
+    course_id_for_unit = context.user_data.get("selected_course_id_for_unit_quiz") # For back button from unit quiz
+
     if callback_data.startswith("quiz_count_back_to_unit_selection_"):
+        # This specific back button is only for unit quizzes
         course_id_from_cb = callback_data.split("_")[-1]
         units = context.user_data.get("available_units_for_course", [])
         unit_page = context.user_data.get("current_unit_page_for_course", 0)
+        selected_course_name = context.user_data.get("selected_course_name_for_unit_quiz", f"مقرر {course_id_from_cb}")
         keyboard = create_unit_selection_keyboard(units, course_id_from_cb, unit_page)
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية للمقرر \"{context.user_data.get('selected_course_name_for_unit_quiz', '')}\":", reply_markup=keyboard)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية للمقرر \"{selected_course_name}\":", reply_markup=keyboard)
         return SELECT_UNIT_FOR_COURSE
-    elif callback_data == "quiz_type_back_to_type_selection": 
+    elif callback_data == "quiz_type_back_to_type_selection": # Generic back to type selection
         keyboard = create_quiz_type_keyboard()
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
         return SELECT_QUIZ_TYPE
-    if not all_questions:
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذرًا، لا توجد أسئلة متاحة لهذا الاختبار. يرجى إعادة المحاولة من البداية.", reply_markup=create_quiz_type_keyboard())
+
+    quiz_setup_key = f"quiz_setup_{quiz_type}_{unit_id}"
+    quiz_data_for_type = context.user_data.get(quiz_setup_key)
+
+    if not quiz_data_for_type or "questions" not in quiz_data_for_type:
+        logger.error(f"User {user_id}: Quiz data not found for key {quiz_setup_key} at question count selection.")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في إعداد الاختبار. يرجى البدء من جديد.", reply_markup=create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
+
+    all_questions = quiz_data_for_type["questions"]
+    quiz_name_from_setup = quiz_data_for_type.get("quiz_name", "اختبار")
+    max_q = len(all_questions)
+
     if callback_data == "num_questions_all":
-        question_count = max_questions
+        num_questions = max_q
     elif callback_data.startswith("num_questions_"):
         try:
-            question_count = int(callback_data.split("_")[-1])
-            if not (0 < question_count <= max_questions):
-                raise ValueError("Invalid question count selected")
+            num_questions = int(callback_data.split("_")[-1])
+            if not (0 < num_questions <= max_q):
+                logger.warning(f"User {user_id} selected invalid num_questions {num_questions} (max: {max_q}). Defaulting to max.")
+                num_questions = max_q
         except ValueError:
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عدد أسئلة غير صالح. يرجى الاختيار من القائمة.", reply_markup=create_question_count_keyboard(max_questions, quiz_type, unit_id, course_id_for_unit))
-            return ENTER_QUESTION_COUNT
+            logger.error(f"User {user_id}: ValueError converting num_questions from {callback_data}. Defaulting to max.")
+            num_questions = max_q
     else:
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="يرجى اختيار عدد الأسئلة.", reply_markup=create_question_count_keyboard(max_questions, quiz_type, unit_id, course_id_for_unit))
-        return ENTER_QUESTION_COUNT
-    context.user_data["question_count_for_quiz"] = question_count
-    selected_questions = random.sample(all_questions, min(question_count, len(all_questions)))
-    context.user_data["questions_for_quiz"] = selected_questions
-    quiz_name_for_logic = quiz_data.get("quiz_name", "اختبار مخصص")
-    quiz_id_timestamp = int(datetime.utcnow().timestamp())
-    quiz_id_str = f"{user_id}_{quiz_type}_{unit_id if unit_id else 'na'}_{quiz_id_timestamp}"
-    if "quiz_sessions" not in context.user_data:
-        context.user_data["quiz_sessions"] = {}
+        logger.warning(f"User {user_id}: Unknown callback {callback_data} at question count. Defaulting to max.")
+        num_questions = max_q
+    
+    context.user_data["question_count_for_quiz"] = num_questions
+    selected_questions = random.sample(all_questions, min(num_questions, max_q))
+    
+    # Generate a unique quiz_id for this session
+    # Example: user_id_quiz_type_unit_id_timestamp
+    timestamp = int(datetime.now().timestamp())
+    quiz_id_str = f"{user_id}_{quiz_type}_{unit_id}_{timestamp}"
+
+    # Store the QuizLogic instance in user_data using the unique quiz_id
+    # This replaces the older method of storing one quiz_instance per user/chat
+    if "quiz_sessions" not in context.user_data: context.user_data["quiz_sessions"] = {}
+    
     quiz_instance = QuizLogic(
-        user_id=user_id,
-        chat_id=query.message.chat_id,
-        questions_data=selected_questions,
+        user_id=user_id, 
+        chat_id=query.message.chat_id, 
+        quiz_type=quiz_type, 
+        questions_data=selected_questions, 
+        question_time_limit=DEFAULT_QUESTION_TIME_LIMIT, # Or from user settings
         quiz_id=quiz_id_str,
-        quiz_name=quiz_name_for_logic,
-        question_time_limit=DEFAULT_QUESTION_TIME_LIMIT
+        quiz_name=quiz_name_from_setup
     )
     context.user_data["quiz_sessions"][quiz_id_str] = quiz_instance
-    logger.info(f"User {user_id} starting quiz {quiz_id_str} ({quiz_name_for_logic}) with {len(selected_questions)} questions.")
-    await quiz_instance.send_question(bot=context.bot, context=context, user_id=user_id)
-    return TAKING_QUIZ
+    
+    logger.info(f"User {user_id} starting quiz {quiz_id_str} ({quiz_name_from_setup}) with {len(selected_questions)} questions.")
+    
+    # Edit the message to show quiz is starting, or send new if edit fails
+    start_message_text = f"⏳ يتم الآن بدء اختبار \"{quiz_name_from_setup}\" بـ {len(selected_questions)} أسئلة..."
+    try:
+        await context.bot.edit_message_text(
+            text=start_message_text,
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            reply_markup=None # Remove buttons
+        )
+    except Exception as e_edit_start:
+        logger.warning(f"Failed to edit message at quiz start for user {user_id}: {e_edit_start}. Sending new message.")
+        await safe_send_message(context.bot, chat_id=query.message.chat_id, text=start_message_text)
+
+    return await quiz_instance.start_quiz(bot=context.bot, context=context, update=update, user_id=user_id)
 
 async def process_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
+    await query.answer() # Acknowledge callback quickly
+
     logger.info(f"[quiz.py] process_answer CALLED for user {user_id} with callback_data: {query.data}")
-    await query.answer()
 
-    # Corrected callback_data parsing
-    # query.data is "ans_QUIZID_QIDX_OPTIONID"
-    # Example: "ans_6448526509_all_scope_quiz_all_1746655909_0_99"
-    
-    if not query.data.startswith("ans_"):
-        logger.error(f"Invalid callback_data prefix for answer: {query.data}")
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح PFX).", reply_markup=create_main_menu_keyboard())
-        return END 
+    # Extract quiz_id from callback_data (assuming format like "ans_QUIZID_qidx_optid")
+    try:
+        # Simplified parsing assuming quiz_id is the second part after "ans_"
+        # and before the last two numeric parts (q_idx, option_id)
+        parts = query.data.split("_", 1) # Split "ans_" prefix
+        if len(parts) < 2 or parts[0] != "ans":
+            raise ValueError("Callback data does not start with ans_")
+        
+        remaining_data = parts[1]
+        # quiz_id might contain underscores, so rsplit from the right for q_idx and option_id
+        quiz_id_parts = remaining_data.rsplit("_", 2)
+        if len(quiz_id_parts) < 3:
+            raise ValueError("Callback data does not have enough parts for quiz_id, q_idx, option_id")
+        
+        quiz_id_str_from_callback = quiz_id_parts[0]
+    except Exception as e_parse:
+        logger.error(f"[quiz.py] process_answer: Error parsing quiz_id from callback_data '{query.data}': {e_parse}")
+        # Attempt to find any active quiz for the user if parsing fails (less ideal)
+        active_quiz_found = False
+        if "quiz_sessions" in context.user_data:
+            for q_id, q_instance in context.user_data["quiz_sessions"].items():
+                if q_instance.user_id == user_id and q_instance.active:
+                    quiz_id_str_from_callback = q_id
+                    active_quiz_found = True
+                    logger.warning(f"[quiz.py] process_answer: Fallback - Using active quiz_id {q_id} for user {user_id}")
+                    break
+        if not active_quiz_found:
+            await safe_send_message(context.bot, chat_id=query.message.chat_id, text="حدث خطأ في معالجة إجابتك (معرف اختبار غير صالح). يرجى المحاولة مرة أخرى أو بدء اختبار جديد.")
+            return ConversationHandler.END # Or go to main menu
 
-    payload = query.data[4:] 
-    parts = payload.rsplit("_", 2) 
-    if len(parts) < 3:
-        logger.error(f"Invalid callback_data format for answer after prefix: {payload}")
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ ما (تنسيق رد غير صالح FMT).", reply_markup=create_main_menu_keyboard())
-        return END 
-
-    quiz_id_str_from_callback = parts[0]
     quiz_instance = context.user_data.get("quiz_sessions", {}).get(quiz_id_str_from_callback)
 
-    if not quiz_instance or not isinstance(quiz_instance, QuizLogic) or quiz_instance.user_id != user_id:
-        logger.warning(f"Quiz session {quiz_id_str_from_callback} not found or doesn't belong to user {user_id}.")
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عفواً، هذا الاختبار لم يعد صالحاً أو لا يخصك. يرجى بدء اختبار جديد.", reply_markup=create_main_menu_keyboard())
-        return MAIN_MENU 
+    if not quiz_instance or not quiz_instance.active:
+        logger.warning(f"User {user_id}: No active quiz instance found for quiz_id {quiz_id_str_from_callback} or instance is inactive.")
+        await safe_send_message(context.bot, chat_id=query.message.chat_id, text="لم يتم العثور على اختبار نشط. ربما انتهى وقته أو حدث خطأ.")
+        # Try to send to main menu if possible
+        await main_menu_callback(update, context, called_from_fallback=True)
+        return ConversationHandler.END
 
-    timer_job_name = f"qtimer_{user_id}_{query.message.chat_id}_{quiz_id_str_from_callback}_{quiz_instance.current_question_index}"
-    remove_job_if_exists(timer_job_name, context)
-    logger.debug(f"Removed timer job {timer_job_name} before processing answer for quiz {quiz_id_str_from_callback}")
+    # Let QuizLogic handle the answer and determine the next state.
+    next_state_from_logic = await quiz_instance.handle_answer(bot=context.bot, context=context, update=update)
+    logger.info(f"[quiz.py] process_answer: quiz_logic.handle_answer returned {next_state_from_logic} for user {user_id}, quiz {quiz_id_str_from_callback}")
 
-    await quiz_instance.handle_answer(bot=context.bot, context=context, update=update)
-
+    # Check if the quiz has finished after handling the answer
     if quiz_instance.is_finished():
         logger.info(f"Quiz {quiz_id_str_from_callback} finished for user {user_id}. Preparing to update stats.")
+        # --- STATS UPDATE --- 
         try:
-            final_score_percentage = getattr(quiz_instance, "score_percentage", 0.0)
-            total_questions_in_quiz = getattr(quiz_instance, "total_questions", len(quiz_instance.questions_data)) 
-            correct_answers_count = getattr(quiz_instance, "correct_answers_count", 0)
-            incorrect_answers_count = getattr(quiz_instance, "incorrect_answers_count", 0)
-            quiz_name_for_stats = getattr(quiz_instance, "quiz_name", "unknown_quiz") 
-
+            final_score_percentage = (quiz_instance.score / quiz_instance.total_questions) * 100 if quiz_instance.total_questions > 0 else 0
+            total_questions_in_quiz = quiz_instance.total_questions
+            correct_answers_count = quiz_instance.score
+            incorrect_answers_count = total_questions_in_quiz - correct_answers_count
+            quiz_name_for_stats = quiz_instance.quiz_name if quiz_instance.quiz_name else quiz_instance.quiz_type
+            
             update_user_stats_in_json(
-                user_id=str(user_id),
+                user_id=user_id,
                 score=final_score_percentage,
                 total_questions_in_quiz=total_questions_in_quiz,
                 correct_answers_count=correct_answers_count,
@@ -437,81 +505,125 @@ async def process_answer(update: Update, context: CallbackContext) -> int:
             logger.info(f"Successfully called update_user_stats_in_json for user {user_id} for quiz {quiz_name_for_stats}.")
         except Exception as e_stats:
             logger.error(f"Failed to update JSON stats for user {user_id} for quiz {quiz_name_for_stats}: {e_stats}", exc_info=True)
+        # ---------------------
         
-        if "quiz_sessions" in context.user_data and quiz_id_str_from_callback in context.user_data["quiz_sessions"]:
-            del context.user_data["quiz_sessions"][quiz_id_str_from_callback]
-            if not context.user_data["quiz_sessions"]:
-                del context.user_data["quiz_sessions"]
-        logger.info(f"Cleaned up quiz session {quiz_id_str_from_callback} for user {user_id} after normal completion.")
-        return MAIN_MENU 
+        # Cleanup quiz session from user_data as it's finished
+        # This is now handled inside quiz_logic.show_results -> cleanup_quiz_data
+        # However, double-checking or ensuring quiz_instance.active is False is good.
+        # if "quiz_sessions" in context.user_data and quiz_id_str_from_callback in context.user_data["quiz_sessions"]:
+        #     del context.user_data["quiz_sessions"][quiz_id_str_from_callback]
+        #     if not context.user_data["quiz_sessions"]:
+        #         del context.user_data["quiz_sessions"]
+        # logger.info(f"Cleaned up quiz session {quiz_id_str_from_callback} for user {user_id} after normal completion.")
+        return MAIN_MENU # Or whatever state quiz_logic.show_results returns (should be END or a state that leads to menu)
     else:
-        # await quiz_instance.send_question(bot=context.bot, context=context, user_id=user_id) # Removed redundant call, quiz_logic.handle_answer now manages sending the next question or results.
-        return TAKING_QUIZ
+        # The send_question call was removed from here as it's handled by quiz_logic.handle_answer
+        # next_state = await quiz_logic.send_question(context.bot, context, user_id)
+        # logger.info(f"[quiz.py] process_answer: send_question returned {next_state} for user {user_id} after handle_answer.")
+        # return next_state 
+        return TAKING_QUIZ # Remain in TAKING_QUIZ state as determined by quiz_logic
 
 async def handle_quiz_timeout_in_conv_handler(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    quiz_id = context.user_data.get("current_quiz_id_for_timeout") 
-    question_index_from_job = context.user_data.get("timed_out_question_index")
-    logger.warning(f"handle_quiz_timeout_in_conv_handler called for user {user_id}, quiz {quiz_id}, q_idx {question_index_from_job}")
-    quiz_instance = context.user_data.get("quiz_sessions", {}).get(quiz_id)
-    if not quiz_instance or quiz_instance.user_id != user_id or quiz_instance.is_finished():
-        logger.warning(f"Timeout for an invalid/finished quiz session {quiz_id} or different user. Ignoring.")
-        return TAKING_QUIZ 
-    if quiz_instance.current_question_index != question_index_from_job:
-        logger.info(f"Timeout for q_idx {question_index_from_job} but quiz {quiz_id} is on q_idx {quiz_instance.current_question_index}. Likely already answered. Ignoring.")
-        return TAKING_QUIZ
-    logger.info(f"Processing timeout for user {user_id}, quiz {quiz_id}, question {quiz_instance.current_question_index} via conv handler.")
-    await quiz_instance.handle_timeout(context.bot, context, original_message_to_edit=None) 
-    if quiz_instance.is_finished():
-        logger.info(f"Quiz {quiz_id} finished for user {user_id} after timeout. Preparing to update stats.")
-        try:
-            final_score_percentage = getattr(quiz_instance, "score_percentage", 0.0)
-            total_questions_in_quiz = getattr(quiz_instance, "total_questions", len(quiz_instance.questions))
-            correct_answers_count = getattr(quiz_instance, "correct_answers_count", 0)
-            incorrect_answers_count = getattr(quiz_instance, "incorrect_answers_count", 0)
-            quiz_name_for_stats = getattr(quiz_instance, "quiz_name", "unknown_quiz")
-            update_user_stats_in_json(
-                user_id=str(user_id),
-                score=final_score_percentage,
-                total_questions_in_quiz=total_questions_in_quiz,
-                correct_answers_count=correct_answers_count,
-                incorrect_answers_count=incorrect_answers_count,
-                quiz_id=quiz_name_for_stats
-            )
-            logger.info(f"Successfully called update_user_stats_in_json for user {user_id} for quiz {quiz_name_for_stats} (after timeout path).")
-        except Exception as e_stats:
-            logger.error(f"Failed to update JSON stats for user {user_id} for quiz {quiz_name_for_stats} (after timeout path): {e_stats}", exc_info=True)
-        if "quiz_sessions" in context.user_data and quiz_id in context.user_data["quiz_sessions"]:
-            del context.user_data["quiz_sessions"][quiz_id]
-            if not context.user_data["quiz_sessions"]: del context.user_data["quiz_sessions"]
-        logger.info(f"Cleaned up quiz session {quiz_id} for user {user_id} after timeout completion.")
-        return MAIN_MENU 
-    else:
-        await quiz_instance.send_current_question(context.bot, context, message_to_edit_or_reply_to=None) 
-        return TAKING_QUIZ
+    chat_id = update.effective_chat.id # Should be available from update or job context
+    
+    # Retrieve necessary data from context.job.data if this is called by a job
+    # For direct calls or fallbacks, data might be in user_data
+    job_data = context.job.data if context.job else {}
+    quiz_id_from_job = job_data.get("quiz_id")
+    question_index_from_job = job_data.get("question_index")
 
+    logger.warning(f"[quiz.py] handle_quiz_timeout_in_conv_handler called for user {user_id}, quiz_id (from job): {quiz_id_from_job}, q_idx (from job): {question_index_from_job}")
+
+    quiz_instance = None
+    if quiz_id_from_job and "quiz_sessions" in context.user_data:
+        quiz_instance = context.user_data["quiz_sessions"].get(quiz_id_from_job)
+
+    if quiz_instance and quiz_instance.active and quiz_instance.current_question_index == question_index_from_job:
+        logger.info(f"Processing timeout for user {user_id}, quiz {quiz_id_from_job}, question {question_index_from_job} via question_timeout_callback_wrapper.")
+        # The actual timeout logic (sending feedback, next question/results) is in question_timeout_callback_wrapper
+        # This handler's main role is to catch the timeout if it somehow bubbles up or needs explicit state transition.
+        # Typically, the job itself handles the logic and state changes via QuizLogic methods.
+        # We might just ensure the conversation ends or moves to an appropriate state if the job didn't.
+        if quiz_instance.is_finished():
+            logger.info(f"Quiz {quiz_id_from_job} is finished after timeout processing. Returning MAIN_MENU.")
+            return MAIN_MENU
+        else:
+            logger.info(f"Quiz {quiz_id_from_job} not finished after timeout. Returning TAKING_QUIZ.")
+            return TAKING_QUIZ
+    else:
+        logger.warning(f"User {user_id}: Timeout callback for quiz {quiz_id_from_job} (q_idx {question_index_from_job}) but quiz not active or index mismatch. Conversation may end or ignore.")
+        # Fallback: try to show main menu to avoid user getting stuck
+        await main_menu_callback(update, context, called_from_fallback=True)
+        return ConversationHandler.END
+
+# Conversation Handler for Quiz
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")], # CORRECTED PATTERN
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")],
     states={
-        SELECT_QUIZ_TYPE: [CallbackQueryHandler(select_quiz_type)],
-        SELECT_COURSE_FOR_UNIT_QUIZ: [CallbackQueryHandler(select_course_for_unit_quiz)],
-        SELECT_UNIT_FOR_COURSE: [CallbackQueryHandler(select_unit_for_course)],
-        ENTER_QUESTION_COUNT: [CallbackQueryHandler(select_question_count)],
-        TAKING_QUIZ: [
-            CallbackQueryHandler(process_answer, pattern=r"^ans_.*"),
-        ],
+        SELECT_QUIZ_TYPE: [CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_|^main_menu$|^quiz_type_back_to_type_selection$")],
+        SELECT_COURSE_FOR_UNIT_QUIZ: [CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_course_select_|^quiz_course_page_|^quiz_type_back_to_type_selection$")],
+        SELECT_UNIT_FOR_COURSE: [CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_select_|^quiz_unit_page_|^quiz_unit_back_to_course_selection$")],
+        ENTER_QUESTION_COUNT: [CallbackQueryHandler(select_question_count, pattern="^num_questions_|^quiz_count_back_to_unit_selection_|^quiz_type_back_to_type_selection$")],
+        TAKING_QUIZ: [CallbackQueryHandler(process_answer, pattern="^ans_")],
+        # SHOWING_RESULTS is implicitly handled by QuizLogic.show_results which should return END or a state leading to menu.
+        # If QuizLogic.show_results returns a specific state for results, it should be listed here.
+        # For now, assuming it transitions to END and main_menu is handled globally or by fallbacks.
     },
     fallbacks=[
-        CommandHandler("start", start_command_fallback_for_quiz),
-        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
+        CommandHandler("start", start_command_fallback_for_quiz), # Handles /start during quiz
+        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"), # Handles main_menu button within conversation states
+        # A generic timeout handler for the conversation itself, if needed.
+        # MessageHandler(filters.ALL, fallback_handler) # Example generic fallback
     ],
     map_to_parent={
-        MAIN_MENU: MAIN_MENU,
-        ConversationHandler.END : ConversationHandler.END
+        # If this conversation is part of a larger one, map END to a parent state
+        END: MAIN_MENU, # Example: END from quiz returns to MAIN_MENU state of parent
+        MAIN_MENU: MAIN_MENU # Explicitly map MAIN_MENU to itself or parent's MAIN_MENU
     },
-    persistent=True, 
-    name="quiz_conversation"
+    per_message=False,
+    name="quiz_conversation",
+    persistent=True, # Make sure persistence is configured in ApplicationBuilder
+    # allow_reentry=True # Consider if users should be able to re-enter easily
 )
 
+# IMPORTANT: Instructions for the user:
+# To make the "القائمة الرئيسية" (main_menu) button work globally, especially after a conversation ends,
+# you need to add a global CallbackQueryHandler to your application dispatcher in your main bot script (e.g., bot.py).
+# This handler should be added BEFORE other ConversationHandlers if there's a pattern conflict,
+# though for a specific pattern like "^main_menu$" it's usually fine.
+#
+# Example of what to add in your main bot script where you set up your application:
+#
+# from telegram.ext import Application, CallbackQueryHandler
+# from handlers.common import main_menu_callback # Ensure this path is correct
+#
+# # ... (your other imports and bot setup) ...
+#
+# async def post_init(application: Application):
+#     # This is a good place to ensure commands are set, etc.
+#     await application.bot.set_my_commands([
+#         # ... your commands ...
+#         ("start", "▶️ بدء التفاعل مع البوت"),
+#         ("quiz", "🧠 بدء اختبار جديد"),
+#         # ... other commands ...
+#     ])
+#
+# if __name__ == "__main__":
+#     persistence = PicklePersistence(filepath=BOT_CONVERSATION_PERSISTENCE_FILE)
+#     application = Application.builder().token(TELEGRAM_BOT_TOKEN).persistence(persistence).post_init(post_init).build()
+#
+#     # Add your ConversationHandlers (like quiz_conv_handler, etc.)
+#     application.add_handler(quiz_conv_handler)
+#     # ... add other conversation handlers ...
+#
+#     # ADD THIS GLOBAL HANDLER FOR MAIN MENU:
+#     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"))
+#
+#     # ... (rest of your application setup and run code) ...
+#     application.run_polling()
+#
+# By adding this global handler, any "main_menu" callback will be caught and processed by main_menu_callback,
+# effectively ending any active conversation (if main_menu_callback is designed to do so, which it is)
+# and showing the main menu.
 

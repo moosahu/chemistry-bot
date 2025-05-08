@@ -1,5 +1,3 @@
-print("DEBUG: bot.py started loading") # Added print
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -163,6 +161,12 @@ def main() -> None:
     application.add_handler(stats_conv_handler)
     logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
     # ---------------------------------------------------------------
+
+    # --- ADDED GLOBAL HANDLER FOR MAIN MENU ---
+    logger.info("Adding global main_menu_callback handler...")
+    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"))
+    logger.info("Global main_menu_callback handler added.")
+    # ------------------------------------------
 
     # 5. Error handler (add last)
     print("DEBUG: Adding error_handler...")
