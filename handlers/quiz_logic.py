@@ -360,7 +360,7 @@ class QuizLogic:
                 log_quiz_results(
                     db_quiz_session_id=self.db_quiz_session_id,
                     user_id=self.user_id,
-                    quiz_id=self.quiz_id, # This is the QuizLogic's internal UUID for the quiz instance
+                    quiz_id_uuid=self.quiz_id, # This is the QuizLogic's internal UUID for the quiz instance
                     quiz_name=self.quiz_name,
                     quiz_type=self.quiz_type,
                     score=self.score,
