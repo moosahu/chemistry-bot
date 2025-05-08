@@ -273,10 +273,8 @@ async def select_course_for_unit_quiz(update: Update, context: CallbackContext) 
         if not selected_course:
             await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="خطأ في اختيار المقرر. حاول مرة أخرى.", reply_markup=create_course_selection_keyboard(courses, current_page))
             return SELECT_COURSE_FOR_UNIT_QUIZ
-        
         context.user_data["selected_course_id_for_unit_quiz"] = selected_course_id
         context.user_data["selected_course_name_for_unit_quiz"] = selected_course.get("name", "مقرر غير مسمى")
-        
         units = fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
         api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
         if units == "TIMEOUT":
@@ -285,13 +283,12 @@ async def select_course_for_unit_quiz(update: Update, context: CallbackContext) 
         if not units or not isinstance(units, list) or not units:
             await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عذراً، لا توجد وحدات متاحة للمقرر \"{selected_course.get('name')}\" أو حدث خطأ.", reply_markup=create_course_selection_keyboard(courses, current_page))
             return SELECT_COURSE_FOR_UNIT_QUIZ
-        
         context.user_data["available_units_for_course"] = units
         context.user_data["current_unit_page_for_course"] = 0
         keyboard = create_unit_selection_keyboard(units, selected_course_id, 0)
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية للمقرر \"{selected_course.get('name')}\":", reply_markup=keyboard)
         return SELECT_UNIT_FOR_COURSE
-    return SELECT_COURSE_FOR_UNIT_QUIZ # Should not be reached if logic is correct
+    return SELECT_COURSE_FOR_UNIT_QUIZ # Should not be reached
 
 async def select_unit_for_course(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -523,7 +520,7 @@ async def show_quiz_results(update: Update, context: CallbackContext) -> int:
 
 # Define the ConversationHandler for the quiz
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_menu$")],
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")],
     states={
         SELECT_QUIZ_TYPE: [
             CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_.+$"),
@@ -565,4 +562,5 @@ quiz_conv_handler = ConversationHandler(
     per_user=True,
     allow_reentry=True # Important to allow re-entering the quiz menu
 )
+
 
