@@ -73,7 +73,7 @@ def stats_menu_callback_handler(update: Update, context: CallbackContext):
     reply_markup = get_time_filter_buttons(fetch_base_callback)
     query.edit_message_text(text=f"اختر الفترة الزمنية لـ: {stat_category_base.replace('_', ' ').title()}", reply_markup=reply_markup)
 
-def fetch_stats_callback_handler(update: Update, context: CallbackContext):
+def stats_fetch_stats_callback_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     if not is_admin(query):
