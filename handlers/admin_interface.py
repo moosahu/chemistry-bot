@@ -2,8 +2,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, CallbackQueryHandler, CallbackContext
 
-from admin_auth import is_admin
-import admin_logic
+from utils.admin_auth import is_admin
+from utils import admin_logic
 
 # Callback data prefixes
 PREFIX_MAIN_MENU = "stats_menu_"
