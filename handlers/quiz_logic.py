@@ -410,7 +410,10 @@ class QuizLogic:
                     results_text += f"   💡 الصحيح: {correct_ans_text}\n"
                 results_text += f"   ⏱️ الوقت: {time_taken_str}\n"
 
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]])
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("ابدأ اختبار جديد", callback_data="quiz_menu_entry")],
+            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]
+        ])
         
         message_to_edit_id = self.last_question_message_id
         # If the quiz ended without any questions being sent (e.g. start_quiz found no questions),
