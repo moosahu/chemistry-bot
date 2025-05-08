@@ -107,7 +107,7 @@ def main() -> None:
             # When calling from bot.py, it's safer to default drop_first to False.
             # The user can change this to True for an initial clean setup if needed,
             # or manage it via the __main__ in db_setup.py for manual setup.
-            create_tables(conn, drop_first=True) 
+            create_tables(conn, drop_first=False) 
             logger.info("Database tables checked/created successfully.")
         else:
             logger.error("Failed to create database connection. Bot may not function correctly with database features.")
