@@ -109,7 +109,7 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         active_users = admin_logic.get_active_users(time_filter=time_filter)
         total_quizzes = admin_logic.get_total_quizzes_taken(time_filter=time_filter)
         avg_quizzes_user = admin_logic.get_average_quizzes_per_user(time_filter=time_filter)
-        text_response = (f"📊 **نظرة عامة على الاستخدام ({current_filter_text}):**\n"
+        text_response = (f"📊 *نظرة عامة على الاستخدام ({current_filter_text}):*\n"
                          f"- إجمالي المستخدمين (الكلي): {total_users}\n"
                          f"- المستخدمون النشطون: {active_users}\n"
                          f"- إجمالي الاختبارات التي تم إجراؤها: {total_quizzes}\n"
@@ -121,12 +121,12 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         difficult_units = admin_logic.get_difficulty_units(time_filter=time_filter, limit=3, easiest=False)
         easiest_units = admin_logic.get_difficulty_units(time_filter=time_filter, limit=3, easiest=True)
 
-        pop_units_str = "\n".join([f"  - {pu['unit_id']} ({pu['quiz_count']} مرة)" for pu in popular_units]) or "  لا توجد بيانات"
+        pop_units_str = "\n".join([f"  - {pu["unit_id"]} ({pu["quiz_count"]} مرة)" for pu in popular_units]) or "  لا توجد بيانات"
         # Ensuring average_score_percent is treated as float for formatting
-        diff_units_str = "\n".join([f"  - {du['unit_id']} ({float(du['average_score_percent']):.0f}٪)" for du in difficult_units]) or "  لا توجد بيانات"
-        easy_units_str = "\n".join([f"  - {eu['unit_id']} ({float(eu['average_score_percent']):.0f}٪)" for eu in easiest_units]) or "  لا توجد بيانات"
+        diff_units_str = "\n".join([f"  - {du["unit_id"]} ({float(du["average_score_percent"]):.0f}٪)" for du in difficult_units]) or "  لا توجد بيانات"
+        easy_units_str = "\n".join([f"  - {eu["unit_id"]} ({float(eu["average_score_percent"]):.0f}٪)" for eu in easiest_units]) or "  لا توجد بيانات"
 
-        text_response = (f"📈 **أداء الاختبارات ({current_filter_text}):**\n"
+        text_response = (f"📈 *أداء الاختبارات ({current_filter_text}):*\n"
                          f"- متوسط نسبة الإجابات الصحيحة: {float(avg_correct):.2f}%\n"
                          f"- الوحدات الأكثر شعبية (أعلى 3):\n{pop_units_str}\n"
                          f"- الوحدات الأكثر صعوبة (أقل 3):\n{diff_units_str}\n"
@@ -135,7 +135,7 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
     elif stat_category == "user_interaction":
         avg_completion_time = admin_logic.get_average_quiz_completion_time(time_filter=time_filter)
         completion_rate = admin_logic.get_quiz_completion_rate(time_filter=time_filter)
-        text_response = (f"👥 **تفاعل المستخدمين ({current_filter_text}):**\n"
+        text_response = (f"👥 *تفاعل المستخدمين ({current_filter_text}):*\n"
                          f"- متوسط وقت إكمال الاختبار: {float(avg_completion_time):.2f} ثانية\n"
                          f"- معدل إكمال الاختبارات: {float(completion_rate):.2f}%")
 
@@ -143,18 +143,18 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         difficult_questions = admin_logic.get_question_difficulty(time_filter=time_filter, limit=3, easiest=False)
         easiest_questions = admin_logic.get_question_difficulty(time_filter=time_filter, limit=3, easiest=True)
         
-        diff_q_str = "\n".join([f"  - {dq['question_id']} ({float(dq['correct_percentage']):.0f}٪ صحيحة)" for dq in difficult_questions]) or "  لا توجد بيانات"
-        easy_q_str = "\n".join([f"  - {eq['question_id']} ({float(eq['correct_percentage']):.0f}٪ صحيحة)" for eq in easiest_questions]) or "  لا توجد بيانات"
+        diff_q_str = "\n".join([f"  - {dq["question_id"]} ({float(dq["correct_percentage"]):.0f}٪ صحيحة)" for dq in difficult_questions]) or "  لا توجد بيانات"
+        easy_q_str = "\n".join([f"  - {eq["question_id"]} ({float(eq["correct_percentage"]):.0f}٪ صحيحة)" for eq in easiest_questions]) or "  لا توجد بيانات"
 
-        text_response = (f"❓ **إحصائيات الأسئلة ({current_filter_text}):**\n"
+        text_response = (f"❓ *إحصائيات الأسئلة ({current_filter_text}):*\n"
                          f"- الأسئلة الأكثر صعوبة (أقل 3):\n{diff_q_str}\n"
                          f"- الأسئلة الأسهل (أعلى 3):\n{easy_q_str}")
     else:
-        text_response = f"فئة الإحصائيات '{stat_category}' غير معروفة أو لم يتم تنفيذها بعد."
+        text_response = f"فئة الإحصائيات \'{stat_category}\' غير معروفة أو لم يتم تنفيذها بعد."
 
     fetch_base_callback = f"{STATS_PREFIX_FETCH}{stat_category}"
     reply_markup = get_time_filter_buttons(fetch_base_callback)
-    await query.edit_message_text(text=text_response, reply_markup=reply_markup, parse_mode='Markdown')
+    await query.edit_message_text(text=text_response, reply_markup=reply_markup, parse_mode=\'Markdown\')
 
 # Add handlers to your application (examples, actual registration in bot.py)
 # app.add_handler(CommandHandler("adminstats", stats_admin_panel_command_handler))
