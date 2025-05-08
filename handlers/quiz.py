@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-"""Conversation handler for the quiz selection and execution flow (FULLY COMPATIBLE - PostgreSQL Logging & Original UI Preservation)."""
+"""
+Conversation handler for the quiz selection and execution flow (FULLY COMPATIBLE - PostgreSQL Logging & Original UI Preservation).
+"""
 
 import logging
 import math
@@ -437,12 +438,13 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
         questions_data=questions_to_use,
         question_time_limit=DEFAULT_QUESTION_TIME_LIMIT, 
         quiz_name=quiz_name_for_logic,
-        quiz_id=str(db_quiz_session_id) if db_quiz_session_id else None # Pass db_quiz_session_id as quiz_id if available
+        quiz_id=str(db_quiz_session_id) if db_quiz_session_id else None, # MODIFICATION: Keep this as QuizLogic might use it as its primary key
+        db_quiz_session_id=db_quiz_session_id  # MODIFICATION: Add this line to explicitly pass the DB session ID
     )
     context.user_data["quiz_sessions"][quiz_instance.quiz_id] = quiz_instance
     context.user_data[f"quiz_message_id_to_edit_{user_id}_{chat_id}"] = query.message.message_id
 
-    logger.info(f"User {user_id} starting quiz '{quiz_instance.quiz_name}' (ID: {quiz_instance.quiz_id}, DB Session: {db_quiz_session_id}) with {len(questions_to_use)} questions.")
+    logger.info(f"User {user_id} starting quiz '{quiz_instance.quiz_name}' (ID: {quiz_instance.quiz_id}, DB Session: {db_quiz_session_id}) with {len(questions_to_use)} questions.") # Updated log
     return await quiz_instance.start_quiz(context.bot, context, update, user_id)
 
 async def process_answer(update: Update, context: CallbackContext) -> int:
