@@ -7,7 +7,7 @@ from utils import admin_logic
 
 # Callback data prefixes
 STATS_PREFIX_MAIN_MENU = "stats_menu_"
-STATS_PREFIX_FETCH_STAT = "stats_fetch_"
+STATS_PREFIX_FETCH = "stats_fetch_"
 PREFIX_TIME_FILTER = "filter_"
 
 # Time filter options
