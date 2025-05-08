@@ -38,6 +38,7 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")], 
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")], 
+        [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]  # Added About Bot button
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -91,6 +92,12 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
             state_to_return = INFO_MENU
         elif data == "menu_stats": 
             state_to_return = STATS_MENU
+        elif data == "about_bot":  # Handle new About Bot button
+            about_text = "تطوير الاستاذ حسين علي الموسى"
+            # Send the about text as a new message, then show the main menu again
+            await safe_send_message(context.bot, query.message.chat_id, text=about_text)
+            # Fall through to re-display main menu
+            state_to_return = MAIN_MENU 
         elif data == "main_menu": 
             state_to_return = MAIN_MENU
         else:
@@ -122,7 +129,8 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
 
 start_handler = CommandHandler('start', start_command)
 # This handler will catch 'main_menu' from quiz results or other places
-main_menu_nav_handler = CallbackQueryHandler(main_menu_callback, pattern='^main_menu$')
+# It will also catch 'about_bot' now
+main_menu_nav_handler = CallbackQueryHandler(main_menu_callback, pattern='^(main_menu|about_bot)$')
 
 # It's assumed that quiz.py (or similar) will have its own ConversationHandler
 # with an entry point for 'start_quiz', e.g.:
@@ -131,4 +139,5 @@ main_menu_nav_handler = CallbackQueryHandler(main_menu_callback, pattern='^main_
 
 # The main_menu_callback here is primarily for navigating *to* the main menu
 # or handling other main menu items not covered by other conversation handlers.
+
 
