@@ -46,7 +46,7 @@ async def show_main_stats_menu(update: Update, context: CallbackContext, query=N
         [InlineKeyboardButton("❓ إحصائيات الأسئلة", callback_data=f"{STATS_PREFIX_MAIN_MENU}question_stats")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    message_text = " पैनल لوحة تحكم إحصائيات الأدمن: اختر فئة لعرضها"
+    message_text = "لوحة تحكم إحصائيات الأدمن: اختر فئة لعرضها"
     if query:
         await query.edit_message_text(text=message_text, reply_markup=reply_markup)
     elif update.message:
