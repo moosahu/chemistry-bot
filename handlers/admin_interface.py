@@ -8,7 +8,7 @@ from utils import admin_logic
 # Callback data prefixes
 STATS_PREFIX_MAIN_MENU = "stats_menu_"
 STATS_PREFIX_FETCH = "stats_fetch_"
-PREFIX_TIME_FILTER = "filter_"
+PREFIX_TIME_FILTER = "filter_" # This one seems unused by admin stats, but kept for now
 
 # Time filter options
 TIME_FILTERS = {
@@ -28,7 +28,7 @@ def get_time_filter_buttons(stat_category_base_callback: str):
             row = []
     if row: # Add remaining buttons if any
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data=f"{PREFIX_MAIN_MENU}main")])
+    keyboard.append([InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data=f"{STATS_PREFIX_MAIN_MENU}main")]) # MODIFIED
     return InlineKeyboardMarkup(keyboard)
 
 def stats_admin_panel_command_handler(update: Update, context: CallbackContext):
@@ -39,10 +39,10 @@ def stats_admin_panel_command_handler(update: Update, context: CallbackContext):
 
 def show_main_stats_menu(update: Update, context: CallbackContext, query=None):
     keyboard = [
-        [InlineKeyboardButton("📊 نظرة عامة على الاستخدام", callback_data=f"{PREFIX_MAIN_MENU}usage_overview")],
-        [InlineKeyboardButton("📈 أداء الاختبارات", callback_data=f"{PREFIX_MAIN_MENU}quiz_performance")],
-        [InlineKeyboardButton("👥 تفاعل المستخدمين", callback_data=f"{PREFIX_MAIN_MENU}user_interaction")],
-        [InlineKeyboardButton("❓ إحصائيات الأسئلة", callback_data=f"{PREFIX_MAIN_MENU}question_stats")]
+        [InlineKeyboardButton("📊 نظرة عامة على الاستخدام", callback_data=f"{STATS_PREFIX_MAIN_MENU}usage_overview")], # MODIFIED
+        [InlineKeyboardButton("📈 أداء الاختبارات", callback_data=f"{STATS_PREFIX_MAIN_MENU}quiz_performance")], # MODIFIED
+        [InlineKeyboardButton("👥 تفاعل المستخدمين", callback_data=f"{STATS_PREFIX_MAIN_MENU}user_interaction")], # MODIFIED
+        [InlineKeyboardButton("❓ إحصائيات الأسئلة", callback_data=f"{STATS_PREFIX_MAIN_MENU}question_stats")] # MODIFIED
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     message_text = " पैनल لوحة تحكم إحصائيات الأدمن: اختر فئة لعرضها"
@@ -60,15 +60,15 @@ def stats_menu_callback_handler(update: Update, context: CallbackContext):
 
     callback_data = query.data
 
-    if callback_data == f"{PREFIX_MAIN_MENU}main":
+    if callback_data == f"{STATS_PREFIX_MAIN_MENU}main": # MODIFIED
         show_main_stats_menu(update, context, query=query)
         return
 
     # Extract stat category, e.g., "usage_overview" from "stats_menu_usage_overview"
-    stat_category_base = callback_data.replace(PREFIX_MAIN_MENU, "")
+    stat_category_base = callback_data.replace(STATS_PREFIX_MAIN_MENU, "") # MODIFIED
     # Now, instead of fetching, show time filter options for this category
-    # The base for fetch will be PREFIX_FETCH_STAT + stat_category_base
-    fetch_base_callback = f"{PREFIX_FETCH_STAT}{stat_category_base}"
+    # The base for fetch will be STATS_PREFIX_FETCH + stat_category_base
+    fetch_base_callback = f"{STATS_PREFIX_FETCH}{stat_category_base}" # MODIFIED
 
     reply_markup = get_time_filter_buttons(fetch_base_callback)
     query.edit_message_text(text=f"اختر الفترة الزمنية لـ: {stat_category_base.replace('_', ' ').title()}", reply_markup=reply_markup)
@@ -95,9 +95,6 @@ def stats_fetch_stats_callback_handler(update: Update, context: CallbackContext)
     text_response = f"⏳ جاري جلب بيانات {stat_category_str.replace('_', ' ').title()} عن فترة: {time_filter_text}..."
     query.edit_message_text(text=text_response) # Show loading message
 
-    # Simulate a slight delay for fetching, then update with actual data
-    # context.job_queue.run_once(lambda ctx: send_actual_stats(update, context, stat_category_str, time_filter_key), 0.1)
-    # For now, direct call for simplicity in this environment
     send_actual_stats(update, context, stat_category_str, time_filter_key)
 
 def send_actual_stats(update: Update, context: CallbackContext, stat_category: str, time_filter: str):
@@ -106,7 +103,7 @@ def send_actual_stats(update: Update, context: CallbackContext, stat_category: s
     current_filter_text = TIME_FILTERS.get(time_filter, "غير محدد")
 
     if stat_category == "usage_overview":
-        total_users = admin_logic.get_total_users() # Total users usually isn't time-filtered
+        total_users = admin_logic.get_total_users()
         active_users = admin_logic.get_active_users(time_filter=time_filter)
         total_quizzes = admin_logic.get_total_quizzes_taken(time_filter=time_filter)
         avg_quizzes_user = admin_logic.get_average_quizzes_per_user(time_filter=time_filter)
@@ -153,12 +150,12 @@ def send_actual_stats(update: Update, context: CallbackContext, stat_category: s
         text_response = f"فئة الإحصائيات '{stat_category}' غير معروفة أو لم يتم تنفيذها بعد."
 
     # After fetching and formatting, show the time filter buttons again for the same category
-    fetch_base_callback = f"{PREFIX_FETCH_STAT}{stat_category}"
+    fetch_base_callback = f"{STATS_PREFIX_FETCH}{stat_category}" # MODIFIED
     reply_markup = get_time_filter_buttons(fetch_base_callback)
     query.edit_message_text(text=text_response, reply_markup=reply_markup, parse_mode='Markdown')
 
-# Add handlers to your application
-# app.add_handler(CommandHandler("adminstats", admin_panel_command_handler))
-# app.add_handler(CallbackQueryHandler(stats_menu_callback_handler, pattern=f"^{PREFIX_MAIN_MENU}"))
-# app.add_handler(CallbackQueryHandler(fetch_stats_callback_handler, pattern=f"^{PREFIX_FETCH_STAT}"))
+# Add handlers to your application (examples, actual registration in bot.py)
+# app.add_handler(CommandHandler("adminstats", stats_admin_panel_command_handler))
+# app.add_handler(CallbackQueryHandler(stats_menu_callback_handler, pattern=f"^{STATS_PREFIX_MAIN_MENU}")) # MODIFIED for example
+# app.add_handler(CallbackQueryHandler(stats_fetch_stats_callback_handler, pattern=f"^{STATS_PREFIX_FETCH}")) # MODIFIED for example
 
