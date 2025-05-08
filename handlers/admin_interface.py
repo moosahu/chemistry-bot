@@ -31,7 +31,7 @@ def get_time_filter_buttons(stat_category_base_callback: str):
     keyboard.append([InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data=f"{PREFIX_MAIN_MENU}main")])
     return InlineKeyboardMarkup(keyboard)
 
-def admin_panel_command_handler(update: Update, context: CallbackContext):
+def stats_admin_panel_command_handler(update: Update, context: CallbackContext):
     if not is_admin(update):
         update.message.reply_text("عذراً، هذا الأمر مخصص للأدمن فقط.")
         return
