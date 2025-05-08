@@ -559,7 +559,7 @@ async def handle_quiz_timeout_in_conv_handler(update: Update, context: CallbackC
 
 # Conversation Handler for Quiz
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")],
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"), CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_menu_entry$")],
     states={
         SELECT_QUIZ_TYPE: [CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_|^main_menu$|^quiz_type_back_to_type_selection$")],
         SELECT_COURSE_FOR_UNIT_QUIZ: [CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_course_select_|^quiz_course_page_|^quiz_type_back_to_type_selection$")],
