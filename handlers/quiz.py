@@ -56,8 +56,7 @@ async def start_command_fallback_for_quiz(update: Update, context: CallbackConte
         for quiz_id, quiz_instance in list(context.user_data["quiz_sessions"].items()): 
             if isinstance(quiz_instance, QuizLogic) and quiz_instance.user_id == user_id:
                 try:
-                    if hasattr(quiz_instance, \'end_quiz\') and callable(getattr(quiz_instance, \'end_quiz\')):
-                         await quiz_instance.end_quiz(context.bot, context, update, manual_end=True, reason_suffix="start_fallback_quiz_handler", called_from_fallback=True)
+                 if hasattr(quiz_instance, 'end_quiz') and callable(getattr(quiz_instance, 'end_quiz')):                         await quiz_instance.end_quiz(context.bot, context, update, manual_end=True, reason_suffix="start_fallback_quiz_handler", called_from_fallback=True)
                     else:
                          quiz_instance.active = False 
                          await quiz_instance.cleanup_quiz_data(context, user_id, "start_fallback_quiz_handler_direct_cleanup")
