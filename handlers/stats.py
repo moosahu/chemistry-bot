@@ -1,4 +1,4 @@
-"""Handles displaying user statistics and leaderboards."""
+"""Handles displaying user statistics and leaderboards (FINAL FIXES APPLIED)."""
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,40 +17,40 @@ import matplotlib.pyplot as plt
 
 # Import necessary components from other modules
 try:
-    from config import logger, MAIN_MENU, STATS_MENU, LEADERBOARD_LIMIT
+    from config import logger, MAIN_MENU, STATS_MENU, LEADERBOARD_LIMIT # STATS_MENU state constant is still used internally
     from database.manager import DB_MANAGER 
     from utils.helpers import safe_send_message, safe_edit_message_text, format_duration
-    from handlers.common import main_menu_callback # For returning to main menu
+    # Ensure correct import for main_menu_callback and start_command if they are in common.py
+    from handlers.common import main_menu_callback, start_command 
 except ImportError as e:
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
     logger.error(f"Error importing modules in handlers.stats: {e}. Using placeholders.")
-    MAIN_MENU, STATS_MENU = 0, 8 # Assuming STATS_MENU is a distinct state constant
+    MAIN_MENU = 0 # Placeholder state for main menu if common.py fails
+    STATS_MENU = 8 # Placeholder state for stats menu internal navigation
     LEADERBOARD_LIMIT = 10
     DB_MANAGER = None
     async def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
     async def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
     def format_duration(seconds): logger.warning("Placeholder format_duration called!"); return f"{seconds}s"
-    async def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU # Or ConversationHandler.END if it's a top-level menu
+    async def main_menu_callback(*args, **kwargs): 
+        logger.error("Placeholder main_menu_callback called from stats.py!")
+        # This should ideally call the actual main_menu_callback from common.py
+        # For now, just return a known end state or a placeholder for main menu state
+        if "update" in kwargs and "context" in kwargs:
+            # Attempt to call the real one if available, otherwise log and end.
+            try:
+                from handlers.common import main_menu_callback as actual_main_menu_callback
+                return await actual_main_menu_callback(kwargs["update"], kwargs["context"])
+            except ImportError:
+                logger.error("Could not import actual main_menu_callback in placeholder.")
+        return ConversationHandler.END # End conversation if main menu cannot be shown
 
 # --- Directory for charts ---
 CHARTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user_data", "charts")
 os.makedirs(CHARTS_DIR, exist_ok=True)
 
-# --- Deprecated JSON functions (kept as dummy for now) ---
-def load_user_stats_from_json(user_id: int) -> dict:
-    logger.warning(f"Deprecated: load_user_stats_from_json called for user {user_id}.")
-    return {}
-
-def save_user_stats_to_json(user_id: int, stats_data: dict) -> None:
-    logger.warning(f"Deprecated: save_user_stats_to_json called for user {user_id}.")
-    pass
-
-def update_user_stats_in_json(user_id: int, score: float, total_questions_in_quiz: int, correct_answers_count: int, incorrect_answers_count: int, quiz_id: str = None):
-    logger.warning(f"Deprecated: update_user_stats_in_json called for user {user_id}.")
-    pass
-
-# --- Chart Generation Functions --- (Content from user's file, assumed correct)
+# --- Chart Generation Functions (Unchanged from previous version) ---
 def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: int) -> str | None:
     if correct == 0 and incorrect == 0:
         return None
@@ -149,45 +149,35 @@ def create_stats_menu_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("📊 إحصائياتي", callback_data="stats_my_stats")],
         [InlineKeyboardButton("🏆 لوحة الصدارة", callback_data="stats_leaderboard")],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
+        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")] # This should end the conversation
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- MODIFIED: Helper function to explicitly end stats conversation and return to main menu ---
-async def _return_to_main_menu_from_stats_conv(update: Update, context: CallbackContext) -> int:
-    """Ends the stats conversation and shows the main menu."""
-    query = update.callback_query
-    if query:
-        await query.answer() # Acknowledge the callback query
-    
-    user_id = update.effective_user.id
-    logger.info(f"User {user_id} returning to main menu from stats conversation explicitly (via _return_to_main_menu_from_stats_conv).")
-    
-    # Call the main_menu_callback from common.py to display the main menu
-    # This function should handle sending or editing the message to show the main menu keyboard.
-    await main_menu_callback(update, context) 
-    
-    return ConversationHandler.END # Crucial: End the current stats conversation
-
 # --- Conversation Steps --- 
-async def stats_menu(update: Update, context: CallbackContext) -> int:
+async def stats_menu_entry(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = update.effective_user.id
     
     if query:
         await query.answer()
-        logger.info(f"User {user_id} entered stats menu (callback: {query.data}).")
+        logger.info(f"User {user_id} entered stats menu via callback: {query.data}.")
         text = "🏅 اختر الإحصائيات التي تريد عرضها:"
         keyboard = create_stats_menu_keyboard()
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
-    else: # Should ideally be entered via callback query
-        logger.warning("stats_menu called without callback query (e.g., direct command). Sending new message.")
+    else: # Should not happen if entry is only via CallbackQueryHandler
+        logger.warning("stats_menu_entry called without callback query. This is unexpected.")
         text = "🏅 اختر الإحصائيات التي تريد عرضها:"
         keyboard = create_stats_menu_keyboard()
         await safe_send_message(context.bot, update.effective_chat.id, text=text, reply_markup=keyboard)
         
-    return STATS_MENU
+    return STATS_MENU # Internal state for stats conversation
 
+async def go_to_main_menu_from_stats(update: Update, context: CallbackContext) -> int:
+    logger.info(f"User {update.effective_user.id} chose to go to main menu from stats conversation.")
+    await main_menu_callback(update, context) # This should display the main menu
+    return ConversationHandler.END # Crucial: End the stats conversation
+
+# --- MODIFIED show_my_stats function to use DB_MANAGER (largely same as before) ---
 async def show_my_stats(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
@@ -252,13 +242,13 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
                     stats_text += f"{i+1}. بتاريخ {test_date}: {score_percent:.1f}% (صحيحة: {correct_ans}، خاطئة: {incorrect_ans})\n"
             stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    message_id_to_edit = query.message.message_id if query and query.message else None
+    # Use a specific callback_data for returning to the stats menu, not the entry point one
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_back_to_menu")]])
     
+    message_id_to_edit = query.message.message_id if query and query.message else None
     if message_id_to_edit:
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=message_id_to_edit, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
     else:
-        logger.warning(f"show_my_stats: No message to edit for user {user_id}. Sending new message.")
         await safe_send_message(context.bot, chat_id=update.effective_chat.id, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
 
     if attachments:
@@ -273,7 +263,7 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
                     try: os.remove(attachment_path)
                     except OSError as e_remove: logger.error(f"Error removing chart file {attachment_path}: {e_remove}")
         
-    return STATS_MENU
+    return STATS_MENU # Stay in stats menu state
 
 async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -300,39 +290,17 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     else:
         leaderboard_text += "عذراً، لا يمكن استرجاع لوحة الصدارة حالياً (مشكلة في قاعدة البيانات)."
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_back_to_menu")]])
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
     
-    return STATS_MENU
+    return STATS_MENU # Stay in stats menu state
 
-# --- MODIFIED Conversation Handler Definition --- 
+# --- Conversation Handler Definition --- 
 stats_conv_handler = ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(stats_menu, pattern="^menu_stats$") # Entry point matches main_menu button
-    ], 
+    # CORRECTED entry point to match common.py button
+    entry_points=[CallbackQueryHandler(stats_menu_entry, pattern="^my_stats_and_leaderboard$")],
     states={
         STATS_MENU: [
             CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
             CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
-            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"), # Allow returning to stats menu from itself
-            # MODIFIED: Use the helper to explicitly end conversation when returning to main menu
-            CallbackQueryHandler(_return_to_main_menu_from_stats_conv, pattern="^main_menu$")
-        ],
-        # Add other states if your stats conversation has more steps
-    },
-    fallbacks=[
-        # MODIFIED: Use the helper for /start command during stats conversation
-        CommandHandler("start", _return_to_main_menu_from_stats_conv),
-        # MODIFIED: Use the helper for main_menu callback as a fallback
-        CallbackQueryHandler(_return_to_main_menu_from_stats_conv, pattern="^main_menu$"),
-        # Fallback to stats_menu for any other unhandled callback within STATS_MENU state
-        CallbackQueryHandler(stats_menu, pattern=".*") 
-    ],
-    map_to_parent={
-        # If this conversation is nested, map END to the parent's END or a specific state
-        ConversationHandler.END: ConversationHandler.END 
-    },
-    persistent=True, # Consider if persistence is truly needed here
-    name="stats_conversation"
-)
-
+            # Handler for 
