@@ -489,3 +489,9 @@ if __name__ == '__main__':
     # logger.info(f"User engagement (all time): {db_manager.get_user_engagement_metrics('all')}")
     pass
 
+
+
+
+# Instantiate the DatabaseManager for global use
+DB_MANAGER = DatabaseManager()
+
