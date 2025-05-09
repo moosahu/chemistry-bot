@@ -259,61 +259,61 @@ class DatabaseManager:
         result = self._execute_query(query, fetch_one=True)
         return result['total_users'] if result and 'total_users' in result else 0
 
-    def get_active_users_count(self, time_period="today"):
-        logger.info(f"[DB Admin Stats] Fetching active users count for period: {time_period}.")
+    def get_active_users_count(self, time_filter="today"):
+        logger.info(f"[DB Admin Stats] Fetching active users count for period: {time_filter}.")
         # Assumes 'last_interaction_date' is a TIMESTAMP or DATE column in users table
-        if time_period == "today":
+        if time_filter == "today":
             query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE DATE(last_interaction_date) = CURRENT_DATE;"
-        elif time_period == "week":
+        elif time_filter == "week":
             query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE last_interaction_date >= date_trunc('week', CURRENT_TIMESTAMP);"
-        elif time_period == "month":
+        elif time_filter == "month":
             query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE last_interaction_date >= date_trunc('month', CURRENT_TIMESTAMP);"
         else: # Default to all time active users
             query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users;"
         result = self._execute_query(query, fetch_one=True)
         return result['active_users'] if result and 'active_users' in result else 0
 
-    def get_total_quizzes_count(self, time_period="all"):
-        logger.info(f"[DB Admin Stats] Fetching total quizzes taken count for period: {time_period}.")
+    def get_total_quizzes_count(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching total quizzes taken count for period: {time_filter}.")
         # Assumes 'completed_at' is a TIMESTAMP column in quiz_results table
-        if time_period == "today":
+        if time_filter == "today":
             query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE DATE(completed_at) = CURRENT_DATE;"
-        elif time_period == "week":
+        elif time_filter == "week":
             query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at >= date_trunc('week', CURRENT_TIMESTAMP);"
-        elif time_period == "month":
+        elif time_filter == "month":
             query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at >= date_trunc('month', CURRENT_TIMESTAMP);"
         else: # Default to all time
             query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results;"
         result = self._execute_query(query, fetch_one=True)
         return result['total_quizzes'] if result and 'total_quizzes' in result else 0
 
-    def get_overall_average_score(self, time_period="all"):
-        logger.info(f"[DB Admin Stats] Fetching average score percentage for period: {time_period}.")
+    def get_overall_average_score(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching average score percentage for period: {time_filter}.")
         # Assumes 'score_percentage' column exists and is populated in quiz_results table
         base_query = "SELECT AVG(score_percentage) as avg_score FROM quiz_results"
         where_clause = ""
-        if time_period == "today":
+        if time_filter == "today":
             where_clause = " WHERE DATE(completed_at) = CURRENT_DATE"
-        elif time_period == "week":
+        elif time_filter == "week":
             where_clause = " WHERE completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_period == "month":
+        elif time_filter == "month":
             where_clause = " WHERE completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
         
         query = base_query + where_clause + ";"
         result = self._execute_query(query, fetch_one=True)
         return round(result['avg_score'], 2) if result and result['avg_score'] is not None else 0.0
 
-    def get_average_quiz_duration(self, time_period="all"):
-        logger.info(f"[DB Admin Stats] Fetching average quiz completion time for period: {time_period}.")
+    def get_average_quiz_duration(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching average quiz completion time for period: {time_filter}.")
         # Assumes 'time_taken_seconds' column exists and is populated in quiz_results table
         base_query = "SELECT AVG(time_taken_seconds) as avg_time FROM quiz_results WHERE time_taken_seconds IS NOT NULL AND time_taken_seconds > 0"
         where_clause = ""
-        if time_period == "today":
-            where_clause += " AND DATE(completed_at) = CURRENT_DATE" # Note: changed to += and added AND
-        elif time_period == "week":
-            where_clause += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_period == "month":
-            where_clause += " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
+        if time_filter == "today":
+            where_clause = " AND DATE(completed_at) = CURRENT_DATE"
+        elif time_filter == "week":
+            where_clause = " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
+        elif time_filter == "month":
+            where_clause = " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"ESTAMP)"
             
         query = base_query + where_clause + ";"
         result = self._execute_query(query, fetch_one=True)
