@@ -478,8 +478,6 @@ class QuizLogic:
                     quiz_type=self.quiz_type,
                     total_questions=self.total_questions,
                     score=self.score,
-                    start_timestamp=quiz_start_time.isoformat() if isinstance(quiz_start_time, datetime) else None,
-                    end_timestamp=quiz_end_time.isoformat(),
                     answers_details=self.answers # Full list of answer details
                 )
                 logger.info(f"[QuizLogic {self.quiz_id}] Successfully logged quiz results to DB for user {self.user_id} with session ID {self.db_quiz_session_id}")
