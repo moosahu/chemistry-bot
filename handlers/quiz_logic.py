@@ -318,9 +318,17 @@ class QuizLogic:
 
         # Extract info from callback_data: "ans_QUIZID_QINDEX_OPTID"
         try:
-            _, quiz_id_from_cb, q_index_str, chosen_option_id = query.data.split("_")
+            parts = query.data.split("_")
+            if len(parts) < 4 or parts[0] != "ans": # Basic validation: ans_quizid_qindex_optid
+                raise ValueError("Callback data does not match expected format 'ans_quizid_qindex_optid' or is too short.")
+            
+            # parts[0] is "ans"
+            chosen_option_id = parts[-1]
+            q_index_str = parts[-2]
+            quiz_id_from_cb = "_".join(parts[1:-2]) # Join all parts between "ans" and q_index
+
             q_index_from_cb = int(q_index_str)
-        except ValueError as e:
+        except (ValueError, IndexError) as e: # Catch IndexError too if parts are too few
             logger.error(f"[QuizLogic {self.quiz_id if hasattr(self, 'quiz_id') else 'CB_PARSE_FAIL'}] Invalid callback_data format: {query.data}. Error: {e}")
             await safe_edit_message_text(context.bot, self.chat_id, query.message.message_id, "حدث خطأ في معالجة إجابتك (بيانات خاطئة).", reply_markup=None)
             return TAKING_QUIZ
