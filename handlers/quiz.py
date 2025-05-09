@@ -717,4 +717,17 @@ quiz_conv_handler = ConversationHandler(
         ],
         SHOWING_RESULTS: [
             CallbackQueryHandler(show_quiz_results_entry, pattern='^quiz_show_my_stats$'),
-            CallbackQueryHandler(quiz_menu_entry, pattern='^quiz_menu_entry$'), # For 
+            CallbackQueryHandler(quiz_menu_entry, pattern='^quiz_menu_entry$'), # For starting a new quiz
+            CallbackQueryHandler(go_to_main_menu_from_quiz, pattern='^main_menu$')  # Go to main menu
+        ]
+    },
+    fallbacks=[
+        CommandHandler('start', start_command_fallback_for_quiz), # Fallback for /start during quiz
+        CallbackQueryHandler(go_to_main_menu_from_quiz, pattern='^main_menu$') # General fallback to main menu
+    ],
+    map_to_parent={
+        END: MAIN_MENU 
+    },
+    name="quiz_conversation", 
+    persistent=True 
+)
