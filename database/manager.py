@@ -152,25 +152,24 @@ class DatabaseManager:
         if start_time and end_time:
             time_taken_seconds_val = int((end_time - start_time).total_seconds())
         
-        # MODIFIED: Removed answers_details from INSERT as the column appears to be missing based on logs.
-        # If you have a column for JSON details (e.g., quiz_details), adjust the query and params accordingly.
         query = """
         INSERT INTO quiz_results 
             (user_id, quiz_type, filter_id, total_questions, score, 
-             score_percentage, time_taken_seconds, completed_at, quiz_id_uuid)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s);
-        """
-        quiz_id_uuid_from_details = details.get("quiz_id_uuid")
+             score_percentage, time_taken_seconds, completed_at, quiz_id_uuid, answers_details)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s);
+        """ # Assuming answers_details column exists and is of type JSONB or TEXT
+        quiz_id_uuid_from_details = details.get("quiz_id_uuid") # Ensure this key exists in details or handle None
+        answers_details_json = json.dumps(details.get("answers_details", [])) # Get answers_details from the details dict
 
         params = (user_id, quiz_type, quiz_scope_id, total_questions, correct_count, 
                   score_percentage_calculated, time_taken_seconds_val, 
-                  quiz_id_uuid_from_details)
+                  quiz_id_uuid_from_details, answers_details_json)
         
         success = self._execute_query(query, params, commit=True)
         if success:
-            logger.info(f"[DB Results] Successfully saved result (without answers_details) to DB for user {user_id}, type {quiz_type}.")
+            logger.info(f"[DB Results] Successfully saved result to DB for user {user_id}, type {quiz_type}.")
         else:
-            logger.error(f"[DB Results] Failed to save result (without answers_details) to DB for user {user_id}, type {quiz_type}.")
+            logger.error(f"[DB Results] Failed to save result to DB for user {user_id}, type {quiz_type}.")
         return success
 
     def get_user_overall_stats(self, user_id: int):
@@ -205,20 +204,21 @@ class DatabaseManager:
     def get_user_recent_quiz_history(self, user_id: int, limit: int = 5):
         """Retrieves recent quiz history for a specific user."""
         logger.info(f"[DB Stats] Fetching recent quiz history for user_id: {user_id}, limit: {limit}")
-        # MODIFIED: Removed answers_details from SELECT as the column appears to be missing based on logs.
         query = """
         SELECT 
             result_id,
             quiz_type,
+            quiz_name, 
             total_questions,
             score, 
             score_percentage as percentage, 
-            completed_at as completion_timestamp
+            completed_at as completion_timestamp,
+            answers_details
         FROM quiz_results
         WHERE user_id = %s
         ORDER BY completed_at DESC
         LIMIT %s;
-        """
+        """ # Added quiz_name and answers_details
         history = self._execute_query(query, (user_id, limit), fetch_all=True)
         if history:
             logger.info(f"[DB Stats] Found {len(history)} recent quizzes for user {user_id}.")
@@ -249,6 +249,73 @@ class DatabaseManager:
             logger.warning("[DB Stats] No leaderboard data found or query failed.")
             leaderboard = []
         return leaderboard
+
+    # --- Admin Statistics Functions ---
+    def get_total_users_count(self):
+        logger.info("[DB Admin Stats] Fetching total users count.")
+        query = "SELECT COUNT(user_id) as total_users FROM users;"
+        result = self._execute_query(query, fetch_one=True)
+        return result['total_users'] if result and 'total_users' in result else 0
+
+    def get_active_users_count(self, time_period="today"):
+        logger.info(f"[DB Admin Stats] Fetching active users count for period: {time_period}.")
+        # Assumes 'last_interaction_date' is a TIMESTAMP or DATE column in users table
+        if time_period == "today":
+            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE DATE(last_interaction_date) = CURRENT_DATE;"
+        elif time_period == "week":
+            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE last_interaction_date >= date_trunc('week', CURRENT_TIMESTAMP);"
+        elif time_period == "month":
+            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE last_interaction_date >= date_trunc('month', CURRENT_TIMESTAMP);"
+        else: # Default to all time active users
+            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users;"
+        result = self._execute_query(query, fetch_one=True)
+        return result['active_users'] if result and 'active_users' in result else 0
+
+    def get_total_quizzes_taken_count(self, time_period="all"):
+        logger.info(f"[DB Admin Stats] Fetching total quizzes taken count for period: {time_period}.")
+        # Assumes 'completed_at' is a TIMESTAMP column in quiz_results table
+        if time_period == "today":
+            query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE DATE(completed_at) = CURRENT_DATE;"
+        elif time_period == "week":
+            query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at >= date_trunc('week', CURRENT_TIMESTAMP);"
+        elif time_period == "month":
+            query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at >= date_trunc('month', CURRENT_TIMESTAMP);"
+        else: # Default to all time
+            query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results;"
+        result = self._execute_query(query, fetch_one=True)
+        return result['total_quizzes'] if result and 'total_quizzes' in result else 0
+
+    def get_average_score_percentage_all_users(self, time_period="all"):
+        logger.info(f"[DB Admin Stats] Fetching average score percentage for period: {time_period}.")
+        # Assumes 'score_percentage' column exists and is populated in quiz_results table
+        base_query = "SELECT AVG(score_percentage) as avg_score FROM quiz_results"
+        where_clause = ""
+        if time_period == "today":
+            where_clause = " WHERE DATE(completed_at) = CURRENT_DATE"
+        elif time_period == "week":
+            where_clause = " WHERE completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
+        elif time_period == "month":
+            where_clause = " WHERE completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
+        
+        query = base_query + where_clause + ";"
+        result = self._execute_query(query, fetch_one=True)
+        return round(result['avg_score'], 2) if result and result['avg_score'] is not None else 0.0
+
+    def get_average_quiz_completion_time(self, time_period="all"):
+        logger.info(f"[DB Admin Stats] Fetching average quiz completion time for period: {time_period}.")
+        # Assumes 'time_taken_seconds' column exists and is populated in quiz_results table
+        base_query = "SELECT AVG(time_taken_seconds) as avg_time FROM quiz_results WHERE time_taken_seconds IS NOT NULL AND time_taken_seconds > 0"
+        where_clause = ""
+        if time_period == "today":
+            where_clause += " AND DATE(completed_at) = CURRENT_DATE" # Note: changed to += and added AND
+        elif time_period == "week":
+            where_clause += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
+        elif time_period == "month":
+            where_clause += " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
+            
+        query = base_query + where_clause + ";"
+        result = self._execute_query(query, fetch_one=True)
+        return round(result['avg_time'], 2) if result and result['avg_time'] is not None else 0.0
 
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager] Global instance created.")
