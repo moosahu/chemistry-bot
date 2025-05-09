@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# handlers/quiz_logic.py (v37 - datetime import fix)
+# handlers/quiz_logic.py (v38 - syntax fix for quotes)
 
 import asyncio
 import logging
@@ -86,9 +86,9 @@ class QuizLogic:
             if not button_text_str: 
                  button_text_str = f"خيار {i + 1}" 
             
-            if len(button_text_str.encode(\'utf-8\')) > 60: 
-                temp_bytes = button_text_str.encode(\'utf-8\')[:57] 
-                button_text_str = temp_bytes.decode(\'utf-8\', \'ignore\') + "..."
+            if len(button_text_str.encode('utf-8')) > 60: 
+                temp_bytes = button_text_str.encode('utf-8')[:57] 
+                button_text_str = temp_bytes.decode('utf-8', 'ignore') + "..."
 
             callback_data = f"ans_{self.quiz_id}_{self.current_question_index}_{option_id}"
             keyboard.append([InlineKeyboardButton(text=button_text_str, callback_data=callback_data)])
@@ -103,7 +103,7 @@ class QuizLogic:
 
         while self.current_question_index < self.total_questions:
             current_question_data = self.questions_data[self.current_question_index]
-            q_id_log = current_question_data.get(\'question_id\', f\'q_idx_{self.current_question_index}\')
+            q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
             options = current_question_data.get("options", [])
 
             if len(options) < MIN_OPTIONS_PER_QUESTION:
@@ -136,20 +136,20 @@ class QuizLogic:
                         display_label = self.ARABIC_CHOICE_LETTERS[option_image_counter] if option_image_counter < len(self.ARABIC_CHOICE_LETTERS) else f"صورة {option_image_counter + 1}"
                         logger.info(f"[QuizLogic {self.quiz_id}] Sending image option {i} (caption: {display_label}), q_id {q_id_log}. URL: {option_text_original}")
                         await bot.send_photo(chat_id=self.chat_id, photo=option_text_original, caption=f"الخيار: {display_label}")
-                        current_option_proc[\'is_image_option\'] = True
-                        current_option_proc[\'image_option_display_label\'] = display_label 
+                        current_option_proc['is_image_option'] = True
+                        current_option_proc['image_option_display_label'] = display_label 
                         option_image_counter += 1 
                         await asyncio.sleep(0.3) 
                     except Exception as e_img_opt:
                         logger.error(f"[QuizLogic {self.quiz_id}] Failed to send image option {i} (URL: {option_text_original}), q_id {q_id_log}: {e_img_opt}", exc_info=True)
-                        current_option_proc[\'is_image_option\'] = False
-                        current_option_proc[\'image_option_display_label\'] = None 
+                        current_option_proc['is_image_option'] = False
+                        current_option_proc['image_option_display_label'] = None 
                 else:
-                    current_option_proc[\'is_image_option\'] = False 
-                    current_option_proc[\'image_option_display_label\'] = None
+                    current_option_proc['is_image_option'] = False 
+                    current_option_proc['image_option_display_label'] = None
                 processed_options.append(current_option_proc)
             
-            current_question_data[\'options\'] = processed_options 
+            current_question_data['options'] = processed_options 
             options_keyboard = self.create_options_keyboard(processed_options)
             header = f"<b>السؤال {self.current_question_index + 1} من {self.total_questions}:</b>\n"
             image_url = current_question_data.get("image_url") # This is for the question image, not option image
@@ -188,7 +188,7 @@ class QuizLogic:
                 timer_job_name = f"qtimer_{user_id}_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
                 remove_job_if_exists(timer_job_name, context) 
 
-                if not hasattr(context, \'bot_data\') or context.bot_data is None: context.bot_data = {}
+                if not hasattr(context, 'bot_data') or context.bot_data is None: context.bot_data = {}
                 context.bot_data[f"msg_cache_{self.chat_id}_{sent_message.message_id}"] = sent_message
 
                 if context.job_queue:
@@ -225,13 +225,13 @@ class QuizLogic:
         options_for_current_q = current_question_data.get("options", [])
         retrieved_correct_option_text = "نص الإجابة الصحيحة غير متوفر"
         found_correct_option_details = False
-        if not correct_option_id_from_data or correct_option_id_from_data == \'None\':
-            logger.warning(f"[QuizLogic {self.quiz_id}] Correct option ID is missing or None in question data for q_id \'{current_question_data.get(\'question_id\')}\'")
+        if not correct_option_id_from_data or correct_option_id_from_data == 'None':
+            logger.warning(f"[QuizLogic {self.quiz_id}] Correct option ID is missing or None in question data for q_id '{current_question_data.get('question_id')}'")
             return "لم يتم تحديد إجابة صحيحة للسؤال"
         for opt_detail in options_for_current_q:
             if str(opt_detail.get("option_id")) == correct_option_id_from_data:
                 if opt_detail.get("is_image_option"):
-                    img_label = opt_detail.get(\'image_option_display_label\')
+                    img_label = opt_detail.get('image_option_display_label')
                     if img_label and img_label.strip():
                         retrieved_correct_option_text = f"صورة ({img_label})"
                     else:
@@ -245,7 +245,7 @@ class QuizLogic:
                 found_correct_option_details = True
                 break
         if not found_correct_option_details:
-            logger.error(f"[QuizLogic {self.quiz_id}] Critical: Correct option ID \'{correct_option_id_from_data}\' not found in processed options for q_id \'{current_question_data.get(\'question_id\')}\'")
+            logger.error(f"[QuizLogic {self.quiz_id}] Critical: Correct option ID '{correct_option_id_from_data}' not found in processed options for q_id '{current_question_data.get('question_id')}'")
             retrieved_correct_option_text = f"خطأ: الإجابة الصحيحة (معرف: {correct_option_id_from_data}) غير موجودة ضمن الخيارات"
         return retrieved_correct_option_text
 
@@ -259,11 +259,11 @@ class QuizLogic:
         try:
             temp_parts = query.data.split("_", 1)
             if len(temp_parts) < 2 or not temp_parts[0] == "ans":
-                raise ValueError("Callback data format error - expected \'ans_QUIZID_QINDEX_OPTID\'")
+                raise ValueError("Callback data format error - expected 'ans_QUIZID_QINDEX_OPTID'")
             
             parts = temp_parts[1].split("_") 
             if len(parts) < 3:
-                raise ValueError("Callback data format error - insufficient parts after \'ans_\'")
+                raise ValueError("Callback data format error - insufficient parts after 'ans_'")
 
             quiz_id_from_cb = parts[0]
             question_index_from_cb = int(parts[1])
@@ -288,7 +288,7 @@ class QuizLogic:
             for opt in options_for_q:
                 if str(opt.get("option_id")) == chosen_option_id:
                     if opt.get("is_image_option"):
-                        chosen_option_text = f"صورة ({opt.get(\'image_option_display_label\', chosen_option_id)})"
+                        chosen_option_text = f"صورة ({opt.get('image_option_display_label', chosen_option_id)})"
                     else:
                         chosen_option_text = opt.get("option_text", f"خيار {chosen_option_id}")
                     break
@@ -359,11 +359,11 @@ class QuizLogic:
                 return await self.show_results(bot, context, user_id)
 
         except ValueError as e:
-            logger.error(f"[QuizLogic {self.quiz_id}] ValueError in handle_answer: {e}. Callback data: {query.data if query else \'No query\'}", exc_info=True)
+            logger.error(f"[QuizLogic {self.quiz_id}] ValueError in handle_answer: {e}. Callback data: {query.data if query else 'No query'}", exc_info=True)
             await query.answer("حدث خطأ في معالجة إجابتك. يرجى المحاولة مرة أخرى أو إبلاغ الأدمن.", show_alert=True)
             return TAKING_QUIZ 
         except Exception as e:
-            logger.error(f"[QuizLogic {self.quiz_id}] Unexpected error in handle_answer: {e}. Callback data: {query.data if query else \'No query\'}", exc_info=True)
+            logger.error(f"[QuizLogic {self.quiz_id}] Unexpected error in handle_answer: {e}. Callback data: {query.data if query else 'No query'}", exc_info=True)
             await query.answer("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى أو إبلاغ الأدمن.", show_alert=True)
             return TAKING_QUIZ 
 
@@ -462,18 +462,18 @@ class QuizLogic:
                 # Collect necessary details for logging
                 # start_time and end_time for the whole quiz are not explicitly tracked in this version of QuizLogic
                 # We can use approximations or pass them if available from the calling handler.
-                # For now, let\'s assume data_logger handles missing start/end times gracefully or they are added elsewhere.
+                # For now, let's assume data_logger handles missing start/end times gracefully or they are added elsewhere.
                 quiz_end_time = datetime.now() # Approximation
                 quiz_start_time = quiz_end_time # Placeholder, ideally this is tracked from quiz start
                 
                 # Try to get quiz_start_time from context if it was stored by the handler
-                if context and hasattr(context, \'user_data\') and context.user_data.get(f\'quiz_start_time_{self.quiz_id}\'):
-                    quiz_start_time = context.user_data[f\'quiz_start_time_{self.quiz_id}\']
+                if context and hasattr(context, 'user_data') and context.user_data.get(f'quiz_start_time_{self.quiz_id}'):
+                    quiz_start_time = context.user_data[f'quiz_start_time_{self.quiz_id}']
 
                 log_quiz_results(
                     user_id=self.user_id,
                     quiz_session_id=self.db_quiz_session_id, # This is the crucial ID from quiz_sessions table
-                    quiz_id_uuid=self.quiz_id, # This is the QuizLogic\'s internal UUID for the quiz instance
+                    quiz_id_uuid=self.quiz_id, # This is the QuizLogic's internal UUID for the quiz instance
                     quiz_name=self.quiz_name,
                     quiz_type=self.quiz_type,
                     filter_id=None, # Or pass the actual scope_id if available and relevant for this quiz_type
@@ -493,15 +493,15 @@ class QuizLogic:
         else:
             logger.warning(f"[QuizLogic {self.quiz_id}] db_quiz_session_id is missing. Cannot log results to DB for user {self.user_id}.")
 
-        await safe_send_message(bot, chat_id=self.chat_id, text=results_summary, reply_markup=reply_markup, parse_mode=\'Markdown\')
+        await safe_send_message(bot, chat_id=self.chat_id, text=results_summary, reply_markup=reply_markup, parse_mode='Markdown')
         await self.cleanup_quiz_data(context, user_id, "quiz_completed_normally")
         return END 
 
     async def cleanup_quiz_data(self, context: CallbackContext, user_id: int, reason: str):
         logger.info(f"[QuizLogic {self.quiz_id}] Cleaning up quiz data for user {user_id}. Reason: {reason}")
         self.active = False 
-        if context and hasattr(context, \'user_data\') and f\'quiz_logic_instance_{user_id}_{self.chat_id}\' in context.user_data:
-            del context.user_data[f\'quiz_logic_instance_{user_id}_{self.chat_id}\']
+        if context and hasattr(context, 'user_data') and f'quiz_logic_instance_{user_id}_{self.chat_id}' in context.user_data:
+            del context.user_data[f'quiz_logic_instance_{user_id}_{self.chat_id}']
             logger.debug(f"[QuizLogic {self.quiz_id}] Removed instance from user_data for {user_id}_{self.chat_id}")
         # Ensure any pending timers for this quiz are cancelled
         # This is a bit broad, but better than leaving timers running.
@@ -526,7 +526,7 @@ async def question_timeout_callback_wrapper(context: CallbackContext):
 
     logger.debug(f"[TimeoutWrapper] Job triggered for user {user_id}, chat {chat_id}, quiz {quiz_id_from_job}, q_idx {question_index}")
 
-    quiz_instance_key = f\'quiz_logic_instance_{user_id}_{chat_id}\'
+    quiz_instance_key = f'quiz_logic_instance_{user_id}_{chat_id}'
     quiz_instance = context.user_data.get(quiz_instance_key)
 
     if quiz_instance and quiz_instance.active and quiz_instance.quiz_id == quiz_id_from_job and quiz_instance.current_question_index == question_index:
@@ -540,5 +540,5 @@ async def question_timeout_callback_wrapper(context: CallbackContext):
             await asyncio.sleep(2)
             await quiz_instance.show_results(bot=context.bot, context=context, user_id=user_id)
     else:
-        logger.warning(f"[TimeoutWrapper] Timeout for an old/inactive quiz or mismatched state. User {user_id}, Quiz {quiz_id_from_job}, Q_idx {question_index}. Instance active: {quiz_instance.active if quiz_instance else \'N/A\'}")
+        logger.warning(f"[TimeoutWrapper] Timeout for an old/inactive quiz or mismatched state. User {user_id}, Quiz {quiz_id_from_job}, Q_idx {question_index}. Instance active: {quiz_instance.active if quiz_instance else 'N/A'}")
 
