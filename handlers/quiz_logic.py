@@ -478,6 +478,7 @@ class QuizLogic:
                     quiz_type=self.quiz_type,
                     total_questions=self.total_questions,
                     score=self.score,
+                    percentage=percentage, # Added missing required parameter
                     answers_details=self.answers # Full list of answer details
                 )
                 logger.info(f"[QuizLogic {self.quiz_id}] Successfully logged quiz results to DB for user {self.user_id} with session ID {self.db_quiz_session_id}")
