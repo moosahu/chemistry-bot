@@ -514,7 +514,8 @@ class QuizLogic:
                     end_time=quiz_end_time, # datetime object
                     time_taken_seconds=time_taken_val,
                     answers_details=self.answers
-                )            logger.info(f"[QuizLogic {self.quiz_id}] Successfully logged quiz results to DB for user {self.user_id} with session ID {self.db_quiz_session_id}")
+                )
+                logger.info(f"[QuizLogic {self.quiz_id}] Successfully logged quiz results to DB for user {self.user_id} with session ID {self.db_quiz_session_id}")
             except Exception as e_log:
                 logger.error(f"[QuizLogic {self.quiz_id}] Failed to log quiz results to DB for user {self.user_id}: {e_log}", exc_info=True)
         else:
