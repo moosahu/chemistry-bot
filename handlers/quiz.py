@@ -688,8 +688,9 @@ async def show_quiz_results_entry(update: Update, context: CallbackContext) -> i
 
 
 # Conversation Handler Setup
+print("[QUIZ_PY_DEBUG] About to define quiz_conv_handler...")
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern='^quiz_menu$')],
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern='^start_quiz$')],
     states={
         SELECT_QUIZ_TYPE: [
             CallbackQueryHandler(select_quiz_type, pattern='^quiz_type_.*$'),
@@ -730,5 +731,6 @@ quiz_conv_handler = ConversationHandler(
         END: MAIN_MENU 
     },
     name="quiz_conversation", 
-    persistent=True 
+     persistent=True
 )
+print("[QUIZ_PY_DEBUG] quiz_conv_handler defined successfully.")
