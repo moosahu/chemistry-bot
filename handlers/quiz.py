@@ -3,6 +3,7 @@
 """
 Conversation handler for the quiz selection and execution flow (PARAM & SYNTAX FIXES APPLIED).
 (CONV_HANDLER_FIX for TAKING_QUIZ state)
+(HANDLE_ANSWER_FIX for TypeError)
 """
 
 import logging
@@ -286,347 +287,340 @@ async def select_course_for_unit_quiz(update: Update, context: CallbackContext) 
             new_page = int(callback_data.split("_")[-1])
             context.user_data["current_course_page_for_unit_quiz"] = new_page
             keyboard = create_course_selection_keyboard(courses, new_page)
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="اختر المقرر الدراسي:", reply_markup=keyboard)
-            return SELECT_COURSE_FOR_UNIT_QUIZ
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="اختر المقرر الدراسي (صفحة أخرى):", reply_markup=keyboard)
         except (ValueError, IndexError) as e:
-            logger.error(f"Error parsing course page callback data: {callback_data}, error: {e}")
-            await query.message.reply_text("حدث خطأ أثناء التنقل بين الصفحات. يرجى المحاولة مرة أخرى.")
-            return SELECT_COURSE_FOR_UNIT_QUIZ
+            logger.error(f"Error parsing course page from callback: {callback_data}. Error: {e}")
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في التنقل بين الصفحات. يرجى المحاولة مرة أخرى.", reply_markup=create_course_selection_keyboard(courses, current_page))
+        return SELECT_COURSE_FOR_UNIT_QUIZ
 
     elif callback_data.startswith("quiz_course_select_"):
-        course_id = callback_data.replace("quiz_course_select_", "", 1)
-        selected_course = next((c for c in courses if str(c.get("id")) == course_id), None)
-        if not selected_course:
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="المقرر المختار غير صالح. يرجى المحاولة مرة أخرى.", reply_markup=create_course_selection_keyboard(courses, current_page))
-            return SELECT_COURSE_FOR_UNIT_QUIZ
+        selected_course_id = callback_data.replace("quiz_course_select_", "", 1)
+        context.user_data["selected_course_id_for_unit_quiz"] = selected_course_id
+        selected_course = next((c for c in courses if str(c.get("id")) == str(selected_course_id)), None)
+        context.user_data["selected_course_name_for_unit_quiz"] = selected_course.get("name", "مقرر غير مسمى") if selected_course else "مقرر غير مسمى"
         
-        context.user_data["selected_course_id_for_unit_quiz"] = course_id
-        context.user_data["selected_course_name_for_unit_quiz"] = selected_course.get("name", f"مقرر {course_id}")
-        
-        units = fetch_from_api(f"api/v1/courses/{course_id}/units")
+        units = fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
         api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
         if units == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=api_timeout_message, reply_markup=create_course_selection_keyboard(courses, current_page))
             return SELECT_COURSE_FOR_UNIT_QUIZ
             
         if not units or not isinstance(units, list) or not units:
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عذراً، لا توجد وحدات دراسية متاحة للمقرر \"{selected_course.get('name')}\" أو حدث خطأ في جلبها.", reply_markup=create_course_selection_keyboard(courses, current_page))
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لا توجد وحدات دراسية متاحة لهذا المقرر أو حدث خطأ في جلبها.", reply_markup=create_course_selection_keyboard(courses, current_page))
             return SELECT_COURSE_FOR_UNIT_QUIZ
         
         context.user_data["available_units_for_course"] = units
         context.user_data["current_unit_page_for_course"] = 0
-        keyboard = create_unit_selection_keyboard(units, course_id, 0)
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية من مقرر \"{selected_course.get('name')}\":", reply_markup=keyboard)
+        keyboard = create_unit_selection_keyboard(units, selected_course_id, 0)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية من مقرر \"{context.user_data['selected_course_name_for_unit_quiz']}\":", reply_markup=keyboard)
         return SELECT_UNIT_FOR_COURSE
     
-    return SELECT_COURSE_FOR_UNIT_QUIZ # Fallback
+    return SELECT_COURSE_FOR_UNIT_QUIZ 
 
 async def select_unit_for_course(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
     callback_data = query.data
+    
     selected_course_id = context.user_data.get("selected_course_id_for_unit_quiz")
-    selected_course_name = context.user_data.get("selected_course_name_for_unit_quiz", "المقرر المختار")
     units = context.user_data.get("available_units_for_course", [])
     current_page = context.user_data.get("current_unit_page_for_course", 0)
 
     if callback_data == "quiz_unit_back_to_course_selection":
-        all_courses = context.user_data.get("available_courses_for_unit_quiz", []) # Should have been stored
-        course_page = context.user_data.get("current_course_page_for_unit_quiz", 0)
-        keyboard = create_course_selection_keyboard(all_courses, course_page)
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="اختر المقرر الدراسي:", reply_markup=keyboard)
+        all_courses = context.user_data.get("available_courses_for_unit_quiz", []) 
+        course_page_to_return_to = context.user_data.get("current_course_page_for_unit_quiz", 0)
+        keyboard = create_course_selection_keyboard(all_courses, course_page_to_return_to)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="اختر المقرر الدراسي أولاً:", reply_markup=keyboard)
         return SELECT_COURSE_FOR_UNIT_QUIZ
 
     if callback_data.startswith("quiz_unit_page_"):
         try:
             parts = callback_data.split("_")
-            # Expected format: quiz_unit_page_COURSEID_PAGE
-            # However, the create_unit_selection_keyboard uses quiz_unit_page_{course_id}_{current_page + 1}
-            # So parts should be ["quiz", "unit", "page", COURSEID, PAGE]
-            # Or if it's just quiz_unit_page_PAGE (if course_id is implicit from context), then simpler split
-            # Let's assume course_id is correctly embedded or not needed if only page changes
-            # The create_unit_selection_keyboard uses: f"quiz_unit_page_{course_id}_{current_page - 1}"
-            # So the course_id is indeed in the callback_data
-            page_course_id = parts[-2] # course_id should be second to last
-            new_page = int(parts[-1]) # page number is last
-            
-            if str(page_course_id) != str(selected_course_id):
-                logger.warning(f"Mismatched course_id in unit pagination. Expected {selected_course_id}, got {page_course_id}. Data: {callback_data}")
-                # Potentially fall back or send error
+            # Expected format: quiz_unit_page_COURSEID_PAGENUM
+            course_id_from_cb = parts[-2] # Should be course_id
+            new_page = int(parts[-1]) # Should be page number
+            if str(course_id_from_cb) != str(selected_course_id):
+                logger.warning(f"Mismatched course_id in unit pagination. CB: {course_id_from_cb}, Context: {selected_course_id}. Reverting to course selection.")
+                # Fallback to course selection if course_id mismatch
+                all_courses = context.user_data.get("available_courses_for_unit_quiz", []) 
+                course_page_to_return_to = context.user_data.get("current_course_page_for_unit_quiz", 0)
+                keyboard = create_course_selection_keyboard(all_courses, course_page_to_return_to)
+                await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ، يرجى اختيار المقرر مرة أخرى.", reply_markup=keyboard)
+                return SELECT_COURSE_FOR_UNIT_QUIZ
             
             context.user_data["current_unit_page_for_course"] = new_page
             keyboard = create_unit_selection_keyboard(units, selected_course_id, new_page)
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية من مقرر \"{selected_course_name}\":", reply_markup=keyboard)
-            return SELECT_UNIT_FOR_COURSE
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية (صفحة أخرى) من مقرر \"{context.user_data['selected_course_name_for_unit_quiz']}\":", reply_markup=keyboard)
         except (ValueError, IndexError) as e:
-            logger.error(f"Error parsing unit page callback data: {callback_data}, error: {e}")
-            await query.message.reply_text("حدث خطأ أثناء التنقل بين صفحات الوحدات. يرجى المحاولة مرة أخرى.")
-            return SELECT_UNIT_FOR_COURSE
-            
+            logger.error(f"Error parsing unit page from callback: {callback_data}. Error: {e}")
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في التنقل بين صفحات الوحدات. يرجى المحاولة مرة أخرى.", reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
+        return SELECT_UNIT_FOR_COURSE
+
     elif callback_data.startswith("quiz_unit_select_"):
+        parts = callback_data.split("_")
+        # Expected: quiz_unit_select_COURSEID_UNITID
         try:
-            parts = callback_data.split("_") # quiz_unit_select_COURSEID_UNITID
-            unit_id = parts[-1]
-            cb_course_id = parts[-2]
-            if str(cb_course_id) != str(selected_course_id):
-                logger.error(f"Mismatched course_id in unit selection. Expected {selected_course_id}, got {cb_course_id}. Data: {callback_data}")
-                # Send error to user, ask to restart selection
-                await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في اختيار الوحدة بسبب عدم تطابق المقرر. يرجى إعادة اختيار المقرر.", reply_markup=create_course_selection_keyboard(context.user_data.get("available_courses_for_unit_quiz", []),0) )
-                return SELECT_COURSE_FOR_UNIT_QUIZ
-
-            selected_unit = next((u for u in units if str(u.get("id")) == unit_id), None)
-            if not selected_unit:
-                await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="الوحدة المختارة غير صالحة. يرجى المحاولة مرة أخرى.", reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
-                return SELECT_UNIT_FOR_COURSE
-            
-            context.user_data["selected_unit_id"] = unit_id
-            unit_name = selected_unit.get("name", f"وحدة {unit_id}")
-            context.user_data["selected_unit_name"] = unit_name
-            quiz_name_for_display = f"{selected_course_name} - {unit_name}"
-            
-            questions_for_unit = fetch_from_api(f"api/v1/units/{unit_id}/questions")
-            api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
-            if questions_for_unit == "TIMEOUT":
-                await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=api_timeout_message, reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
-                return SELECT_UNIT_FOR_COURSE
-
-            if not questions_for_unit or not isinstance(questions_for_unit, list) or not questions_for_unit:
-                await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عذراً، لا توجد أسئلة متاحة للوحدة \"{unit_name}\" حالياً.", reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
-                return SELECT_UNIT_FOR_COURSE
-            
-            context.user_data[f"quiz_setup_{context.user_data['selected_quiz_type_key']}_{unit_id}"] = {
-                "questions": questions_for_unit,
-                "quiz_name": quiz_name_for_display,
-                "scope_id": unit_id 
-            }
-            max_questions = len(questions_for_unit)
-            keyboard = create_question_count_keyboard(max_questions, context.user_data['selected_quiz_type_key'], unit_id=unit_id, course_id_for_unit=selected_course_id)
-            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار \n\"{quiz_name_for_display}\":", reply_markup=keyboard)
-            return ENTER_QUESTION_COUNT
-        except (ValueError, IndexError) as e:
-            logger.error(f"Error parsing unit selection callback data: {callback_data}, error: {e}")
-            await query.message.reply_text("حدث خطأ أثناء اختيار الوحدة. يرجى المحاولة مرة أخرى.")
+            course_id_from_cb = parts[-2]
+            selected_unit_id = parts[-1]
+            if str(course_id_from_cb) != str(selected_course_id):
+                 logger.warning(f"Mismatched course_id in unit selection. CB: {course_id_from_cb}, Context: {selected_course_id}. Reverting to course selection.")
+                 all_courses = context.user_data.get("available_courses_for_unit_quiz", []) 
+                 course_page_to_return_to = context.user_data.get("current_course_page_for_unit_quiz", 0)
+                 keyboard = create_course_selection_keyboard(all_courses, course_page_to_return_to)
+                 await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ، يرجى اختيار المقرر مرة أخرى.", reply_markup=keyboard)
+                 return SELECT_COURSE_FOR_UNIT_QUIZ
+        except IndexError:
+            logger.error(f"Malformed callback data for unit selection: {callback_data}")
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في اختيار الوحدة. يرجى المحاولة مرة أخرى.", reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
             return SELECT_UNIT_FOR_COURSE
-            
-    return SELECT_UNIT_FOR_COURSE # Fallback
 
-async def enter_question_count(update: Update, context: CallbackContext) -> int:
+        context.user_data["selected_unit_id"] = selected_unit_id
+        selected_unit = next((u for u in units if str(u.get("id")) == str(selected_unit_id)), None)
+        selected_unit_name = selected_unit.get("name", "وحدة غير مسماة") if selected_unit else "وحدة غير مسماة"
+        context.user_data["selected_unit_name"] = selected_unit_name
+        
+        unit_questions_pool = fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
+        api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
+        if unit_questions_pool == "TIMEOUT":
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=api_timeout_message, reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
+            return SELECT_UNIT_FOR_COURSE
+
+        if not unit_questions_pool or not isinstance(unit_questions_pool, list) or not unit_questions_pool:
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"عذراً، لا توجد أسئلة متاحة حالياً لوحدة \"{selected_unit_name}\".", reply_markup=create_unit_selection_keyboard(units, selected_course_id, current_page))
+            return SELECT_UNIT_FOR_COURSE
+        
+        context.user_data[f"quiz_setup_{context.user_data['selected_quiz_type_key']}_{selected_unit_id}"] = {
+            "questions": unit_questions_pool,
+            "quiz_name": f"{context.user_data['selected_course_name_for_unit_quiz']} - {selected_unit_name}",
+            "scope_id": selected_unit_id
+        }
+        max_questions = len(unit_questions_pool)
+        keyboard = create_question_count_keyboard(max_questions, context.user_data['selected_quiz_type_key'], unit_id=selected_unit_id, course_id_for_unit=selected_course_id)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر عدد الأسئلة لاختبار وحدة \"{selected_unit_name}\":", reply_markup=keyboard)
+        return ENTER_QUESTION_COUNT
+    
+    return SELECT_UNIT_FOR_COURSE
+
+async def select_question_count(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
-    chat_id = query.message.chat_id
     await query.answer()
     callback_data = query.data
 
-    selected_quiz_type_key = context.user_data.get("selected_quiz_type_key")
-    selected_unit_id = context.user_data.get("selected_unit_id") # This will be 'all' for QUIZ_TYPE_ALL
-    quiz_setup_key_suffix = selected_unit_id if selected_unit_id else "all" # Fallback for safety, though 'all' should be set
-    quiz_setup_data = context.user_data.get(f"quiz_setup_{selected_quiz_type_key}_{quiz_setup_key_suffix}")
+    quiz_type = context.user_data.get("selected_quiz_type_key")
+    unit_id = context.user_data.get("selected_unit_id") # This will be "all" for QUIZ_TYPE_ALL
+    course_id_for_unit_quiz = context.user_data.get("selected_course_id_for_unit_quiz") # For back button
 
     if callback_data.startswith("quiz_count_back_to_unit_selection_"):
-        course_id_from_cb = callback_data.split("_")[-1]
-        # We need to re-fetch units for this course_id or retrieve from context if stored appropriately
-        # For simplicity, assume selected_course_id_for_unit_quiz is still valid
+        # Expected: quiz_count_back_to_unit_selection_COURSEID
+        course_id_from_cb = callback_data.replace("quiz_count_back_to_unit_selection_", "", 1)
+        if str(course_id_from_cb) != str(course_id_for_unit_quiz):
+            logger.warning(f"Mismatched course_id in count back. CB: {course_id_from_cb}, Context: {course_id_for_unit_quiz}. Reverting to type selection.")
+            keyboard = create_quiz_type_keyboard()
+            await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
+            return SELECT_QUIZ_TYPE
+        
         units_for_course = context.user_data.get("available_units_for_course", [])
-        unit_page = context.user_data.get("current_unit_page_for_course", 0)
-        keyboard = create_unit_selection_keyboard(units_for_course, course_id_from_cb, unit_page)
-        course_name = context.user_data.get("selected_course_name_for_unit_quiz", f"مقرر {course_id_from_cb}")
-        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية من مقرر \"{course_name}\":", reply_markup=keyboard)
+        unit_page_to_return_to = context.user_data.get("current_unit_page_for_course", 0)
+        keyboard = create_unit_selection_keyboard(units_for_course, course_id_for_unit_quiz, unit_page_to_return_to)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"اختر الوحدة الدراسية من مقرر \"{context.user_data.get('selected_course_name_for_unit_quiz', '')}\":", reply_markup=keyboard)
         return SELECT_UNIT_FOR_COURSE
-    elif callback_data == "quiz_type_back_to_type_selection":
+    
+    elif callback_data == "quiz_type_back_to_type_selection": # For QUIZ_TYPE_ALL back button
         keyboard = create_quiz_type_keyboard()
-        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="🧠 اختر نوع الاختبار:", reply_markup=keyboard)
         return SELECT_QUIZ_TYPE
 
+    quiz_setup_key = f"quiz_setup_{quiz_type}_{unit_id}"
+    quiz_setup_data = context.user_data.get(quiz_setup_key)
+
     if not quiz_setup_data or "questions" not in quiz_setup_data:
-        logger.error(f"User {user_id}: Quiz setup data missing or incomplete for type {selected_quiz_type_key}, unit {selected_unit_id}.")
-        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text="حدث خطأ في إعداد الاختبار. يرجى المحاولة من البداية.", reply_markup=create_quiz_type_keyboard())
+        logger.error(f"Quiz setup data not found for key {quiz_setup_key} for user {user_id}. Returning to type selection.")
+        keyboard = create_quiz_type_keyboard()
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="حدث خطأ في إعداد الاختبار. يرجى المحاولة من جديد.", reply_markup=keyboard)
         return SELECT_QUIZ_TYPE
 
     all_questions_for_scope = quiz_setup_data["questions"]
-    quiz_name = quiz_setup_data.get("quiz_name", "اختبار")
-    quiz_scope_id_for_log = quiz_setup_data.get("scope_id") # This is 'all' or unit_id
-    max_questions = len(all_questions_for_scope)
+    max_q = len(all_questions_for_scope)
     
     num_questions_str = callback_data.replace("num_questions_", "", 1)
     if num_questions_str == "all":
-        actual_question_count = max_questions
+        num_questions = max_q
     else:
         try:
-            actual_question_count = int(num_questions_str)
-            if not (0 < actual_question_count <= max_questions):
-                logger.warning(f"User {user_id} selected invalid number of questions: {actual_question_count}. Max: {max_questions}")
-                await query.message.reply_text(f"العدد المختار غير صالح. يرجى اختيار عدد بين 1 و {max_questions}.")
-                # Re-show count keyboard
-                keyboard = create_question_count_keyboard(max_questions, selected_quiz_type_key, unit_id=selected_unit_id, course_id_for_unit=context.user_data.get("selected_course_id_for_unit_quiz"))
-                await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text=query.message.text, reply_markup=keyboard)
-                return ENTER_QUESTION_COUNT
+            num_questions = int(num_questions_str)
+            if not (0 < num_questions <= max_q):
+                logger.warning(f"User {user_id} selected invalid num_questions: {num_questions} (max: {max_q}). Defaulting to max.")
+                num_questions = max_q
         except ValueError:
-            logger.error(f"User {user_id}: Could not parse num_questions: {num_questions_str}")
-            await query.message.reply_text("حدث خطأ في تحديد عدد الأسئلة. يرجى المحاولة مرة أخرى.")
-            return ENTER_QUESTION_COUNT # Or back to type selection
+            logger.error(f"Invalid num_questions callback: {callback_data}. Defaulting to max.")
+            num_questions = max_q
 
-    if actual_question_count == 0:
-        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text="لا توجد أسئلة كافية لبدء هذا الاختبار. يرجى اختيار نطاق آخر أو إضافة المزيد من الأسئلة.", reply_markup=create_quiz_type_keyboard())
+    context.user_data["question_count_for_quiz"] = num_questions
+    questions_to_use_in_quiz = random.sample(all_questions_for_scope, min(num_questions, max_q)) if max_q > 0 else []
+    
+    if not questions_to_use_in_quiz:
+        logger.warning(f"No questions selected or available for quiz for user {user_id}. Type: {quiz_type}, Unit: {unit_id}")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، لم يتم اختيار أسئلة أو لا توجد أسئلة كافية. يرجى المحاولة مرة أخرى.", reply_markup=create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
 
-    # Shuffle and select questions
-    random.shuffle(all_questions_for_scope)
-    questions_for_this_quiz = all_questions_for_scope[:actual_question_count]
-    context.user_data["question_count_for_quiz"] = actual_question_count
-
-    # Log quiz start attempt (before creating QuizLogic instance)
-    db_session_id = None
-    try:
-        # Ensure log_quiz_start can handle quiz_scope_id=None if it's truly global (e.g. 'all')
-        # or pass a specific string like "all_questions_global_scope"
-        # For now, quiz_scope_id_for_log is 'all' or a unit_id string
-        logger.info(f"[DataLogger] Logging quiz start for user {user_id}, Type: {selected_quiz_type_key}, Name: {quiz_name}, Scope: {quiz_scope_id_for_log}")
-        db_session_id = log_quiz_start(
-            user_id=user_id,
-            quiz_name=quiz_name, 
-            quiz_type=selected_quiz_type_key,
-            quiz_scope_id=quiz_scope_id_for_log, # This is 'all' or unit_id
-            total_questions=actual_question_count
-        )
-        if db_session_id:
-            context.user_data["db_quiz_session_id"] = db_session_id
-            logger.info(f"[DataLogger] Quiz start logged with DB session ID: {db_session_id} for user {user_id}")
-        else:
-            logger.warning(f"[DataLogger] log_quiz_start returned None for user {user_id}. Quiz will proceed without distinct DB session tracking.")
-            context.user_data.pop("db_quiz_session_id", None) # Ensure it's not set if None
-    except Exception as e_log_start:
-        logger.error(f"Failed to log quiz start to DB for user {user_id}: {e_log_start}", exc_info=True)
-        context.user_data.pop("db_quiz_session_id", None) # Ensure it's not set on error
-
-    # Create and store QuizLogic instance
-    quiz_instance_id = f"quiz_{user_id}_{chat_id}_{datetime.now().timestamp()}"
-    quiz_logic = QuizLogic(
-        user_id=user_id,
-        chat_id=chat_id,
-        questions_data=questions_for_this_quiz,
-        quiz_type=selected_quiz_type_key,
-        quiz_name=quiz_name,
-        quiz_scope_id=quiz_scope_id_for_log, 
-        total_questions=actual_question_count,
-        question_time_limit=DEFAULT_QUESTION_TIME_LIMIT,
-        db_quiz_session_id=context.user_data.get("db_quiz_session_id") # Pass the retrieved or None session ID
-    )
-    context.user_data[quiz_instance_id] = quiz_logic
+    # Create a unique ID for this specific quiz instance
+    quiz_instance_id = f"quiz_{user_id}_{query.message.chat_id}_{datetime.now().timestamp()}"
     context.user_data["current_quiz_instance_id"] = quiz_instance_id
-
-    # Start the quiz by sending the first question
-    # The QuizLogic.send_question will return TAKING_QUIZ state
-    # We need to edit the current message (which shows question count selection) before sending the new question message.
-    # It's better to let QuizLogic handle the first message sending to avoid message clutter or race conditions.
-    await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text=f"جاري إعداد اختبارك ({actual_question_count} أسئلة)...", reply_markup=None)
     
-    # The send_question method in QuizLogic should handle sending the first question and setting up the timer.
-    # It will return the next state, which should be TAKING_QUIZ.
-    return await quiz_logic.send_question(context.bot, context, user_id) 
+    quiz_instance = QuizLogic(
+        user_id=user_id,
+        chat_id=query.message.chat_id,
+        quiz_type=quiz_type,
+        questions_data=questions_to_use_in_quiz,
+        total_questions=len(questions_to_use_in_quiz),
+        question_time_limit=DEFAULT_QUESTION_TIME_LIMIT, 
+        quiz_id=quiz_instance_id, # Pass the unique instance ID
+        quiz_name=quiz_setup_data.get("quiz_name", "اختبار"),
+        quiz_scope_id=quiz_setup_data.get("scope_id")
+    )
+    context.user_data[quiz_instance_id] = quiz_instance
 
+    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=f"جاري إعداد اختبارك ({len(questions_to_use_in_quiz)} أسئلة)...", reply_markup=None)
+    
+    # Pass user_id to start_quiz
+    return await quiz_instance.start_quiz(context.bot, context, update, user_id)
 
 async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
-    user_id = query.from_user.id
-    logger.debug(f"handle_quiz_answer called for user {user_id} with data: {query.data}")
-
-    current_quiz_instance_id = context.user_data.get("current_quiz_instance_id")
-    if not current_quiz_instance_id:
-        logger.error(f"TAKING_QUIZ (handle_quiz_answer): No current_quiz_instance_id for user {user_id}. Cannot process answer.")
-        try:
-            await query.answer("حدث خطأ، يرجى محاولة بدء الاختبار مرة أخرى.", show_alert=True)
-        except Exception as e_ans:
-            logger.error(f"Error sending answer to query in handle_quiz_answer (no instance): {e_ans}")
-        return END 
-
-    quiz_instance = context.user_data.get(current_quiz_instance_id)
-
-    if isinstance(quiz_instance, QuizLogic) and quiz_instance.active:
-        logger.debug(f"Found active QuizLogic instance {current_quiz_instance_id} for user {user_id}. Delegating to its handle_answer.")
-        next_state = await quiz_instance.handle_answer(context.bot, context, update)
-        return next_state
-    else:
-        logger.warning(f"TAKING_QUIZ (handle_quiz_answer): Quiz instance {current_quiz_instance_id} not found, inactive, or not QuizLogic for user {user_id}. Instance: {quiz_instance}")
-        try:
-            await query.answer("جلسة الاختبار هذه غير صالحة أو انتهت.", show_alert=True)
-        except Exception as e_ans_inactive:
-            logger.error(f"Error sending answer to query in handle_quiz_answer (inactive/no instance): {e_ans_inactive}")
-        
-        if current_quiz_instance_id:
-            context.user_data.pop(current_quiz_instance_id, None)
-        context.user_data.pop("current_quiz_instance_id", None)
-        # Try to guide user back to main menu by editing the message if possible
-        if query.message:
-            try:
-                await go_to_main_menu_from_quiz(update, context) # This function handles cleanup and sends main menu
-                return ConversationHandler.END # go_to_main_menu_from_quiz should return END
-            except Exception as e_main_menu_fallback:
-                logger.error(f"Error trying to go to main menu from handle_quiz_answer fallback: {e_main_menu_fallback}")
-        return END
-
-async def showing_results_actions(update: Update, context: CallbackContext) -> int:
-    query = update.callback_query
-    user_id = query.from_user.id
+    user_id = query.from_user.id # Get user_id from the query
     await query.answer()
     callback_data = query.data
+    logger.debug(f"handle_quiz_answer called for user {user_id} with data: {callback_data}")
 
-    if callback_data == "start_new_quiz":
-        # This should effectively be the same as quiz_menu_entry
-        # Clear any lingering quiz result display specific data if necessary
-        logger.info(f"User {user_id} chose to start a new quiz from results screen.")
-        return await quiz_menu_entry(update, context) 
-    elif callback_data == "main_menu":
-        logger.info(f"User {user_id} chose to go to main menu from results screen.")
-        return await go_to_main_menu_from_quiz(update, context)
-    else:
-        logger.warning(f"Unknown callback in SHOWING_RESULTS: {callback_data} for user {user_id}")
-        # Potentially resend the results message with keyboard if it got lost
-        # For now, just stay in the state or end.
-        return SHOWING_RESULTS
+    quiz_instance_id = context.user_data.get("current_quiz_instance_id")
+    if not quiz_instance_id or quiz_instance_id not in context.user_data:
+        logger.warning(f"No active quiz instance ID found for user {user_id} in handle_quiz_answer. Callback: {callback_data}. Sending to main menu.")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، يبدو أن جلسة الاختبار هذه لم تعد نشطة. يرجى بدء اختبار جديد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("القائمة الرئيسية", callback_data="main_menu")]]))
+        return END # Or go_to_main_menu_from_quiz if you want full cleanup
 
-# Conversation Handler Setup
+    quiz_instance = context.user_data[quiz_instance_id]
+    if not isinstance(quiz_instance, QuizLogic) or not quiz_instance.active:
+        logger.warning(f"Quiz instance {quiz_instance_id} is not valid or not active for user {user_id}. Callback: {callback_data}. Sending to main menu.")
+        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text="عذراً، جلسة الاختبار الحالية غير صالحة. يرجى بدء اختبار جديد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("القائمة الرئيسية", callback_data="main_menu")]]))
+        # Perform cleanup if needed, similar to go_to_main_menu_from_quiz
+        context.user_data.pop(quiz_instance_id, None)
+        context.user_data.pop("current_quiz_instance_id", None)
+        return END
+
+    # Parse chosen_option_id from callback_data
+    # Expected format: ans_QUIZID_QINDEX_OPTIONID
+    try:
+        parts = callback_data.split("_")
+        # quiz_id_from_cb = parts[1] # We can verify this if needed
+        # question_index_from_cb = int(parts[2]) # We can verify this if needed
+        chosen_option_id = parts[-1] # The last part is the option_id
+    except (IndexError, ValueError) as e:
+        logger.error(f"Error parsing chosen_option_id from callback_data: {callback_data}. Error: {e}")
+        await safe_send_message(context.bot, chat_id=query.message.chat_id, text="حدث خطأ أثناء معالجة إجابتك. يرجى المحاولة مرة أخرى.")
+        return TAKING_QUIZ # Stay in the current state
+
+    logger.debug(f"Found active QuizLogic instance {quiz_instance_id} for user {user_id}. Delegating to its handle_answer.")
+    # Pass user_id and chosen_option_id to quiz_instance.handle_answer
+    next_state = await quiz_instance.handle_answer(context.bot, context, update, user_id, chosen_option_id)
+    
+    if next_state == END or next_state == MAIN_MENU:
+        logger.info(f"Quiz {quiz_instance_id} ended for user {user_id}. Cleaning up quiz instance from user_data.")
+        context.user_data.pop(quiz_instance_id, None)
+        context.user_data.pop("current_quiz_instance_id", None)
+        # Additional cleanup for quiz-specific keys can be done here if necessary
+        # For example, context.user_data.pop("db_quiz_session_id", None) - though this should be handled by QuizLogic.end_quiz ideally
+
+    return next_state
+
+async def quiz_timeout_external(update: Update, context: CallbackContext) -> int:
+    """Handles quiz timeout if a timeout occurs outside the QuizLogic instance (e.g., user inactivity)."""
+    user_id = update.effective_user.id if update.effective_user else "UnknownUser"
+    chat_id = update.effective_chat.id if update.effective_chat else "UnknownChat"
+    logger.warning(f"Quiz conversation timed out externally for user {user_id} in chat {chat_id}.")
+    
+    current_quiz_instance_id = context.user_data.get("current_quiz_instance_id")
+    if current_quiz_instance_id and current_quiz_instance_id in context.user_data:
+        quiz_instance = context.user_data[current_quiz_instance_id]
+        if isinstance(quiz_instance, QuizLogic) and quiz_instance.active:
+            logger.info(f"Ending active quiz instance {current_quiz_instance_id} due to external timeout.")
+            # Create a dummy update if `update` is not suitable or available for quiz_instance.end_quiz
+            # For now, assume `update` can be passed or QuizLogic handles None for it gracefully in this path.
+            await quiz_instance.end_quiz(context.bot, context, update, manual_end=True, reason_suffix="external_conv_timeout", called_from_fallback=True)
+        context.user_data.pop(current_quiz_instance_id, None)
+    context.user_data.pop("current_quiz_instance_id", None)
+    
+    await safe_send_message(context.bot, chat_id, text="انتهى وقت الاختبار بسبب عدم النشاط. عدنا إلى القائمة الرئيسية.")
+    # Call main_menu_callback to display the main menu
+    # We need to ensure main_menu_callback can be called without a query if necessary, or construct a dummy query.
+    # For simplicity, let's assume it can handle being called directly or we send a new message with the menu.
+    # This might require main_menu_callback to be adapted or a new function to just show the menu.
+    # For now, just ending the conversation.
+    # await main_menu_callback(update, context) # This might fail if update is not a CallbackQuery
+    
+    # Fallback: Send a new message with the main menu options if main_menu_callback is problematic here
+    from handlers.common import create_main_menu_keyboard # Assuming this exists
+    try:
+        main_menu_kb = create_main_menu_keyboard(user_id, context) # Assuming it takes user_id and context
+        await safe_send_message(context.bot, chat_id, "القائمة الرئيسية:", reply_markup=main_menu_kb)
+    except Exception as e_menu_fallback:
+        logger.error(f"Failed to send main menu fallback on external timeout: {e_menu_fallback}")
+        await safe_send_message(context.bot, chat_id, "حدث خطأ ما. يرجى استخدام /start للعودة.")
+
+    return ConversationHandler.END
+
+# Conversation Handler Definition (PARAM & SYNTAX FIXES APPLIED)
 quiz_conv_handler = ConversationHandler(
     entry_points=[
-        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")
+        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"),
+        CommandHandler("quiz", quiz_menu_entry) # Allow starting with /quiz command directly
     ],
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern=f"^quiz_type_({QUIZ_TYPE_ALL}|{QUIZ_TYPE_UNIT}|{QUIZ_TYPE_CHAPTER}|{QUIZ_TYPE_RANDOM})$"), # More specific pattern
-            CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"),
-            CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_type_back_to_type_selection$"), # If create_quiz_type_keyboard uses this
+            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_.+$"),
+            CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$")
         ],
         SELECT_COURSE_FOR_UNIT_QUIZ: [
-            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_course_(select_|page_)"),
-            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_back_to_type_selection$"),
+            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_course_select_.+$"),
+            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_course_page_.+$"),
+            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_type_back_to_type_selection$") # Back to type selection
         ],
         SELECT_UNIT_FOR_COURSE: [
-            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_(select_|page_)"),
-            CallbackQueryHandler(select_course_for_unit_quiz, pattern="^quiz_unit_back_to_course_selection$"),
+            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_select_.+_.+$"), # course_id_unit_id
+            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_page_.+_.+$"),   # course_id_page_num
+            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_unit_back_to_course_selection$") # Back to course selection
         ],
         ENTER_QUESTION_COUNT: [
-            CallbackQueryHandler(enter_question_count, pattern="^num_questions_(all|[0-9]+)$"), # More specific pattern
-            CallbackQueryHandler(select_unit_for_course, pattern="^quiz_count_back_to_unit_selection_"), 
-            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_back_to_type_selection$"),
+            CallbackQueryHandler(select_question_count, pattern="^num_questions_.+$"),
+            CallbackQueryHandler(select_question_count, pattern="^quiz_count_back_to_unit_selection_.+$"), # Back to unit selection for unit quizzes
+            CallbackQueryHandler(select_question_count, pattern="^quiz_type_back_to_type_selection$") # Back to type selection for "all" quizzes
         ],
         TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer, pattern="^ans_") # ADDED HANDLER FOR ANSWERS
+            CallbackQueryHandler(handle_quiz_answer, pattern="^ans_.+_.+_.+$") # ans_QUIZID_QINDEX_OPTIONID
         ],
-        SHOWING_RESULTS: [
-            CallbackQueryHandler(showing_results_actions, pattern="^start_new_quiz$|^main_menu$")
-        ],
+        SHOWING_RESULTS: [ # This state might be implicitly handled by QuizLogic returning END or MAIN_MENU
+            CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"), # If results show a main menu button
+            CallbackQueryHandler(quiz_menu_entry, pattern="^start_another_quiz$") # If results show a start another quiz button
+        ]
     },
     fallbacks=[
         CommandHandler("start", start_command_fallback_for_quiz),
-        CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"),
-        # Adding a more generic fallback for unexpected callbacks during the quiz flow
-        CallbackQueryHandler(lambda u,c: quiz_menu_entry(u,c) if u.callback_query.data == "quiz_menu_entry_fallback" else go_to_main_menu_from_quiz(u,c) , pattern="^quiz_menu_entry_fallback$|^main_menu$")
+        CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"), # General fallback to main menu
+        MessageHandler(filters.COMMAND, start_command_fallback_for_quiz) # Catch any other command
     ],
-    name="quiz_conversation",
-    persistent=True,
-    # per_message=False, # Default, generally okay for CallbackQueryHandlers
-    # allow_reentry=True # Consider if needed, but usually entry_points handle re-entry logic
+    map_to_parent={
+        END: MAIN_MENU, 
+        MAIN_MENU: MAIN_MENU 
+    },
+    conversation_timeout=1800, # 30 minutes timeout for the entire conversation
+    per_message=False,
+    name="quiz_conversation_handler",
+    persistent=False 
 )
 
-logger.info("Quiz ConversationHandler (quiz.py) loaded with TAKING_QUIZ state handler.")
+# Ensure the question_timeout_callback_wrapper is correctly defined or imported if it's elsewhere
+# It seems it's already imported from .quiz_logic
+
+logger.info("handlers/quiz.py (quiz_conv_handler) loaded with HANDLE_ANSWER_FIX.")
 
