@@ -99,9 +99,8 @@ def create_course_selection_keyboard(courses: list, current_page: int = 0) -> In
     items_per_page = ITEMS_PER_PAGE
     start_index = current_page * items_per_page
     end_index = start_index + items_per_page
-    for i in range(start_index, min(end_index, len(courses))):
-        course = courses        keyboard.append([InlineKeyboardButton(course.get("name", f"مقرر {course.get('id')}"), callback_data=f"quiz_course_select_{course.get('id')}")])
-    pagination_buttons = []
+    for i in range(start_index, min(end_index, len(courses))):        course = courses[i]
+        keyboard.append([InlineKeyboardButton(course.get("name", f"مقرر {course.get(\'id\')}"), callback_data=f"quiz_course_select_{course.get(\'id\')}")])  pagination_buttons = []
     if current_page > 0:
         pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"quiz_course_page_{current_page - 1}"))
     if end_index < len(courses):
