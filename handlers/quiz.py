@@ -592,7 +592,7 @@ quiz_conv_handler = ConversationHandler(
     ],
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type, pattern="^quiz_type_(all|unit|chapter|random)$"), # More specific pattern
+            CallbackQueryHandler(select_quiz_type, pattern=f"^quiz_type_({QUIZ_TYPE_ALL}|{QUIZ_TYPE_UNIT}|{QUIZ_TYPE_CHAPTER}|{QUIZ_TYPE_RANDOM})$"), # More specific pattern
             CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"),
             CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_type_back_to_type_selection$"), # If create_quiz_type_keyboard uses this
         ],
