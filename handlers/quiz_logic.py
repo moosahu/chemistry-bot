@@ -476,7 +476,6 @@ class QuizLogic:
                     quiz_id_uuid=self.quiz_id, # This is the QuizLogic's internal UUID for the quiz instance
                     quiz_name=self.quiz_name,
                     quiz_type=self.quiz_type,
-                    filter_id=None, # Or pass the actual scope_id if available and relevant for this quiz_type
                     total_questions=self.total_questions,
                     correct_answers=self.score,
                     wrong_answers=self.total_questions - self.score - sum(1 for a in self.answers if a.get("chosen_option_id") is None and a.get("time_taken") == self.question_time_limit), # Approximation of wrong
