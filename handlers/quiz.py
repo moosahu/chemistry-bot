@@ -172,6 +172,7 @@ def create_question_count_keyboard(max_questions: int, quiz_type: str, unit_id: 
     return InlineKeyboardMarkup(keyboard)
 
 async def quiz_menu_entry(update: Update, context: CallbackContext) -> int:
+    logger.debug("[QUIZ_DEBUG] quiz_menu_entry called!") # ADDED FOR DEBUGGING BUTTON PRESS
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
