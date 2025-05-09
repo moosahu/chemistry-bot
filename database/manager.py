@@ -312,9 +312,7 @@ class DatabaseManager:
             where_clause = " AND DATE(completed_at) = CURRENT_DATE"
         elif time_filter == "week":
             where_clause = " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_filter == "month":
-            where_clause = " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"ESTAMP)"
-            
+        elif time_filter == "month":            where_clause = " AND completed_at >= date_trunc(\'month\', CURRENT_TIMESTAMP)"         
         query = base_query + where_clause + ";"
         result = self._execute_query(query, fetch_one=True)
         return round(result['avg_time'], 2) if result and result['avg_time'] is not None else 0.0
