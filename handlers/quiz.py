@@ -425,7 +425,7 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     context.user_data["question_count_for_quiz"] = actual_question_count
     questions_for_this_quiz = random.sample(questions_to_use_pool, actual_question_count)
 
-    db_session_id = await log_quiz_start(
+    db_session_id = log_quiz_start(
         user_id=user_id,
         quiz_type=quiz_type_key,
         quiz_name=quiz_name,
