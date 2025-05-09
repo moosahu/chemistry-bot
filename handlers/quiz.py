@@ -567,14 +567,7 @@ async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
     
     context.user_data[f"last_quiz_interaction_message_id_{query.message.chat_id}"] = query.message.message_id
 
-    next_state = await quiz_instance.handle_answer(
-        bot=context.bot, 
-        context=context, 
-        update_for_message_edit=update, 
-        question_index=question_index, 
-        chosen_option_id=chosen_option_id,
-        user_id_from_handler=user_id # Pass user_id, QuizLogic's param is user_id_from_handler
-    )
+    next_state = await quiz_instance.handle_answer(update, context)
     
     if next_state == SHOWING_RESULTS:
         context.user_data.pop(current_quiz_instance_id, None)
