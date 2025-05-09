@@ -10,17 +10,11 @@ from datetime import datetime
 # Import config, connection, and schema setup
 try:
     from config import logger
-    # Assuming connection.py is in the same directory or a reachable path
-    # For example, if manager.py is in a sub-directory of where connection.py is:
-    # from ..connection import connect_db 
-    # Or if they are in the same directory:
     from .connection import connect_db
 except ImportError:
-    # Fallback for standalone testing or import issues
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
     logger.error("Failed to import config or connection. DB Manager might not function correctly.")
-    # Define dummy connect_db
     def connect_db():
         logger.error("Dummy connect_db called!")
         return None
@@ -49,7 +43,7 @@ class DatabaseManager:
             if commit:
                 conn.commit()
                 logger.debug("[DB Manager] Query committed successfully.")
-                result = True # Indicate success for commit operations
+                result = True
             elif fetch_one:
                 result = cur.fetchone()
                 logger.debug(f"[DB Manager] Fetched one row: {dict(result) if result else None}")
@@ -68,7 +62,7 @@ class DatabaseManager:
             logger.error(f"[DB Manager] Database query error: {error}\nFailed Query: {failed_query}")
             if conn:
                 conn.rollback()
-            return None # Indicate failure for commit or fetch operations
+            return None
         finally:
             if cur:
                 cur.close()
@@ -148,7 +142,6 @@ class DatabaseManager:
         logger.info(f"[DB Questions] Found {count} questions in DB for type=\"{scope_type}\" id={scope_id}")
         return count
 
-    # --- Quiz Results (MODIFIED FUNCTION from original user file) --- 
     def save_quiz_result(self, user_id: int, quiz_type: str, quiz_scope_id: int | None, 
                            total_questions: int, correct_count: int, wrong_count: int, skipped_count: int, 
                            score_percentage_calculated: float, start_time: datetime, end_time: datetime, details: dict):
@@ -159,26 +152,17 @@ class DatabaseManager:
         if start_time and end_time:
             time_taken_seconds_val = int((end_time - start_time).total_seconds())
         
-        # Assuming `quiz_sessions` table is used and `db_quiz_session_id` is passed from quiz_logic
-        # For now, let's assume the `quiz_results` table is self-contained for simplicity as per original user file.
-        # If `quiz_sessions` is involved, this query and parameters would need adjustment.
-
         query = """
         INSERT INTO quiz_results 
             (user_id, quiz_type, filter_id, total_questions, score, 
-             score_percentage, time_taken_seconds, completed_at, answers_details, quiz_name, quiz_id_uuid)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s);
+             score_percentage, time_taken_seconds, completed_at, answers_details, quiz_id_uuid)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s);
         """
-        # Parameters need to match the columns in your quiz_results table
-        # The original user file for save_quiz_result didn't include quiz_name or quiz_id_uuid, 
-        # but data_logger.py (which calls this) does. We add them here.
-        # `details` is assumed to be `answers_details`
-        quiz_name_from_details = details.get("quiz_name", quiz_type) # Fallback for quiz_name
         quiz_id_uuid_from_details = details.get("quiz_id_uuid")
 
         params = (user_id, quiz_type, quiz_scope_id, total_questions, correct_count, 
                   score_percentage_calculated, time_taken_seconds_val, json.dumps(details.get("answers", [])), 
-                  quiz_name_from_details, quiz_id_uuid_from_details)
+                  quiz_id_uuid_from_details)
         
         success = self._execute_query(query, params, commit=True)
         if success:
@@ -187,7 +171,6 @@ class DatabaseManager:
             logger.error(f"[DB Results] Failed to save result to DB for user {user_id}, type {quiz_type}.")
         return success
 
-    # --- User Stats (MODIFIED FUNCTION from original user file, now get_user_overall_stats) --- 
     def get_user_overall_stats(self, user_id: int):
         """Retrieves aggregated overall statistics for a specific user."""
         logger.info(f"[DB Stats] Fetching overall stats for user_id: {user_id}")
@@ -217,14 +200,12 @@ class DatabaseManager:
                 "total_time_seconds": 0
             }
 
-    # --- NEW FUNCTION for recent quiz history ---
     def get_user_recent_quiz_history(self, user_id: int, limit: int = 5):
         """Retrieves recent quiz history for a specific user."""
         logger.info(f"[DB Stats] Fetching recent quiz history for user_id: {user_id}, limit: {limit}")
         query = """
         SELECT 
             result_id,
-            quiz_name,
             quiz_type,
             total_questions,
             score, 
@@ -239,7 +220,7 @@ class DatabaseManager:
         history = self._execute_query(query, (user_id, limit), fetch_all=True)
         if history:
             logger.info(f"[DB Stats] Found {len(history)} recent quizzes for user {user_id}.")
-            return history # Already a list of dicts
+            return history
         else:
             logger.warning(f"[DB Stats] No recent quiz history found for user {user_id} or query failed.")
             return []
@@ -250,8 +231,8 @@ class DatabaseManager:
         SELECT 
             r.user_id,
             COALESCE(u.username, u.first_name, CAST(r.user_id AS VARCHAR)) as user_display_name,
-            AVG(r.score_percentage) as average_score_percentage, -- Ensure key matches stats.py
-            COUNT(r.result_id) as total_quizzes_taken -- Ensure key matches stats.py
+            AVG(r.score_percentage) as average_score_percentage,
+            COUNT(r.result_id) as total_quizzes_taken
         FROM quiz_results r
         LEFT JOIN users u ON r.user_id = u.user_id
         GROUP BY r.user_id, u.username, u.first_name
@@ -269,5 +250,4 @@ class DatabaseManager:
 
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager] Global instance created.")
-
 
