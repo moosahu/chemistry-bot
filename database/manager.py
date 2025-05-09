@@ -145,30 +145,32 @@ class DatabaseManager:
     def save_quiz_result(self, user_id: int, quiz_type: str, quiz_scope_id: int | None, 
                            total_questions: int, correct_count: int, wrong_count: int, skipped_count: int, 
                            score_percentage_calculated: float, start_time: datetime, end_time: datetime, details: dict):
-        """Saves the results of a completed quiz."""
-        logger.info(f"[DB Results] Saving result for user {user_id}: Type={quiz_type}, Scope={quiz_scope_id}, Score={correct_count}/{total_questions} ({score_percentage_calculated:.2f}%)")
+        """Saves the results of a completed quiz. Note: Column 'answers_details' seems to be missing from quiz_results table."""
+        logger.info(f"[DB Results] Attempting to save result for user {user_id}: Type={quiz_type}, Scope={quiz_scope_id}, Score={correct_count}/{total_questions} ({score_percentage_calculated:.2f}%)")
 
         time_taken_seconds_val = 0
         if start_time and end_time:
             time_taken_seconds_val = int((end_time - start_time).total_seconds())
         
+        # MODIFIED: Removed answers_details from INSERT as the column appears to be missing based on logs.
+        # If you have a column for JSON details (e.g., quiz_details), adjust the query and params accordingly.
         query = """
         INSERT INTO quiz_results 
             (user_id, quiz_type, filter_id, total_questions, score, 
-             score_percentage, time_taken_seconds, completed_at, answers_details, quiz_id_uuid)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s);
+             score_percentage, time_taken_seconds, completed_at, quiz_id_uuid)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s);
         """
         quiz_id_uuid_from_details = details.get("quiz_id_uuid")
 
         params = (user_id, quiz_type, quiz_scope_id, total_questions, correct_count, 
-                  score_percentage_calculated, time_taken_seconds_val, json.dumps(details.get("answers", [])), 
+                  score_percentage_calculated, time_taken_seconds_val, 
                   quiz_id_uuid_from_details)
         
         success = self._execute_query(query, params, commit=True)
         if success:
-            logger.info(f"[DB Results] Successfully saved result to DB for user {user_id}, type {quiz_type}.")
+            logger.info(f"[DB Results] Successfully saved result (without answers_details) to DB for user {user_id}, type {quiz_type}.")
         else:
-            logger.error(f"[DB Results] Failed to save result to DB for user {user_id}, type {quiz_type}.")
+            logger.error(f"[DB Results] Failed to save result (without answers_details) to DB for user {user_id}, type {quiz_type}.")
         return success
 
     def get_user_overall_stats(self, user_id: int):
@@ -203,6 +205,7 @@ class DatabaseManager:
     def get_user_recent_quiz_history(self, user_id: int, limit: int = 5):
         """Retrieves recent quiz history for a specific user."""
         logger.info(f"[DB Stats] Fetching recent quiz history for user_id: {user_id}, limit: {limit}")
+        # MODIFIED: Removed answers_details from SELECT as the column appears to be missing based on logs.
         query = """
         SELECT 
             result_id,
@@ -210,8 +213,7 @@ class DatabaseManager:
             total_questions,
             score, 
             score_percentage as percentage, 
-            completed_at as completion_timestamp,
-            answers_details
+            completed_at as completion_timestamp
         FROM quiz_results
         WHERE user_id = %s
         ORDER BY completed_at DESC
