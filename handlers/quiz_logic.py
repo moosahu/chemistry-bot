@@ -478,7 +478,6 @@ class QuizLogic:
                     quiz_type=self.quiz_type,
                     total_questions=self.total_questions,
                     score=self.score,
-                    wrong_answers=self.total_questions - self.score - sum(1 for a in self.answers if a.get("chosen_option_id") is None and a.get("time_taken") == self.question_time_limit), # Approximation of wrong
                     skipped_answers=sum(1 for a in self.answers if a.get("chosen_option_id") is None and a.get("time_taken") == self.question_time_limit), # Skipped due to timeout
                     score_percentage=percentage,
                     time_taken_seconds=sum(a.get("time_taken", 0) for a in self.answers if a.get("time_taken", 0) > 0), # Sum of time per question
