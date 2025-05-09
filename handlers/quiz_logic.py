@@ -478,7 +478,6 @@ class QuizLogic:
                     quiz_type=self.quiz_type,
                     total_questions=self.total_questions,
                     score=self.score,
-                    time_taken_seconds=sum(a.get("time_taken", 0) for a in self.answers if a.get("time_taken", 0) > 0), # Sum of time per question
                     start_timestamp=quiz_start_time.isoformat() if isinstance(quiz_start_time, datetime) else None,
                     end_timestamp=quiz_end_time.isoformat(),
                     answers_details=self.answers # Full list of answer details
