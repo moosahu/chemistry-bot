@@ -1,24 +1,34 @@
-# database/data_logger.py (ULTRA FINAL - Added missing functions)
+# database/data_logger.py (KWARGS FIX for log_user_activity)
 from config import logger
-from datetime import datetime
+from datetime import datetime, timezone # Ensure timezone is imported
 import json # For serializing details
 
 # Attempt to import DB_MANAGER. This should align with your project structure.
 from database.manager import DB_MANAGER
 
-def log_user_activity(user_id: int, action: str, details: dict | None = None):
-    """Logs a generic user activity to the database."""
+def log_user_activity(user_id: int, action: str, details: dict | None = None, **kwargs):
+    """Logs a generic user activity to the database, accepting additional keyword arguments."""
     try:
         if not DB_MANAGER:
             logger.error("[DataLogger] DB_MANAGER is not available. Cannot log user activity.")
             return
         
-        details_json = json.dumps(details) if details else None
+        # Combine provided details with any additional kwargs
+        final_details = details if details is not None else {}
+        final_details.update(kwargs) # Add all other passed keyword arguments
+
+        details_json = json.dumps(final_details) if final_details else None
+        
         # Assuming DB_MANAGER has a method like record_user_activity
         # This is a placeholder for the actual DB call. You might need to create this method in DB_MANAGER.
-        # For now, we will just log it, as the primary issue is the import error.
-        # DB_MANAGER.record_user_activity(user_id=user_id, action=action, details_json=details_json)
+        # For now, we will just log it.
+        # if hasattr(DB_MANAGER, "record_user_activity"):
+        #     DB_MANAGER.record_user_activity(user_id=user_id, action=action, details_json=details_json)
+        # else:
+        #     logger.warning(f"[DataLogger] DB_MANAGER does not have record_user_activity. Logging locally only for user {user_id}.")
+        
         logger.info(f"[DataLogger] User activity: User {user_id}, Action: {action}, Details: {details_json}")
+
     except Exception as e:
         logger.error(f"[DataLogger] Error in log_user_activity for user {user_id}: {e}", exc_info=True)
 
@@ -31,28 +41,6 @@ def log_quiz_start(user_id: int, quiz_type: str, quiz_name: str, quiz_scope_id: 
 
         logger.info(f"[DataLogger] Logging quiz start for user {user_id}, Type: {quiz_type}, Name: {quiz_name}, Scope: {quiz_scope_id}")
         
-        # Assuming DB_MANAGER has a method like start_new_quiz_session that returns a session ID
-        # This is a placeholder. You need to ensure this method exists in your DB_MANAGER
-        # and that it creates a record in a quiz_sessions table and returns its primary key.
-        # For now, let's assume it returns a dummy ID or calls a method that does.
-        # db_session_id = DB_MANAGER.start_new_quiz_session(
-        #     user_id=user_id, 
-        #     quiz_type=quiz_type, 
-        #     quiz_name=quiz_name, 
-        #     quiz_scope_id=quiz_scope_id, 
-        #     total_questions=total_questions
-        # )
-        # Since the original error was about not getting db_quiz_session_id, 
-        # this function MUST return an ID if the DB interaction is successful.
-        # The actual implementation of DB_MANAGER.start_new_quiz_session is crucial.
-        # For the purpose of fixing the import and flow, we will assume it exists.
-
-        # Placeholder for the actual call to a DB_MANAGER method that creates a session and returns an ID.
-        # If your DB_MANAGER.save_quiz_result creates the session implicitly, this function might only log.
-        # However, the error logs suggest a db_quiz_session_id is expected *before* QuizLogic initialization.
-        
-        # Let's assume there's a method in DB_MANAGER to log the start and get an ID.
-        # If not, this part needs to be designed. For now, to fix the import error and provide the functions:
         if hasattr(DB_MANAGER, "start_quiz_session_and_get_id"):
             db_session_id = DB_MANAGER.start_quiz_session_and_get_id(
                 user_id=user_id,
@@ -60,7 +48,7 @@ def log_quiz_start(user_id: int, quiz_type: str, quiz_name: str, quiz_scope_id: 
                 quiz_name=quiz_name,
                 quiz_scope_id=quiz_scope_id,
                 total_questions=total_questions,
-                start_time=datetime.now(timezone.utc) # Add start time here
+                start_time=datetime.now(timezone.utc) 
             )
             if db_session_id:
                 logger.info(f"[DataLogger] Quiz start logged. DB Session ID: {db_session_id} for user {user_id}")
@@ -70,10 +58,7 @@ def log_quiz_start(user_id: int, quiz_type: str, quiz_name: str, quiz_scope_id: 
                 return None
         else:
             logger.warning("[DataLogger] DB_MANAGER does not have method start_quiz_session_and_get_id. Quiz start not fully logged to DB for distinct session tracking.")
-            # Fallback: if no such method, we can't return a DB-generated ID here.
-            # This would mean the db_quiz_session_id in QuizLogic would remain None or rely on a different mechanism.
-            # This is a critical design point for your application.
-            return None # Or a locally generated one if your design supports it and links it later
+            return None
 
     except Exception as e:
         logger.error(f"[DataLogger] Error in log_quiz_start for user {user_id}: {e}", exc_info=True)
@@ -124,9 +109,7 @@ def log_quiz_results(
             score_percentage_calculated=percentage,
             start_time=start_time,        
             end_time=end_time,            
-            details=details_for_db,
-            # If your save_quiz_result in manager.py needs db_quiz_session_id directly:
-            # passed_db_quiz_session_id=db_quiz_session_id 
+            details=details_for_db
         )
 
         logger.info(f"[DataLogger] Successfully called DB_MANAGER.save_quiz_result for user {user_id}, quiz_uuid: {quiz_id_uuid}.")
