@@ -13,6 +13,10 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# +++ REQUIRED: Import DB_MANAGER +++
+from database.manager import DB_MANAGER
+# +++++++++++++++++++++++++++++++++++
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -148,6 +152,11 @@ def main() -> None:
 
         application = app_builder.build()
         logger.info("Telegram Application built.")
+
+        # +++ REQUIRED: Add DB_MANAGER to bot_data +++
+        application.bot_data["db_manager"] = DB_MANAGER
+        logger.info("DB_MANAGER added to application.bot_data.")
+        # +++++++++++++++++++++++++++++++++++++++++++++
 
         if job_queue: 
             job_queue.set_application(application) 
