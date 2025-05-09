@@ -142,34 +142,36 @@ class DatabaseManager:
         logger.info(f"[DB Questions] Found {count} questions in DB for type=\"{scope_type}\" id={scope_id}")
         return count
 
-    def save_quiz_result(self, user_id: int, quiz_type: str, quiz_scope_id: int | None, 
-                           total_questions: int, correct_count: int, wrong_count: int, skipped_count: int, 
-                           score_percentage_calculated: float, start_time: datetime, end_time: datetime, details: dict):
-        """Saves the results of a completed quiz. Note: Column 'answers_details' seems to be missing from quiz_results table."""
-        logger.info(f"[DB Results] Attempting to save result for user {user_id}: Type={quiz_type}, Scope={quiz_scope_id}, Score={correct_count}/{total_questions} ({score_percentage_calculated:.2f}%)")
+    def save_quiz_result(self, user_id: int, quiz_type: str, quiz_scope_id: int | None,
+                           total_questions: int, correct_count: int, wrong_count: int, skipped_count: int,
+                           score_percentage_calculated: float, start_time: datetime | None, end_time: datetime, details: dict):
+        """Saves the results of a completed quiz with all detailed parameters."""
+        logger.info(f"[DB Results] Saving result for user {user_id}: Type={quiz_type}, Scope={quiz_scope_id}, Score={correct_count}/{total_questions} ({score_percentage_calculated:.2f}%), Wrong={wrong_count}, Skipped={skipped_count}")
 
-        time_taken_seconds_val = 0
+        time_taken_seconds_val = None
         if start_time and end_time:
             time_taken_seconds_val = int((end_time - start_time).total_seconds())
         
+        quiz_name = details.get("quiz_name")
+        quiz_id_uuid_from_details = details.get("quiz_id_uuid")
+        answers_details_json = json.dumps(details.get("answers_details", []))
+
         query = """
         INSERT INTO quiz_results 
-            (user_id, quiz_type, filter_id, total_questions, score, 
-             score_percentage, time_taken_seconds, completed_at, quiz_id_uuid, answers_details)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s);
-        """ # Assuming answers_details column exists and is of type JSONB or TEXT
-        quiz_id_uuid_from_details = details.get("quiz_id_uuid") # Ensure this key exists in details or handle None
-        answers_details_json = json.dumps(details.get("answers_details", [])) # Get answers_details from the details dict
-
-        params = (user_id, quiz_type, quiz_scope_id, total_questions, correct_count, 
-                  score_percentage_calculated, time_taken_seconds_val, 
+            (user_id, quiz_type, filter_id, quiz_name, total_questions, score, wrong_answers, skipped_answers,
+             score_percentage, start_time, completed_at, time_taken_seconds, quiz_id_uuid, answers_details)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        # 'completed_at' column in DB will store the 'end_time' parameter value from quiz_logic
+        params = (user_id, quiz_type, quiz_scope_id, quiz_name, total_questions, correct_count, wrong_count, skipped_count,
+                  score_percentage_calculated, start_time, end_time, time_taken_seconds_val, 
                   quiz_id_uuid_from_details, answers_details_json)
         
         success = self._execute_query(query, params, commit=True)
         if success:
-            logger.info(f"[DB Results] Successfully saved result to DB for user {user_id}, type {quiz_type}.")
+            logger.info(f"[DB Results] Successfully saved detailed result to DB for user {user_id}, type {quiz_type}.")
         else:
-            logger.error(f"[DB Results] Failed to save result to DB for user {user_id}, type {quiz_type}.")
+            logger.error(f"[DB Results] Failed to save detailed result to DB for user {user_id}, type {quiz_type}.")
         return success
 
     def get_user_overall_stats(self, user_id: int):
@@ -218,7 +220,7 @@ class DatabaseManager:
         WHERE user_id = %s
         ORDER BY completed_at DESC
         LIMIT %s;
-        """ # Added quiz_name and answers_details
+        """ # Re-enabled answers_details column
         history = self._execute_query(query, (user_id, limit), fetch_all=True)
         if history:
             logger.info(f"[DB Stats] Found {len(history)} recent quizzes for user {user_id}.")
@@ -271,7 +273,7 @@ class DatabaseManager:
         result = self._execute_query(query, fetch_one=True)
         return result['active_users'] if result and 'active_users' in result else 0
 
-    def get_total_quizzes_taken_count(self, time_period="all"):
+    def get_total_quizzes_count(self, time_period="all"):
         logger.info(f"[DB Admin Stats] Fetching total quizzes taken count for period: {time_period}.")
         # Assumes 'completed_at' is a TIMESTAMP column in quiz_results table
         if time_period == "today":
@@ -285,7 +287,7 @@ class DatabaseManager:
         result = self._execute_query(query, fetch_one=True)
         return result['total_quizzes'] if result and 'total_quizzes' in result else 0
 
-    def get_average_score_percentage_all_users(self, time_period="all"):
+    def get_overall_average_score(self, time_period="all"):
         logger.info(f"[DB Admin Stats] Fetching average score percentage for period: {time_period}.")
         # Assumes 'score_percentage' column exists and is populated in quiz_results table
         base_query = "SELECT AVG(score_percentage) as avg_score FROM quiz_results"
@@ -301,7 +303,7 @@ class DatabaseManager:
         result = self._execute_query(query, fetch_one=True)
         return round(result['avg_score'], 2) if result and result['avg_score'] is not None else 0.0
 
-    def get_average_quiz_completion_time(self, time_period="all"):
+    def get_average_quiz_duration(self, time_period="all"):
         logger.info(f"[DB Admin Stats] Fetching average quiz completion time for period: {time_period}.")
         # Assumes 'time_taken_seconds' column exists and is populated in quiz_results table
         base_query = "SELECT AVG(time_taken_seconds) as avg_time FROM quiz_results WHERE time_taken_seconds IS NOT NULL AND time_taken_seconds > 0"

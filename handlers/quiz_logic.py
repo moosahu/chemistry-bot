@@ -6,7 +6,8 @@ import logging
 import time
 import uuid # لإنشاء معرّف فريد للاختبار
 import telegram # For telegram.error types
-from datetime import datetime # <<< تم إضافة هذا السطر لإصلاح الخطأ
+from datetime import datetime, timezone # Ensure timezone is imported
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot 
 from telegram.ext import ConversationHandler, CallbackContext, JobQueue 
 from config import logger, TAKING_QUIZ, END, MAIN_MENU 
@@ -464,24 +465,56 @@ class QuizLogic:
                 # We can use approximations or pass them if available from the calling handler.
                 # For now, let's assume data_logger handles missing start/end times gracefully or they are added elsewhere.
                 quiz_end_time = datetime.now() # Approximation
-                quiz_start_time = quiz_end_time # Placeholder, ideally this is tracked from quiz start
+                quiz_start_time = quiz_end_time # Placeholder, ideally this is tracked from quiz                percentage = (self.score / self.total_questions) * 100 if self.total_questions > 0 else 0
                 
-                # Try to get quiz_start_time from context if it was stored by the handler
-                if context and hasattr(context, 'user_data') and context.user_data.get(f'quiz_start_time_{self.quiz_id}'):
-                    quiz_start_time = context.user_data[f'quiz_start_time_{self.quiz_id}']
+                quiz_start_time_from_context = None
+                if f'quiz_start_time_{self.quiz_id}' in context.user_data:
+                    quiz_start_time_from_context = context.user_data[f'quiz_start_time_{self.quiz_id}']
 
+                # Calculate additional stats
+                quiz_end_time = datetime.now(timezone.utc)
+                quiz_start_time_iso = None
+                time_taken_val = None
+
+                if isinstance(quiz_start_time_from_context, datetime):
+                    # Ensure quiz_start_time_from_context is timezone-aware if it's not already
+                    # (It should be, as it's set with timezone.utc in start_quiz)
+                    quiz_start_time_iso = quiz_start_time_from_context.isoformat()
+                    time_taken_val = int((quiz_end_time - quiz_start_time_from_context).total_seconds())
+                
+                correct_count = self.score # self.score is already the count of correct answers
+                wrong_count = 0
+                # Iterate through answers to find wrong ones.
+                # An answer is wrong if an option was chosen AND it's not correct.
+                for ans_detail in self.answers:
+                    if ans_detail.get("chosen_option_id") is not None and not ans_detail.get("is_correct"):
+                        wrong_count += 1
+                
+                # Skipped_count: total questions - (correct + wrong).
+                # This assumes all questions are in self.answers by the end of the quiz.
+                skipped_count = self.total_questions - correct_count - wrong_count
+                
+                # Ensure skipped_count is not negative due to any logic discrepancies
+                if skipped_count < 0:
+                    logger.warning(f"[QuizLogic {self.quiz_id}] Calculated skipped_count is negative ({skipped_count}). Setting to 0.")
+                    skipped_count = 0
                 log_quiz_results(
                     user_id=self.user_id,
-                    db_quiz_session_id=self.db_quiz_session_id, # This is the crucial ID from quiz_sessions table
-                    quiz_id_uuid=self.quiz_id, # This is the QuizLogic's internal UUID for the quiz instance
+                    db_quiz_session_id=self.db_quiz_session_id,
+                    quiz_id_uuid=self.quiz_id,
                     quiz_name=self.quiz_name,
                     quiz_type=self.quiz_type,
+                    quiz_scope_id=self.scope_id, # Added quiz_scope_id
                     total_questions=self.total_questions,
-                    score=self.score,
-                    percentage=percentage, # Added missing required parameter
-                    answers_details=self.answers # Full list of answer details
-                )
-                logger.info(f"[QuizLogic {self.quiz_id}] Successfully logged quiz results to DB for user {self.user_id} with session ID {self.db_quiz_session_id}")
+                    score=correct_count, # Number of correct answers
+                    wrong_answers=wrong_count,
+                    skipped_answers=skipped_count,
+                    percentage=percentage,
+                    start_time=quiz_start_time_from_context, # datetime object or None
+                    end_time=quiz_end_time, # datetime object
+                    time_taken_seconds=time_taken_val,
+                    answers_details=self.answers
+                )            logger.info(f"[QuizLogic {self.quiz_id}] Successfully logged quiz results to DB for user {self.user_id} with session ID {self.db_quiz_session_id}")
             except Exception as e_log:
                 logger.error(f"[QuizLogic {self.quiz_id}] Failed to log quiz results to DB for user {self.user_id}: {e_log}", exc_info=True)
         else:
