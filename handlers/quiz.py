@@ -122,7 +122,7 @@ def create_course_selection_keyboard(courses: list, current_page: int = 0) -> In
     end_index = start_index + items_per_page
     for i in range(start_index, min(end_index, len(courses))):
         course = courses[i]
-        keyboard.append([InlineKeyboardButton(course.get("name", f"مقرر {course.get(\'id\')}"), callback_data=f"quiz_course_select_{course.get(\'id\')}")])
+        keyboard.append([InlineKeyboardButton(course.get("name", f"مقرر {course.get('id')}"), callback_data=f"quiz_course_select_{course.get('id')}")])
     pagination_buttons = []
     if current_page > 0:
         pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"quiz_course_page_{current_page - 1}"))
@@ -140,7 +140,7 @@ def create_unit_selection_keyboard(units: list, course_id: str, current_page: in
     end_index = start_index + items_per_page
     for i in range(start_index, min(end_index, len(units))):
         unit = units[i]
-        keyboard.append([InlineKeyboardButton(unit.get("name", f"وحدة {unit.get(\'id\')}"), callback_data=f"quiz_unit_select_{course_id}_{unit.get(\'id\')}")])
+        keyboard.append([InlineKeyboardButton(unit.get("name", f"وحدة {unit.get('id')}"), callback_data=f"quiz_unit_select_{course_id}_{unit.get('id')}")])
     pagination_buttons = []
     if current_page > 0:
         pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"quiz_unit_page_{course_id}_{current_page - 1}"))

@@ -195,11 +195,10 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
         if not user_overall_stats or user_overall_stats.get("total_quizzes_taken", 0) == 0:
             stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
         else:
-            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get(\'total_quizzes_taken\', 0)}\n"
+            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get('total_quizzes_taken', 0)}\n"
             avg_score = user_overall_stats.get("average_score_percentage", 0.0)
             stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
-            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get(\'highest_score_percentage\', 0.0):.1f}%\n\n"
-            
+            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get('highest_score_percentage', 0.0):.1f}%\n\n"
             total_correct = user_overall_stats.get("total_correct_answers", 0)
             # Calculate total_incorrect from total_questions_attempted and total_correct
             total_questions_attempted = user_overall_stats.get("total_questions_attempted", 0)
@@ -290,12 +289,11 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
-                user_id_entry = entry.get(\'user_id\', \'Unknown\')
-                # Fetch user_display_name from users table or have it joined in get_leaderboard query
-                display_name = entry.get(\'user_display_name\', f"User {user_id_entry}") 
+                user_id_entry = entry.get("user_id", "Unknown")
+                # Fetch user_display_name from users table or have it joined in get_leaderboard query                display_name = entry.get("user_display_name", f"User {user_id_entry}")
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
-                avg_score = entry.get(\'average_score_percentage\', 0.0) # Ensure key matches what get_leaderboard returns
-                quizzes_taken = entry.get(\'total_quizzes_taken\', 0) # Ensure key matches
+                avg_score = entry.get("average_score_percentage", 0.0) # Ensure key matches what get_leaderboard returns
+                quizzes_taken = entry.get("total_quizzes_taken", 0) # Ensure key matches
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
