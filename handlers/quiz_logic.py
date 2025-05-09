@@ -126,10 +126,11 @@ class QuizLogic:
             
             button_text_str = str(button_text).strip()
             if not button_text_str: 
-                 button_text_str = f"خيار {i + 1}" 
-                   if len(button_text_str.encode('utf-8')) > 60: 
-                temp_bytes = button_text_str.encode('utf-8')[:57] 
-                button_text_str = temp_bytes.decode('utf-8', 'ignore') + "..."            callback_data = f"ans_{self.quiz_id}_{self.current_question_index}_{option_id}"
+                button_text_str = f"خيار {i + 1}"
+            if len(button_text_str.encode('utf-8')) > 60:
+                temp_bytes = button_text_str.encode('utf-8')[:57]
+                button_text_str = temp_bytes.decode('utf-8', 'ignore') + "..."
+            callback_data = f"ans_{self.quiz_id}_{self.current_question_index}_{option_id}"
             keyboard.append([InlineKeyboardButton(text=button_text_str, callback_data=callback_data)])
         return InlineKeyboardMarkup(keyboard)
 
