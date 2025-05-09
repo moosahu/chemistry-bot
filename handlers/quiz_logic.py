@@ -281,7 +281,7 @@ class QuizLogic:
         logger.info(f"[QuizLogic {self.quiz_id}] All questions processed or skipped. Showing results.")
         return await self.show_results(bot, context)
 
-    async def handle_answer(self, bot: Bot, context: CallbackContext, update: Update, answer_data_parts: list) -> int:
+   async def handle_answer(self, bot: Bot, context: CallbackContext, update: Update, answer_data_parts: list, **kwargs): -> int:
         if not self.active:
             logger.warning(f"[QuizLogic {self.quiz_id}] handle_answer: inactive. User {self.user_id}. Aborting.")
             # Try to remove the keyboard if possible from the original message
