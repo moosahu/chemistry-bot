@@ -443,12 +443,12 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     quiz_logic = QuizLogic(
         user_id=user_id,
         chat_id=chat_id,
-        questions_data=questions_for_this_quiz, 
+        questions_data=questions_for_this_quiz,
         quiz_type=quiz_type_key,
         quiz_name=quiz_name,
-        quiz_scope_id=quiz_scope_id_for_log, 
+        quiz_scope_id=quiz_scope_id_for_log,
         total_questions=actual_question_count,
-        time_limit_per_question=DEFAULT_QUESTION_TIME_LIMIT,
+        question_time_limit=DEFAULT_QUESTION_TIME_LIMIT,
         db_quiz_session_id=context.user_data.get("db_quiz_session_id")
     )
     context.user_data[quiz_instance_id] = quiz_logic
