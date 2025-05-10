@@ -439,16 +439,11 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
         return SELECT_QUIZ_TYPE
 
     # Start the quiz via QuizLogic
-    initial_quiz_message, initial_keyboard, success = await quiz_logic_instance.start_quiz(context.bot, context, update)
-    if success:
-        await safe_edit_message_text(context.bot, chat_id, message_id_to_edit, initial_quiz_message, initial_keyboard)
-        return TAKING_QUIZ
-    else:
-        # QuizLogic.start_quiz should send its own error message if it fails internally
-        logger.error(f"[QuizSetup] QuizLogic.start_quiz failed for user {user_id}, instance {quiz_instance_id}. Error message should have been sent by QuizLogic.")
-        # Fallback error message if QuizLogic didn't send one
-        await safe_edit_message_text(context.bot, chat_id, message_id_to_edit, "حدث خطأ ما. يرجى المحاولة مرة أخرى لاحقاً.", create_quiz_type_keyboard())
-        return SELECT_QUIZ_TYPE # Go back to type selection
+    # QuizLogic.start_quiz is responsible for sending the initial question/error message
+    # (potentially editing the current message if no questions, or sending new messages for the first question)
+    # and returns the next state for ConversationHandler.
+    next_state = await quiz_logic_instance.start_quiz(context.bot, context, update)
+    return next_state
 
 # --- Taking Quiz States --- 
 async def handle_quiz_answer(update: Update, context: CallbackContext) -> int:
