@@ -112,23 +112,28 @@ def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> 
         return None
 
 def generate_line_chart_performance_trend(user_id: int, quiz_history: list) -> str | None:
-    if not quiz_history or len(quiz_history) < 2:
+    # Filter out entries where score_percentage is None
+    valid_quiz_history = [quiz for quiz in quiz_history if quiz.get("score_percentage") is not None]
+    
+    if not valid_quiz_history or len(valid_quiz_history) < 2:
+        logger.info(f"[Stats Chart] Not enough valid data points to generate performance trend for user {user_id} after filtering None scores.")
         return None
     
-    scores = [quiz.get("score_percentage", 0) for quiz in quiz_history]
-    test_numbers = list(range(1, len(quiz_history) + 1))
+    scores = [quiz.get("score_percentage") for quiz in valid_quiz_history] # Already filtered, so no default needed
+    test_numbers = list(range(1, len(valid_quiz_history) + 1))
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(test_numbers, scores, marker="o", linestyle="-", color="#007BFF", linewidth=2, markersize=8)
     ax.set_xlabel("رقم الاختبار (الأحدث على اليمين)")
     ax.set_ylabel("النتيجة (%)")
-    ax.set_title(f"تطور الأداء للمستخدم {user_id} (آخر {len(quiz_history)} اختبارات)", pad=20)
+    ax.set_title(f"تطور الأداء للمستخدم {user_id} (آخر {len(valid_quiz_history)} اختبارات صالحة)", pad=20)
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.tick_params(axis="both", labelsize=12)
     ax.set_ylim(0, 105)
     ax.set_xticks(test_numbers)
     
     for i, score_val in enumerate(scores):
+        # score_val is guaranteed to be not None here due to prior filtering
         ax.text(test_numbers[i], score_val + 2, f"{score_val:.1f}%", ha="center", fontsize=10)
 
     chart_path = os.path.join(CHARTS_DIR, f"{user_id}_performance_trend_chart.png")
