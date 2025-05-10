@@ -356,15 +356,11 @@ class DatabaseManager:
             base_query += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
         elif time_filter == "month":
             base_query += " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
-        
-        query = base_query + ";"
+      def get_average_quiz_time(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching average quiz time for period: {time_filter}.")
+        # ... (rest of get_average_quiz_time method)
         result = self._execute_query(query, tuple(params), fetch_one=True)
         return result["avg_time"] if result and result["avg_time"] is not None else 0.0
-
-# Instantiate the DatabaseManager for global use
-DB_MANAGER = DatabaseManager()
-
-
 
     def end_quiz_session(self,
                          quiz_session_uuid: str,
@@ -402,3 +398,5 @@ DB_MANAGER = DatabaseManager()
             logger.error(f"[DB Results] Failed to update (end) quiz session {quiz_session_uuid} in DB.")
         return success
 
+# Instantiate the DatabaseManager for global use
+DB_MANAGER = DatabaseManager()
