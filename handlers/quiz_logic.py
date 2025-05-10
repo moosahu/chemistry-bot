@@ -141,7 +141,7 @@ class QuizLogic:
                 temp_bytes = button_text_final.encode('utf-8')[:57]
                 button_text_final = temp_bytes.decode('utf-8', 'ignore') + "..."
             
-            callback_data = f"ans_{self.quiz_id}_{self.current_question_index}_{option_id}"
+            callback_data = f"answer_{self.quiz_id}_{self.current_question_index}_{option_id}"
             keyboard_buttons.append([InlineKeyboardButton(text=button_text_final, callback_data=callback_data)])
             
             displayable_options.append({
