@@ -202,7 +202,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
 
     if quiz_type_key == QUIZ_TYPE_ALL:
-        api_response = await fetch_from_api("api/v1/questions/all")
+        api_response = fetch_from_api("api/v1/questions/all")
         if api_response == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE 
@@ -218,7 +218,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
         return ENTER_QUESTION_COUNT
 
     elif quiz_type_key == QUIZ_TYPE_UNIT:
-        courses = await fetch_from_api("api/v1/courses")
+        courses = fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
@@ -261,7 +261,7 @@ async def select_course_for_unit_quiz_handler(update: Update, context: CallbackC
     selected_course_name = next((c.get("name") for c in courses if str(c.get("id")) == str(selected_course_id)), "مقرر غير معروف")
     context.user_data["selected_course_name_for_unit_quiz"] = selected_course_name
 
-    units = await fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
+    units = fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     if units == "TIMEOUT":
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_unit_quiz",0)))
@@ -311,7 +311,7 @@ async def select_unit_for_course_handler(update: Update, context: CallbackContex
     selected_unit_name = next((u.get("name") for u in units if str(u.get("id")) == str(selected_unit_id)), "وحدة غير معروفة")
     context.user_data["selected_unit_name"] = selected_unit_name
 
-    questions = await fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
+    questions = fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     current_unit_page = context.user_data.get("current_unit_page_for_course", 0)
 
