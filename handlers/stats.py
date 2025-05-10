@@ -17,6 +17,11 @@ from datetime import datetime
 import matplotlib
 matplotlib.use("Agg") # Use Agg backend for non-interactive plotting
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
+
+# Configure Matplotlib for Arabic text
+plt.rcParams['font.family'] = ['DejaVu Sans', 'Amiri', 'Arial'] # Add fallbacks
+plt.rcParams['axes.unicode_minus'] = False # Ensure minus sign is displayed correctly
 
 # +++ MODIFICATION: Import DB_MANAGER directly +++
 from database.manager import DB_MANAGER
@@ -38,6 +43,31 @@ except ImportError as e:
     def format_duration(seconds): logger.warning("Placeholder format_duration called!"); return f"{seconds}s"
     async def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
 
+import arabic_reshaper
+from bidi.algorithm import get_display
+
+# Helper function for processing Arabic text for Matplotlib
+def process_arabic_text(text_to_process):
+    text_str = str(text_to_process)
+    is_arabic = False
+    for char_val in text_str:
+        if ('\u0600' <= char_val <= '\u06FF' or # Arabic
+            '\u0750' <= char_val <= '\u077F' or # Arabic Supplement
+            '\u08A0' <= char_val <= '\u08FF' or # Arabic Extended-A
+            '\uFB50' <= char_val <= '\uFDFF' or # Arabic Presentation Forms-A
+            '\uFE70' <= char_val <= '\uFEFF'):  # Arabic Presentation Forms-B
+            is_arabic = True
+            break
+    if not is_arabic:
+        return text_str
+    try:
+        reshaped_text = arabic_reshaper.reshape(text_str)
+        bidi_text = get_display(reshaped_text)
+        return bidi_text
+    except Exception:
+        return text_str # Fallback
+
+
 # --- Directory for charts ---
 CHARTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user_data", "charts")
 os.makedirs(CHARTS_DIR, exist_ok=True)
@@ -47,12 +77,12 @@ def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: 
     if correct == 0 and incorrect == 0:
         return None
     fig, ax = plt.subplots(figsize=(8, 6))
-    categories = ["إجابات صحيحة", "إجابات خاطئة"]
+    categories = [process_arabic_text("إجابات صحيحة"), process_arabic_text("إجابات خاطئة")]
     counts = [correct, incorrect]
     colors = ["#4CAF50", "#F44336"]
     bars = ax.bar(categories, counts, color=colors)
-    ax.set_ylabel("العدد")
-    ax.set_title(f"مقارنة الإجابات للمستخدم {user_id}", pad=20)
+    ax.set_ylabel(process_arabic_text("العدد"))
+    ax.set_title(process_arabic_text(f"مقارنة الإجابات للمستخدم {user_id}"), pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=12)
     for bar in bars:
@@ -72,7 +102,7 @@ def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: 
 def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> str | None:
     if not quiz_history:
         return None
-    grades = {"ممتاز (90+)": 0, "جيد جداً (80-89)": 0, "جيد (70-79)": 0, "مقبول (60-69)": 0, "يحتاج تحسين (<60)": 0}
+    grades = {process_arabic_text("ممتاز (90+)"): 0, process_arabic_text("جيد جداً (80-89)"): 0, process_arabic_text("جيد (70-79)"): 0, process_arabic_text("مقبول (60-69)"): 0, process_arabic_text("يحتاج تحسين (<60)"): 0}
     for quiz in quiz_history:
         score = quiz.get("score_percentage") # Keep as is, might be None
         # Check if score is not None before comparison
@@ -93,8 +123,8 @@ def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> 
     counts = list(grades.values())
     colors = ["#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107", "#F44336"][::-1]
     bars = ax.barh(categories, counts, color=colors[:len(categories)])
-    ax.set_xlabel("عدد الاختبارات")
-    ax.set_title(f"توزيع تقديرات الاختبارات للمستخدم {user_id}", pad=20)
+    ax.set_xlabel(process_arabic_text("عدد الاختبارات"))
+    ax.set_title(process_arabic_text(f"توزيع تقديرات الاختبارات للمستخدم {user_id}"), pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=12)
     for i, bar in enumerate(bars):
@@ -124,9 +154,9 @@ def generate_line_chart_performance_trend(user_id: int, quiz_history: list) -> s
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(test_numbers, scores, marker="o", linestyle="-", color="#007BFF", linewidth=2, markersize=8)
-    ax.set_xlabel("رقم الاختبار (الأحدث على اليمين)")
-    ax.set_ylabel("النتيجة (%)")
-    ax.set_title(f"تطور الأداء للمستخدم {user_id} (آخر {len(valid_quiz_history)} اختبارات صالحة)", pad=20)
+    ax.set_xlabel(process_arabic_text("رقم الاختبار (الأحدث على اليمين)"))
+    ax.set_ylabel(process_arabic_text("النتيجة (%)"))
+    ax.set_title(process_arabic_text(f"تطور الأداء للمستخدم {user_id} (آخر {len(valid_quiz_history)} اختبارات صالحة)"), pad=20)
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.tick_params(axis="both", labelsize=12)
     ax.set_ylim(0, 105)
