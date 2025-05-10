@@ -148,7 +148,7 @@ class QuizLogic:
 
         while self.current_question_index < self.total_questions:
             current_question_data = self.questions_data[self.current_question_index]
-            q_id_log = current_question_data.get(	'question_id	', f	'q_idx_{self.current_question_index}	')
+            q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
             options = current_question_data.get("options", [])
 
             if len(options) < MIN_OPTIONS_PER_QUESTION:
