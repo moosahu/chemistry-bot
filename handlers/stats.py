@@ -1,5 +1,6 @@
 """Handles displaying user statistics and leaderboards (SYNTAX FIX APPLIED).
 (PERSISTENCE_FIX: Set stats_conv_handler to persistent=False)
+(FSTRING_DEBUG: Changed one f-string to .format() in show_my_stats)
 """
 
 import logging
@@ -174,15 +175,15 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
         stats_text += "عذراً، خدمة الإحصائيات غير متاحة حالياً بسبب مشكلة في الاتصال بقاعدة البيانات."
     else:
         user_overall_stats = db_manager.get_user_overall_stats(user_id)
-        user_quiz_history_raw = db_manager.get_user_recent_quiz_history(user_id, limit=LEADERBOARD_LIMIT) # Use LEADERBOARD_LIMIT for consistency or a new config
+        user_quiz_history_raw = db_manager.get_user_recent_quiz_history(user_id, limit=LEADERBOARD_LIMIT)
 
         if not user_overall_stats or user_overall_stats.get("total_quizzes_taken", 0) == 0:
             stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
         else:
-            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get("total_quizzes_taken", 0)}\n"
+            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get('total_quizzes_taken', 0)}\n"
             avg_score = user_overall_stats.get("average_score_percentage", 0.0)
             stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
-            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get("highest_score_percentage", 0.0):.1f}%\n\n"
+            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get('highest_score_percentage', 0.0):.1f}%\n\n"
             total_correct = user_overall_stats.get("total_correct_answers", 0)
             total_questions_attempted = user_overall_stats.get("total_questions_attempted", 0)
             total_incorrect = total_questions_attempted - total_correct
@@ -220,7 +221,9 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
                     correct_ans = test_entry.get("score", 0)
                     total_q = test_entry.get("total_questions", 0)
                     incorrect_ans = total_q - correct_ans
-                    stats_text += f"{i+1}. بتاريخ {test_date}: {score_percent:.1f}% (صحيحة: {correct_ans}، خاطئة: {incorrect_ans})\n"
+                    # MODIFIED LINE: Using .format() instead of f-string for diagnostics
+                    details_str = "(صحيحة: {}, خاطئة: {})".format(correct_ans, incorrect_ans)
+                    stats_text += "{}. بتاريخ {}: {:.1f}% {}\n".format(i + 1, test_date, score_percent, details_str)
             stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
@@ -269,7 +272,6 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
                 safe_display_name = display_name.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
                 avg_score = entry.get("average_score_percentage", 0.0)
                 quizzes_taken = entry.get("total_quizzes_taken", 0)
-                # Corrected f-string with proper closing parenthesis for the entire string
                 leaderboard_text += f"{rank} {safe_display_name} - متوسط: {avg_score:.1f}% ({quizzes_taken} اختبار)\n"
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
