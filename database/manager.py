@@ -144,7 +144,7 @@ class DatabaseManager:
         return count
 
     def start_quiz_session_and_get_id(self, user_id: int, quiz_type: str, quiz_scope_id: int | None, 
-                                      quiz_name: str, total_questions: int, start_time: datetime, score: int) -> str | None:
+                                      quiz_name: str, total_questions: int, start_time: datetime, score: int, initial_percentage: float) -> str | None:
         """
         Starts a new quiz session by logging it to the database and returns a unique session ID (UUID).
         This creates an initial record in quiz_results, which will be updated upon quiz completion.
@@ -156,13 +156,12 @@ class DatabaseManager:
         
         query_insert_start = """
         INSERT INTO quiz_results (
-            user_id, quiz_type, filter_id, quiz_name, total_questions, start_time, quiz_id_uuid, score
-            -- wrong_answers, skipped_answers, score_percentage, completed_at, time_taken_seconds, answers_details are implicitly NULL
+            user_id, quiz_type, filter_id, quiz_name, total_questions, start_time, quiz_id_uuid, score, score_percentage
+            -- wrong_answers, skipped_answers, completed_at, time_taken_seconds, answers_details are implicitly NULL
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
-        params = (user_id, quiz_type, quiz_scope_id, quiz_name, total_questions, start_time, session_uuid, score)
-        
+         params = (user_id, quiz_type, quiz_scope_id, quiz_name, total_questions, start_time, session_uuid, score, initial_percentage)       
         success = self._execute_query(query_insert_start, params, commit=True)
         
         if success:
