@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Handles communication with the external Chemistry API (Corrected v2 - Syntax fix and flexible question transform)."""
+"""Handles communication with the external Chemistry API.
+MODIFIED v1: transform_api_question now creates a structured 'options' list 
+             to support text/image options robustly for QuizLogic.
+"""
 
 import logging
 import requests # Using requests library
 from requests.exceptions import RequestException, Timeout
+import uuid # For generating option_ids if not provided
 
 # Import config variables
 try:
@@ -21,8 +25,10 @@ def fetch_from_api(endpoint: str, params: dict = None):
 
     Args:
         endpoint: The API endpoint path (e.g., 
-'/questions', 
-'/courses/1/units').
+'/questions
+', 
+'/courses/1/units
+').
         params: Optional dictionary of query parameters.
 
     Returns:
@@ -31,10 +37,9 @@ def fetch_from_api(endpoint: str, params: dict = None):
         None if any other error occurs.
     """
     if not API_BASE_URL or API_BASE_URL.startswith("http://your-api-base-url.com"):
-        logger.error(f"[API] Invalid or missing API_BASE_URL ('{API_BASE_URL}'). Cannot fetch from endpoint: {endpoint}")
+        logger.error(f"[API] Invalid or missing API_BASE_URL (	'{API_BASE_URL}	'). Cannot fetch from endpoint: {endpoint}")
         return None
 
-    # Corrected syntax for URL construction (removed leading space and trailing newline)
     url = f"{API_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
     logger.debug(f"[API] Fetching data from: {url} with params: {params}")
 
@@ -42,10 +47,8 @@ def fetch_from_api(endpoint: str, params: dict = None):
         response = requests.get(url, params=params, timeout=API_TIMEOUT)
         response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
         logger.debug(f"[API] Received response status: {response.status_code}")
-        # Check if response is empty or not valid JSON
         try:
             json_response = response.json()
-            # logger.debug(f"[API] Response JSON: {json_response}") # Can be very verbose
             return json_response
         except requests.exceptions.JSONDecodeError:
             logger.error(f"[API] Failed to decode JSON response from {url}. Response text: {response.text[:200]}...")
@@ -62,15 +65,17 @@ def fetch_from_api(endpoint: str, params: dict = None):
         return None
 
 def transform_api_question(api_question: dict) -> dict | None:
-    """Transforms a question dictionary from the API format to the internal format.
-    Handles variable number of options and determines correct answer from 'is_correct' flag.
+    """Transforms a question dictionary from the API format to the internal format
+    that QuizLogic expects. Specifically, it creates an 'options' list where each
+    option is a dict: {'option_id': str, 'option_text': str (text or URL), 'is_correct': bool}.
 
     Args:
         api_question: A dictionary representing a question from the API.
                       Expected format includes 'id', 'question_text', 'image_url' (optional),
                       'explanation' (optional), and 'options' (list of dicts).
-                      Each option dict should have 'option_text' (optional), 'image_url' (optional),
-                      and 'is_correct' (boolean).
+                      Each API option dict should have 'option_text' (optional for text content),
+                      'image_url' (optional for image URL content), and 'is_correct' (boolean).
+                      An API option might also have an 'id' or 'option_id'.
 
     Returns:
         A dictionary in the internal format, or None if the input is invalid.
@@ -80,91 +85,69 @@ def transform_api_question(api_question: dict) -> dict | None:
         return None
 
     try:
-        # --- Basic Fields ---
         question_id = api_question.get('id') or api_question.get('question_id')
         question_text = api_question.get('question_text')
-        question_image_url = api_question.get('image_url') # Renamed to avoid conflict
+        question_image_url = api_question.get('image_url') # Main question image
         explanation = api_question.get('explanation')
 
-        # --- Validation: Basic Fields ---
         if not question_id:
             logger.warning(f"[API_TRANSFORM] Missing question_id in API data: {api_question}")
             return None
-        # Allow questions with only an image
         if not question_text and not question_image_url:
-             logger.warning(f"[API_TRANSFORM] Missing both question_text and image_url for q_id: {question_id}. Data: {api_question}")
-             return None
+            logger.warning(f"[API_TRANSFORM] Missing both question_text and image_url for q_id: {question_id}. Data: {api_question}")
+            return None
 
-        # --- Options and Correct Answer --- 
-        api_options = api_question.get('options')
-        if not isinstance(api_options, list) or not api_options:
+        api_options_from_payload = api_question.get('options')
+        if not isinstance(api_options_from_payload, list) or not api_options_from_payload:
             logger.warning(f"[API_TRANSFORM] Missing or invalid 'options' list for q_id: {question_id}. Data: {api_question}")
             return None
 
-        options_text = [None] * 4
-        options_image = [None] * 4
-        final_correct_index = None
-        valid_options_count = 0
+        internal_options_list = []
+        correct_answer_found_in_options = False
 
-        for i, option_data in enumerate(api_options):
-            if i >= 4: # Limit to 4 options for internal format
-                logger.warning(f"[API_TRANSFORM] More than 4 options found for q_id: {question_id}. Ignoring extra options.")
-                break
+        for i, api_opt_data in enumerate(api_options_from_payload):
+            if not isinstance(api_opt_data, dict):
+                logger.warning(f"[API_TRANSFORM] Invalid item in API 'options' list (not a dict) for q_id: {question_id}. Item: {api_opt_data}")
+                continue
+
+            option_content = None
+            # Prefer image_url if present for the option's content
+            if api_opt_data.get('image_url'):
+                option_content = api_opt_data['image_url']
+            elif api_opt_data.get('option_text'):
+                option_content = api_opt_data['option_text']
             
-            if not isinstance(option_data, dict):
-                logger.warning(f"[API_TRANSFORM] Invalid item in 'options' list (not a dict) for q_id: {question_id}. Item: {option_data}")
-                continue # Skip invalid option
+            if option_content is None:
+                logger.warning(f"[API_TRANSFORM] API Option {i} for q_id: {question_id} has no 'image_url' or 'option_text'. Skipping. Data: {api_opt_data}")
+                continue
 
-            opt_text = option_data.get('option_text')
-            opt_image = option_data.get('image_url')
-            is_correct = option_data.get('is_correct')
+            is_correct = api_opt_data.get('is_correct', False)
+            if is_correct:
+                correct_answer_found_in_options = True
+            
+            # Get option_id from API if available, otherwise generate one
+            option_id = api_opt_data.get('id') or api_opt_data.get('option_id') or f"gen_opt_{question_id}_{i}_{uuid.uuid4().hex[:6]}"
 
-            # Option must have text or image
-            if opt_text is None and opt_image is None:
-                 logger.warning(f"[API_TRANSFORM] Option {i} has no text or image for q_id: {question_id}. Option data: {option_data}")
-                 continue # Skip invalid option
+            internal_options_list.append({
+                "option_id": str(option_id),
+                "option_text": option_content, # This will be processed by QuizLogic (text or URL)
+                "is_correct": bool(is_correct)
+            })
 
-            options_text[i] = opt_text
-            options_image[i] = opt_image
-            valid_options_count += 1
-
-            if is_correct is True:
-                if final_correct_index is not None:
-                    # Should not happen if API is well-formed, but good to check
-                    logger.warning(f"[API_TRANSFORM] Multiple correct answers found for q_id: {question_id}. Using first one found (index {final_correct_index}). Data: {api_question}")
-                else:
-                    final_correct_index = i # Assign the index (0, 1, 2, or 3) where is_correct is True
-
-        # --- Validation: Options and Correct Answer ---
-        if valid_options_count < 2:
-             logger.warning(f"[API_TRANSFORM] Less than 2 valid options found for q_id: {question_id}. Data: {api_question}")
-             return None # Need at least two options for a meaningful question
-             
-        # This check should now work correctly if the loop above assigns the index properly
-        if final_correct_index is None:
-            logger.warning(f"[API_TRANSFORM] No correct answer found (is_correct: True) for q_id: {question_id}. Data: {api_question}")
+        if len(internal_options_list) < 2:
+            logger.warning(f"[API_TRANSFORM] Less than 2 valid options constructed for q_id: {question_id}. Found {len(internal_options_list)}. API Data: {api_question}")
             return None
         
-        # Check if the correct index points to a valid option that was processed
-        if options_text[final_correct_index] is None and options_image[final_correct_index] is None:
-             logger.error(f"[API_TRANSFORM] Internal logic error: Correct index {final_correct_index} points to an invalid/skipped option for q_id: {question_id}. Data: {api_question}")
-             return None
+        if not correct_answer_found_in_options:
+            logger.warning(f"[API_TRANSFORM] No correct answer (is_correct: True) found among valid options for q_id: {question_id}. API Data: {api_question}")
+            return None
 
-        # --- Construct Internal Format --- 
         internal_question = {
-            "question_id": question_id,
+            "question_id": str(question_id),
             "question_text": question_text,
-            "option1": options_text[0],
-            "option2": options_text[1],
-            "option3": options_text[2],
-            "option4": options_text[3],
-            "correct_answer": final_correct_index, # Store the 0-based index
+            "image_url": question_image_url, # Main question image
             "explanation": explanation,
-            "image_url": question_image_url, # Use the renamed variable
-            "option1_image": options_image[0],
-            "option2_image": options_image[1],
-            "option3_image": options_image[2],
-            "option4_image": options_image[3],
+            "options": internal_options_list # Structured list of options for QuizLogic
         }
         # logger.debug(f"[API_TRANSFORM] Transformed question (id: {question_id}): {internal_question}")
         return internal_question
