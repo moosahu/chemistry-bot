@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v12 with PicklePersistence fix)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v13 with corrected PicklePersistence init)."""
 
 import logging
 import sys
@@ -125,16 +125,16 @@ def main() -> None:
         persistence_dir = os.path.join(project_root, 'persistence')
         os.makedirs(persistence_dir, exist_ok=True)
         persistence_file = os.path.join(persistence_dir, 'bot_conversation_persistence.pkl')
-        # *** MODIFICATION: Tell PicklePersistence not to store bot_data ***
-        persistence = PicklePersistence(
-            filepath=persistence_file,
-            store_user_data=True,  # Default
-            store_chat_data=True,  # Default
-            store_bot_data=False   # Explicitly set to False
-        )
-        logger.info(f"PicklePersistence configured at {persistence_file} with store_bot_data=False.")
+        
+        # *** MODIFICATION: Corrected PicklePersistence initialization ***
+        persistence = PicklePersistence(filepath=persistence_file)
+        # store_user_data and store_chat_data default to True.
+        # We only need to explicitly set store_bot_data to False.
+        persistence.store_bot_data = False
+        logger.info(f"PicklePersistence configured at {persistence_file}. store_bot_data is set to False. store_user_data and store_chat_data will use defaults (True).")
+
     except Exception as pers_exc:
-        logger.error(f"Error configuring persistence: {pers_exc}")
+        logger.error(f"Error configuring persistence: {pers_exc}", exc_info=True) # Added exc_info for more details
         persistence = None
 
     # --- Job Queue Setup ---
@@ -150,6 +150,10 @@ def main() -> None:
         app_builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
         if persistence:
             app_builder = app_builder.persistence(persistence)
+            logger.info("Persistence object successfully attached to ApplicationBuilder.")
+        else:
+            logger.warning("Persistence object is None. Application will be built without persistence. ConversationHandlers requiring persistence might fail.")
+            
         if job_queue: 
             app_builder = app_builder.job_queue(job_queue) 
 
@@ -170,7 +174,7 @@ def main() -> None:
             logger.warning("JobQueue was not created or attached. Timed features will not work.")
 
     except Exception as app_exc:
-        logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.")
+        logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.", exc_info=True)
         exit(1)
 
     # --- Register Handlers Directly ---
