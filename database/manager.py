@@ -161,8 +161,8 @@ class DatabaseManager:
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
-         params = (user_id, quiz_type, quiz_scope_id, quiz_name, total_questions, start_time, session_uuid, score, initial_percentage, initial_time_taken_seconds)       success = self._execute_query(query_insert_start, params, commit=True)
-        
+        params = (user_id, quiz_type, quiz_scope_id, quiz_name, total_questions, start_time, session_uuid, score, initial_percentage, initial_time_taken_seconds)
+        success = self._execute_query(query_insert_start, params, commit=True)        
         if success:
             logger.info(f"[DB Session] Successfully started and logged quiz session {session_uuid} for user {user_id}.")
             return session_uuid
