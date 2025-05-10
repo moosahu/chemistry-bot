@@ -189,18 +189,39 @@ def create_stats_menu_keyboard() -> InlineKeyboardMarkup:
 async def stats_menu(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = update.effective_user.id
-    
+    # Ensure chat_id is available whether it's a query or command
+    chat_id = query.message.chat_id if query and query.message else update.effective_chat.id
+
+    text = "🏅 اختر الإحصائيات التي تريد عرضها:"
+    keyboard = create_stats_menu_keyboard()
+
     if query:
         await query.answer()
-        logger.info(f"User {user_id} entered stats menu.")
-        text = "🏅 اختر الإحصائيات التي تريد عرضها:"
-        keyboard = create_stats_menu_keyboard()
-        await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
-    else:
+        # More detailed logging for callback source
+        original_message_id = query.message.message_id if query.message else "N/A"
+        logger.info(f"User {user_id} entered stats menu via callback from message ID {original_message_id}.")
+        
+        if query.message and query.message.text: # Check if the original message has text
+            try:
+                await safe_edit_message_text(
+                    context.bot,
+                    chat_id=query.message.chat_id,
+                    message_id=query.message.message_id,
+                    text=text,
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.warning(f"stats_menu: Failed to edit message {original_message_id} for user {user_id}, sending new. Error: {e}")
+                # Fallback to sending a new message if edit fails for any reason
+                await safe_send_message(context.bot, query.message.chat_id, text=text, reply_markup=keyboard)
+        else:
+            logger.info(f"stats_menu: Original message (ID: {original_message_id}) for user {user_id} has no text or message is missing. Sending new message.")
+            # Send to query.message.chat_id if available, otherwise fallback to chat_id from update.effective_chat.id
+            target_chat_id_for_send = query.message.chat_id if query.message else chat_id
+            await safe_send_message(context.bot, target_chat_id_for_send, text=text, reply_markup=keyboard)
+    else: # Entered via command
         logger.info(f"User {user_id} entered stats menu via command.")
-        text = "🏅 اختر الإحصائيات التي تريد عرضها:"
-        keyboard = create_stats_menu_keyboard()
-        await safe_send_message(context.bot, update.effective_chat.id, text=text, reply_markup=keyboard)
+        await safe_send_message(context.bot, chat_id, text=text, reply_markup=keyboard)
         
     return STATS_MENU
 
