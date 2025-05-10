@@ -423,12 +423,13 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
         quiz_logic_instance = QuizLogic(
             user_id=user_id,
             chat_id=chat_id,
-            questions_data=final_questions_for_quiz,
+            questions=final_questions_for_quiz,
             quiz_name=quiz_name_full, # Descriptive name
-            quiz_type=quiz_type, # e.g., QUIZ_TYPE_ALL, QUIZ_TYPE_UNIT
-            filter_id=quiz_scope_id, # e.g., "all" or unit_id
+            quiz_type_for_db_log=quiz_type, # e.g., QUIZ_TYPE_ALL, QUIZ_TYPE_UNIT
+            quiz_scope_id=quiz_scope_id, # e.g., "all" or unit_id
+            total_questions_for_db_log=num_questions_to_take,
             time_limit_per_question=DEFAULT_QUESTION_TIME_LIMIT,
-            quiz_instance_id=quiz_instance_id
+            quiz_instance_id_for_logging=quiz_instance_id
         )
         context.user_data[f"quiz_logic_instance_{user_id}"] = quiz_logic_instance
         logger.info(f"[QuizSetup] QuizLogic instance {quiz_instance_id} created for user {user_id}. Starting quiz.")
