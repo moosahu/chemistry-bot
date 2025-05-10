@@ -353,7 +353,8 @@ class DatabaseManager:
         if time_filter == "today":
             base_query += " AND DATE(completed_at) = CURRENT_DATE"
         elif time_filter == "week":
-            base_query += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"        elif time_filter == "month":
+            base_query += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
+        elif time_filter == "month":
             base_query += " AND completed_at >= date_trunc(\'month\', CURRENT_TIMESTAMP)"
 
     def get_average_quiz_time(self, time_filter="all"):
