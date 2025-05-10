@@ -5,7 +5,7 @@ import psycopg2.extras # For DictCursor
 import logging
 import random
 import json # For storing details in JSONB
-from datetime import datetime
+from datetime import datetime, timedelta # Added timedelta
 import uuid # Added for generating UUIDs
 
 # Import config, connection, and schema setup
@@ -296,7 +296,23 @@ class DatabaseManager:
             leaderboard = []
         return leaderboard
 
-    # --- Admin Statistics Functions ---
+    # --- Admin Statistics Functions (Existing and New) ---
+    def _get_time_filter_condition(self, time_filter="all", date_column="created_at"):
+        """Helper to create WHERE clause for time filtering."""
+        # Ensure date_column is a valid column name to prevent SQL injection if it were user-supplied
+        # For this internal use, we assume it's one of the known date columns.
+        if time_filter == "today":
+            return f" AND DATE({date_column}) = CURRENT_DATE "
+        elif time_filter == "week":
+            return f" AND {date_column} >= date_trunc(\'week\', CURRENT_TIMESTAMP) "
+        elif time_filter == "month":
+            return f" AND {date_column} >= date_trunc(\'month\', CURRENT_TIMESTAMP) "
+        elif time_filter == "all":
+            return " " # No additional time filter
+        else:
+            logger.warning(f"[DB Admin Stats] Unknown time_filter: {time_filter}. Defaulting to 'all'.")
+            return " "
+
     def get_total_users_count(self):
         logger.info("[DB Admin Stats] Fetching total users count.")
         query = "SELECT COUNT(user_id) as total_users FROM users;"
@@ -305,135 +321,165 @@ class DatabaseManager:
 
     def get_active_users_count(self, time_filter="today"):
         logger.info(f"[DB Admin Stats] Fetching active users count for period: {time_filter}.")
-        if time_filter == "today":
-            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE DATE(last_interaction_date) = CURRENT_DATE;"
-        elif time_filter == "week":
-            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE last_interaction_date >= date_trunc('week', CURRENT_TIMESTAMP);"
-        elif time_filter == "month":
-            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE last_interaction_date >= date_trunc('month', CURRENT_TIMESTAMP);"
-        else: 
-            query = "SELECT COUNT(DISTINCT user_id) as active_users FROM users;"
+        time_condition = self._get_time_filter_condition(time_filter, "last_interaction_date")
+        # Remove leading ' AND ' if time_condition is not empty, and add WHERE if it is the first condition
+        if time_condition.strip().startswith("AND"):
+             time_condition = time_condition.strip()[3:] # remove 'AND'
+        
+        if time_condition.strip():
+            query = f"SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE {time_condition.strip()};"
+        else: # This case is for 'all' or invalid filter, effectively counting all users as active based on last_interaction_date
+            query = f"SELECT COUNT(DISTINCT user_id) as active_users FROM users;"
+            
         result = self._execute_query(query, fetch_one=True)
         return result["active_users"] if result and "active_users" in result else 0
 
-    def get_total_quizzes_count(self, time_filter="all"):
+    def get_total_quizzes_taken_count(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching total quizzes taken count for period: {time_filter}.")
-        base_query = "SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at IS NOT NULL"
-        params = []
-        if time_filter == "today":
-            base_query += " AND DATE(completed_at) = CURRENT_DATE"
-        elif time_filter == "week":
-            base_query += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_filter == "month":
-            base_query += " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
-        
-        query = base_query + ";"
-        result = self._execute_query(query, tuple(params), fetch_one=True)
+        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
+        query = f"SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at IS NOT NULL {time_condition};"
+        result = self._execute_query(query, fetch_one=True)
         return result["total_quizzes"] if result and "total_quizzes" in result else 0
 
-    def get_average_score_percentage(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats] Fetching average score percentage for period: {time_filter}.")
-        base_query = "SELECT AVG(score_percentage) as avg_score FROM quiz_results WHERE completed_at IS NOT NULL"
-        params = []
-        if time_filter == "today":
-            base_query += " AND DATE(completed_at) = CURRENT_DATE"
-        elif time_filter == "week":
-            base_query += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_filter == "month":
-            base_query += " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
-        
-        query = base_query + ";"
-        result = self._execute_query(query, tuple(params), fetch_one=True)
-        return result["avg_score"] if result and result["avg_score"] is not None else 0.0
+    def get_average_score_percentage_overall(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching average score percentage overall for period: {time_filter}.")
+        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
+        query = f"SELECT COALESCE(AVG(score_percentage), 0.0) as avg_score_percentage FROM quiz_results WHERE completed_at IS NOT NULL {time_condition};"
+        result = self._execute_query(query, fetch_one=True)
+        return result["avg_score_percentage"] if result and "avg_score_percentage" in result else 0.0
 
     def get_average_quiz_completion_time(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching average quiz completion time for period: {time_filter}.")
-        base_query = "SELECT AVG(time_taken_seconds) as avg_time FROM quiz_results WHERE completed_at IS NOT NULL AND time_taken_seconds IS NOT NULL"
-        params = []
-        if time_filter == "today":
-            base_query += " AND DATE(completed_at) = CURRENT_DATE"
-        elif time_filter == "week":
-            base_query += " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_filter == "month":
-            base_query += " AND completed_at >= date_trunc(\'month\', CURRENT_TIMESTAMP)"
+        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
+        query = f"SELECT COALESCE(AVG(time_taken_seconds), 0.0) as avg_completion_time FROM quiz_results WHERE completed_at IS NOT NULL AND time_taken_seconds IS NOT NULL {time_condition};"
+        result = self._execute_query(query, fetch_one=True)
+        return result["avg_completion_time"] if result and "avg_completion_time" in result else 0.0
 
-    def get_average_quiz_time(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats] Fetching average quiz time for period: {time_filter}.")
-        # ... (rest of get_average_quiz_time method)
-        result = self._execute_query(query, tuple(params), fetch_one=True)
-        return result["avg_time"] if result and result["avg_time"] is not None else 0.0
+    def get_quiz_completion_rate(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching quiz completion rate for period: {time_filter}.")
+        time_condition_started = self._get_time_filter_condition(time_filter, "start_time")
+        time_condition_completed = self._get_time_filter_condition(time_filter, "completed_at")
 
-    def end_quiz_session(self,
-                         quiz_session_uuid: str,
-                         score: int,
-                         wrong_answers: int,
-                         skipped_answers: int,
-                         score_percentage: float,
-                         completed_at: datetime,
-                         time_taken_seconds: int,
-                         answers_details_json: str
-                         ) -> bool:
-        """Updates the results of a completed quiz session identified by quiz_session_uuid."""
-        logger.info(f"[DB Results] Ending quiz session {quiz_session_uuid}: Score={score}, Percentage={score_percentage:.2f}%")
+        query_started = f"SELECT COUNT(quiz_id_uuid) as started_quizzes FROM quiz_results WHERE 1=1 {time_condition_started};"
+        query_completed = f"SELECT COUNT(quiz_id_uuid) as completed_quizzes FROM quiz_results WHERE completed_at IS NOT NULL {time_condition_completed};"
+        
+        started_result = self._execute_query(query_started, fetch_one=True)
+        completed_result = self._execute_query(query_completed, fetch_one=True)
 
-        query_update_end = """
-        UPDATE quiz_results 
-        SET 
-            score = %s, 
-            wrong_answers = %s, 
-            skipped_answers = %s,
-            score_percentage = %s, 
-            completed_at = %s, 
-            time_taken_seconds = %s, 
-            answers_details = %s
-        WHERE quiz_id_uuid = %s;
+        started_count = started_result["started_quizzes"] if started_result else 0
+        completed_count = completed_result["completed_quizzes"] if completed_result else 0
+
+        if started_count > 0:
+            completion_rate = (completed_count / started_count) * 100
+            return completion_rate
+        return 0.0
+
+    def get_average_quizzes_per_active_user(self, time_filter="today"):
+        logger.info(f"[DB Admin Stats] Fetching average quizzes per active user for period: {time_filter}.")
+        active_users = self.get_active_users_count(time_filter)
+        if active_users == 0:
+            return 0.0
+        
+        # Get total quizzes taken by users who were active in the period
+        # This is a bit more complex as quiz_results.completed_at might not align with users.last_interaction_date
+        # For simplicity, we'll count quizzes completed in the period by any user.
+        # A more accurate (but complex) query would join users active in the period with their quizzes in that period.
+        total_quizzes_in_period = self.get_total_quizzes_taken_count(time_filter)
+        
+        if active_users > 0:
+            return total_quizzes_in_period / active_users
+        return 0.0
+
+    def get_most_popular_units(self, time_filter="all", limit=3):
+        logger.info(f"[DB Admin Stats] Fetching most popular units for period: {time_filter}, limit: {limit}.")
+        time_condition = self._get_time_filter_condition(time_filter, "qr.completed_at")
+        # Assuming quiz_results.filter_id stores unit_id when quiz_type is 'unit'
+        # And questions table has lesson_id, lessons table has unit_id
+        # This query assumes 'quiz_name' might contain unit name or we join through questions to units
+        # Let's assume quiz_results.filter_id is the unit_id for 'unit' type quizzes for simplicity
+        # Or, if quizzes are tied to lessons, we need to join through questions -> lessons -> units
+        
+        # Simplified: Count quizzes by quiz_name if it represents the unit, or by filter_id if it's unit_id
+        # A more robust way: if quiz_results has a direct unit_id or if we can trace questions in a quiz to a unit.
+        # For now, let's assume quiz_type = 'unit' and filter_id = unit_id
+        query = f"""
+        SELECT u.name as unit_name, COUNT(qr.result_id) as quiz_count
+        FROM quiz_results qr
+        JOIN units u ON qr.filter_id = u.unit_id AND qr.quiz_type = 'unit'
+        WHERE qr.completed_at IS NOT NULL {time_condition}
+        GROUP BY u.name
+        ORDER BY quiz_count DESC
+        LIMIT %s;
         """
-        params = (score, wrong_answers, skipped_answers, score_percentage,
-                  completed_at, time_taken_seconds, answers_details_json,
-                  quiz_session_uuid)
-        
-        success = self._execute_query(query_update_end, params, commit=True)
-        if success:
-            logger.info(f"[DB Results] Successfully updated (ended) quiz session {quiz_session_uuid} in DB.")
-        else:
-            logger.error(f"[DB Results] Failed to update (end) quiz session {quiz_session_uuid} in DB.")
-        return success
+        # Fallback if no 'unit' type quizzes or filter_id is not unit_id
+        # A more general approach might be to see which units' questions appear most in completed quizzes.
+        # This requires parsing answers_details or having a question_to_quiz_result link.
+        # The current schema seems to imply quiz_results.filter_id can be a unit_id for unit quizzes.
 
-    def get_overall_average_score(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats] Fetching overall average score for period: {time_filter}.")
-        base_query = "SELECT COALESCE(AVG(score_percentage), 0.0) as average_score FROM quiz_results WHERE completed_at IS NOT NULL"
-        
-        filter_condition = ""
-        if time_filter == "today":
-            filter_condition = " AND DATE(completed_at) = CURRENT_DATE"
-        elif time_filter == "week":
-            filter_condition = " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_filter == "month":
-            filter_condition = " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
-            
-        query = base_query + filter_condition + ";"
-        result = self._execute_query(query, fetch_one=True)
-        avg_score = result["average_score"] if result and "average_score" in result else 0.0
-        logger.info(f"[DB Admin Stats] Overall average score for period {time_filter}: {avg_score:.2f}%")
-        return float(avg_score)
+        results = self._execute_query(query, (limit,), fetch_all=True)
+        return results if results else []
 
-    def get_average_quiz_duration(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats] Fetching average quiz duration for period: {time_filter}.")
-        base_query = "SELECT COALESCE(AVG(time_taken_seconds), 0.0) as average_duration FROM quiz_results WHERE completed_at IS NOT NULL AND time_taken_seconds IS NOT NULL"
+    def get_question_difficulty_stats(self, time_filter="all", limit=3):
+        logger.info(f"[DB Admin Stats] Fetching question difficulty stats for period: {time_filter}, limit: {limit}.")
+        time_condition = self._get_time_filter_condition(time_filter, "qr.completed_at")
         
-        filter_condition = ""
-        if time_filter == "today":
-            filter_condition = " AND DATE(completed_at) = CURRENT_DATE"
-        elif time_filter == "week":
-            filter_condition = " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
-        elif time_filter == "month":
-            filter_condition = " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
-            
-        query = base_query + filter_condition + ";"
-        result = self._execute_query(query, fetch_one=True)
-        avg_duration = result["average_duration"] if result and "average_duration" in result else 0.0
-        logger.info(f"[DB Admin Stats] Average quiz duration for period {time_filter}: {avg_duration:.2f} seconds")
-        return float(avg_duration)
+        # This query requires parsing the answers_details JSONB field.
+        # It assumes answers_details is an array of objects, each with 'question_id' and 'is_correct'.
+        # This is a complex query and might be slow on large datasets without proper indexing on JSONB fields.
+        query_difficult = f"""
+        WITH question_attempts AS (
+            SELECT 
+                (answer_detail ->> 'question_id')::int as question_id,
+                (answer_detail ->> 'is_correct')::boolean as is_correct
+            FROM quiz_results qr,
+                 jsonb_array_elements(qr.answers_details) as answer_detail
+            WHERE qr.completed_at IS NOT NULL {time_condition} AND qr.answers_details IS NOT NULL
+        )
+        SELECT 
+            q.question_text,
+            q.question_id,
+            SUM(CASE WHEN qa.is_correct = false THEN 1 ELSE 0 END) as incorrect_count,
+            COUNT(qa.question_id) as total_attempts,
+            (SUM(CASE WHEN qa.is_correct = false THEN 1 ELSE 0 END)::float / COUNT(qa.question_id)::float) * 100 as incorrect_percentage
+        FROM question_attempts qa
+        JOIN questions q ON qa.question_id = q.question_id
+        GROUP BY q.question_id, q.question_text
+        HAVING COUNT(qa.question_id) > 0 -- Ensure question was attempted
+        ORDER BY incorrect_percentage DESC, incorrect_count DESC
+        LIMIT %s;
+        """
+        
+        query_easy = f"""
+        WITH question_attempts AS (
+            SELECT 
+                (answer_detail ->> 'question_id')::int as question_id,
+                (answer_detail ->> 'is_correct')::boolean as is_correct
+            FROM quiz_results qr,
+                 jsonb_array_elements(qr.answers_details) as answer_detail
+            WHERE qr.completed_at IS NOT NULL {time_condition} AND qr.answers_details IS NOT NULL
+        )
+        SELECT 
+            q.question_text,
+            q.question_id,
+            SUM(CASE WHEN qa.is_correct = true THEN 1 ELSE 0 END) as correct_count,
+            COUNT(qa.question_id) as total_attempts,
+            (SUM(CASE WHEN qa.is_correct = true THEN 1 ELSE 0 END)::float / COUNT(qa.question_id)::float) * 100 as correct_percentage
+        FROM question_attempts qa
+        JOIN questions q ON qa.question_id = q.question_id
+        GROUP BY q.question_id, q.question_text
+        HAVING COUNT(qa.question_id) > 0 -- Ensure question was attempted
+        ORDER BY correct_percentage DESC, correct_count DESC
+        LIMIT %s;
+        """
+        
+        difficult_questions = self._execute_query(query_difficult, (limit,), fetch_all=True)
+        easy_questions = self._execute_query(query_easy, (limit,), fetch_all=True)
+        
+        return {
+            "most_difficult": difficult_questions if difficult_questions else [],
+            "easiest": easy_questions if easy_questions else []
+        }
 
-# Instantiate the DatabaseManager for global use
+# Singleton instance of the DatabaseManager
 DB_MANAGER = DatabaseManager()
+
