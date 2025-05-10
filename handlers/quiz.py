@@ -4,6 +4,7 @@ Conversation handler for the quiz selection and execution flow.
 (SHOW_RESULTS_FIX: Ensures last_quiz_interaction_message_id is updated)
 (QUIZ_MENU_ENTRY_FIX: Handles both CallbackQuery and Command inputs)
 (CALLBACK_PATTERN_FIX: Changed entry point pattern to match 'start_quiz')
+(DB_ACCESS_DIAGNOSTICS: Added detailed logging for db_manager access)
 """
 
 import logging
@@ -178,11 +179,8 @@ async def quiz_menu_entry(update: Update, context: CallbackContext) -> int:
     elif update.message: # Likely a CommandHandler call
         entry_method = f"Command: {update.message.text}"
         logger.info(f"User {user_id} (chat {chat_id}) entered quiz menu (quiz_menu_entry) via {entry_method}.")
-        # For command, we send a new message, don't edit.
     else:
         logger.warning(f"quiz_menu_entry called without callback_query or message for user {user_id} (chat {chat_id}). Update type: {type(update)}")
-        # Fallback: send a new message if possible, or just return state if not.
-        # This case should ideally not happen with standard handlers.
 
     keys_to_clear_on_entry = [
         "selected_quiz_type_key", "selected_quiz_type_display_name", "questions_for_quiz",
@@ -195,17 +193,15 @@ async def quiz_menu_entry(update: Update, context: CallbackContext) -> int:
     for key in keys_to_clear_on_entry:
         context.user_data.pop(key, None)
     
-    # Also clear any lingering interaction message ID for this chat
     context.user_data.pop(f"last_quiz_interaction_message_id_{chat_id}", None)
-
     logger.debug(f"Cleared preliminary quiz setup data for user {user_id} (chat {chat_id}) at quiz_menu_entry.")
     
     keyboard = create_quiz_type_keyboard()
     text_to_send = "🧠 اختر نوع الاختبار:"
 
-    if message_id_to_edit: # Came from callback query
+    if message_id_to_edit:
         await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=message_id_to_edit, text=text_to_send, reply_markup=keyboard)
-    else: # Came from command or unknown, send new message
+    else:
         await safe_send_message(context.bot, chat_id=chat_id, text=text_to_send, reply_markup=keyboard)
         
     return SELECT_QUIZ_TYPE
@@ -216,7 +212,6 @@ async def select_quiz_type(update: Update, context: CallbackContext) -> int:
     chat_id = query.message.chat_id
     await query.answer()
     callback_data = query.data
-
     context.user_data[f"last_quiz_interaction_message_id_{chat_id}"] = query.message.message_id
 
     if callback_data == "main_menu":
@@ -297,7 +292,6 @@ async def select_course_for_unit_quiz(update: Update, context: CallbackContext) 
     callback_data = query.data
     courses = context.user_data.get("available_courses_for_unit_quiz", [])
     current_page = context.user_data.get("current_course_page_for_unit_quiz", 0)
-
     context.user_data[f"last_quiz_interaction_message_id_{chat_id}"] = query.message.message_id
 
     if callback_data == "quiz_type_back_to_type_selection":
@@ -350,7 +344,6 @@ async def select_unit_for_course(update: Update, context: CallbackContext) -> in
     units = context.user_data.get("available_units_for_course", [])
     current_page = context.user_data.get("current_unit_page_for_course", 0)
     course_name = context.user_data.get("selected_course_name_for_unit_quiz", "المقرر المختار")
-
     context.user_data[f"last_quiz_interaction_message_id_{chat_id}"] = query.message.message_id
 
     if callback_data == "quiz_unit_back_to_course_selection":
@@ -408,7 +401,6 @@ async def select_question_count(update: Update, context: CallbackContext) -> int
     chat_id = query.message.chat_id
     await query.answer()
     callback_data = query.data
-
     context.user_data[f"last_quiz_interaction_message_id_{chat_id}"] = query.message.message_id
 
     quiz_type = context.user_data.get("selected_quiz_type_key")
@@ -480,19 +472,41 @@ async def start_actual_quiz(update: Update, context: CallbackContext, questions_
     quiz_instance_id = str(uuid.uuid4())
     logger.info(f"Starting actual quiz. User: {user_id}, QuizName: '{quiz_name_for_display}', Type: {quiz_type}, ScopeID: {quiz_scope_id_for_db}, NumQs: {num_questions_to_ask}, InstanceID: {quiz_instance_id}")
 
-    db_m_instance = context.bot_data.get("db_manager")
-    if not db_m_instance:
-        logger.warning(f"db_manager not found in context.bot_data for user {user_id} at start_actual_quiz. Trying context.application.bot_data.")
+    # --- DB_MANAGER ACCESS DIAGNOSTICS ---
+    logger.info(f"[DB_DIAG] Attempting to access db_manager for user {user_id} in start_actual_quiz.")
+    logger.info(f"[DB_DIAG] ID of context.application.bot_data: {id(context.application.bot_data) if hasattr(context, 'application') and hasattr(context.application, 'bot_data') else 'N/A'}")
+    logger.info(f"[DB_DIAG] Keys in context.application.bot_data: {list(context.application.bot_data.keys()) if hasattr(context, 'application') and hasattr(context.application, 'bot_data') and isinstance(context.application.bot_data, dict) else 'N/A or Not a dict'}")
+    logger.info(f"[DB_DIAG] ID of context.bot_data: {id(context.bot_data) if hasattr(context, 'bot_data') else 'N/A'}")
+    logger.info(f"[DB_DIAG] Keys in context.bot_data: {list(context.bot_data.keys()) if hasattr(context, 'bot_data') and isinstance(context.bot_data, dict) else 'N/A or Not a dict'}")
+    # --- END DB_MANAGER ACCESS DIAGNOSTICS ---
+
+    db_m_instance = None
+    if hasattr(context, 'application') and hasattr(context.application, 'bot_data') and isinstance(context.application.bot_data, dict):
         db_m_instance = context.application.bot_data.get("db_manager")
+        if db_m_instance:
+            logger.info(f"[DB_DIAG] Found db_manager in context.application.bot_data. Instance ID: {id(db_m_instance)}")
+        else:
+            logger.warning(f"[DB_DIAG] db_manager NOT FOUND in context.application.bot_data for user {user_id}.")
+    else:
+        logger.warning("[DB_DIAG] context.application.bot_data is not available or not a dict.")
+
+    # Fallback attempt if not found in application.bot_data (though it should be there)
+    if not db_m_instance and hasattr(context, 'bot_data') and isinstance(context.bot_data, dict):
+        logger.warning(f"[DB_DIAG] db_manager not in application.bot_data, trying context.bot_data for user {user_id}.")
+        db_m_instance = context.bot_data.get("db_manager")
+        if db_m_instance:
+            logger.info(f"[DB_DIAG] Found db_manager in context.bot_data. Instance ID: {id(db_m_instance)}")
+        else:
+            logger.warning(f"[DB_DIAG] db_manager NOT FOUND in context.bot_data either for user {user_id}.")
+    elif not db_m_instance:
+        logger.warning("[DB_DIAG] context.bot_data also not available or not a dict for fallback.")
 
     if not db_m_instance:
-        logger.critical(f"CRITICAL: db_manager STILL NOT FOUND in context.bot_data or context.application.bot_data at start_actual_quiz for user {user_id}. Quiz stats will NOT be saved.")
-        logger.debug(f"Context bot_data keys at failure: {list(context.bot_data.keys()) if context.bot_data else 'None'}")
-        logger.debug(f"Context application bot_data keys at failure: {list(context.application.bot_data.keys()) if hasattr(context, 'application') and context.application.bot_data else 'None'}")
-        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text="عذرًا، حدث خطأ في تهيئة الاختبار (DB_INIT_FAIL). يرجى المحاولة لاحقًا أو إبلاغ المشرف.", reply_markup=create_quiz_type_keyboard())
+        logger.critical(f"CRITICAL: db_manager STILL NOT FOUND for user {user_id} after checking both context.application.bot_data and context.bot_data. Quiz stats will NOT be saved.")
+        await safe_edit_message_text(context.bot, chat_id=chat_id, message_id=query.message.message_id, text="عذرًا، حدث خطأ في تهيئة الاختبار (DB_ACCESS_FAIL). يرجى المحاولة لاحقًا أو إبلاغ المشرف.", reply_markup=create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
     else:
-        logger.info(f"Successfully retrieved db_manager for user {user_id} in start_actual_quiz.")
+        logger.info(f"Successfully retrieved db_manager for user {user_id} in start_actual_quiz. Instance ID: {id(db_m_instance)}")
 
     quiz_logic_instance = QuizLogic(
         user_id=user_id,
@@ -552,7 +566,7 @@ async def quiz_timeout_handler_entry(update: Update, context: CallbackContext):
 
 quiz_conv_handler = ConversationHandler(
     entry_points=[
-        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"), # Corrected pattern
+        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"),
         CommandHandler("quiz", quiz_menu_entry)
     ],
     states={
@@ -579,14 +593,14 @@ quiz_conv_handler = ConversationHandler(
             CallbackQueryHandler(handle_quiz_answer, pattern="^ans_.+_.+_.+$")
         ],
         SHOWING_RESULTS: [
-            CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"), # Corrected pattern for re-entry
+            CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"),
             CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"),
         ]
     },
     fallbacks=[
         CommandHandler("start", start_command_fallback_for_quiz),
         CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"),
-        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$") # Corrected pattern in fallbacks
+        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")
     ],
     map_to_parent={
         END: MAIN_MENU
