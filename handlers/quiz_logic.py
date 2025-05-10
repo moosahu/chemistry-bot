@@ -14,7 +14,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import ConversationHandler, CallbackContext, JobQueue 
 
 from config import logger, TAKING_QUIZ, END, MAIN_MENU, SHOWING_RESULTS
-from utils.helpers import safe_send_message, safe_edit_message_text, remove_job_if_exists
+from utils.helpers import safe_send_message, safe_edit_message_text, safe_edit_message_caption, remove_job_if_exists
 
 # +++ MODIFICATION: Import DB_MANAGER directly +++
 from database.manager import DB_MANAGER
