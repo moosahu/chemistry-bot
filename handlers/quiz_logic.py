@@ -344,7 +344,7 @@ class QuizLogic:
             return TAKING_QUIZ # Stay in the current state, waiting for a valid answer to the current question
 
         current_question_data = self.questions_data[self.current_question_index]
-        q_id_log = current_question_data.get(	'question_id	', f	'q_idx_{self.current_question_index}	')
+        q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
         chosen_option_text = "غير متوفر"
         correct_option_text = "غير متوفر"
         is_correct = False
@@ -444,7 +444,7 @@ class QuizLogic:
             return
 
         current_question_data = self.questions_data[self.current_question_index]
-        q_id_log = current_question_data.get(	'question_id	', f	'q_idx_{self.current_question_index}	')
+        q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
 
         self.answers.append({
             "question_id": q_id_log,
