@@ -544,7 +544,7 @@ class QuizLogic:
             correct_opt = ans.get("correct_option_text", "-")
             status_emoji = "✅" if ans.get("is_correct") else ("❌" if ans.get("status") == "answered" else ("⏳" if ans.get("status") == "timeout" else "⚠️"))
             
-            part = f"\n{status_emoji} <b>سؤال {i+1}:</b> \"{q_text_short}\"
+            part = f"\n{status_emoji} <b>سؤال {i+1}:</b> \"{q_text_short}\""
             part += f"\n   - اخترت: {chosen_opt}"
             if not ans.get("is_correct") and ans.get("status") != "skipped_auto" and ans.get("status") != "error_sending" and ans.get("status") != "error_sending_final": # Don	 show correct if skipped due to bad data
                 part += f"\n   - الصحيح: {correct_opt}"
