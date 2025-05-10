@@ -427,7 +427,7 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
             quiz_name=quiz_name_full, # Descriptive name
             quiz_type_for_db_log=quiz_type, # e.g., QUIZ_TYPE_ALL, QUIZ_TYPE_UNIT
             quiz_scope_id=quiz_scope_id, # e.g., "all" or unit_id
-            total_questions_for_db_log=num_questions_to_take,
+            total_questions_for_db_log=num_questions,
             time_limit_per_question=DEFAULT_QUESTION_TIME_LIMIT,
             quiz_instance_id_for_logging=quiz_instance_id
         )
