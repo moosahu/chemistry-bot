@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v13 with corrected PicklePersistence init)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v14 with simplified PicklePersistence)."""
 
 import logging
 import sys
@@ -61,7 +61,14 @@ try:
         quiz_conv_handler = None # Keep as None
 
     # --- MODIFIED: Uncommented info and stats handlers imports ---
-    from handlers.info import info_conv_handler
+    # Attempt to import info_conv_handler, handle if not found
+    try:
+        from handlers.info import info_conv_handler
+        logger.info("Successfully imported info_conv_handler from handlers.info")
+    except ImportError:
+        logger.warning("Could not import info_conv_handler from handlers.info. Please ensure the file exists and is correct.")
+        info_conv_handler = None # Ensure it's None if import fails
+        
     from handlers.stats import stats_conv_handler
     # -----------------------------------------------------------
 
@@ -120,22 +127,23 @@ def main() -> None:
             logger.info("Database connection closed after setup.")
     # --- END OF MODIFIED DB SETUP BLOCK ---
 
-    # --- Persistence ---
+    # --- Persistence (Simplified) ---
+    persistence = None # Initialize to None
     try:
         persistence_dir = os.path.join(project_root, 'persistence')
         os.makedirs(persistence_dir, exist_ok=True)
         persistence_file = os.path.join(persistence_dir, 'bot_conversation_persistence.pkl')
         
-        # *** MODIFICATION: Corrected PicklePersistence initialization ***
+        # *** MODIFICATION: Simplified PicklePersistence initialization ***
+        # We are making all ConversationHandlers persistent=False, so the exact
+        # configuration of PicklePersistence regarding store_bot_data is less critical.
+        # The main goal is to have a valid persistence object if possible, or None if not.
         persistence = PicklePersistence(filepath=persistence_file)
-        # store_user_data and store_chat_data default to True.
-        # We only need to explicitly set store_bot_data to False.
-        persistence.store_bot_data = False
-        logger.info(f"PicklePersistence configured at {persistence_file}. store_bot_data is set to False. store_user_data and store_chat_data will use defaults (True).")
+        logger.info(f"PicklePersistence configured at {persistence_file}. All ConversationHandlers should be set to persistent=False.")
 
     except Exception as pers_exc:
-        logger.error(f"Error configuring persistence: {pers_exc}", exc_info=True) # Added exc_info for more details
-        persistence = None
+        logger.error(f"Error configuring persistence: {pers_exc}. Proceeding without persistence.", exc_info=True)
+        persistence = None # Ensure persistence is None if any error occurs
 
     # --- Job Queue Setup ---
     try:
@@ -152,7 +160,7 @@ def main() -> None:
             app_builder = app_builder.persistence(persistence)
             logger.info("Persistence object successfully attached to ApplicationBuilder.")
         else:
-            logger.warning("Persistence object is None. Application will be built without persistence. ConversationHandlers requiring persistence might fail.")
+            logger.warning("Persistence object is None. Application will be built without persistence. Ensure all ConversationHandlers are persistent=False.")
             
         if job_queue: 
             app_builder = app_builder.job_queue(job_queue) 
@@ -161,7 +169,6 @@ def main() -> None:
         logger.info("Telegram Application built.")
 
         # +++ REQUIRED: Add DB_MANAGER to bot_data +++
-        # This will now be the only source of db_manager in bot_data, as it won't be loaded from persistence.
         application.bot_data["db_manager"] = DB_MANAGER
         logger.info(f"DB_MANAGER added to application.bot_data. ID of application.bot_data: {id(application.bot_data)}")
         logger.info(f"DB_MANAGER instance ID: {id(DB_MANAGER)}")
@@ -189,11 +196,17 @@ def main() -> None:
     else:
         print("WARNING: quiz_conv_handler was not imported successfully or failed during import, skipping addition.")
 
-    application.add_handler(info_conv_handler)
-    logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
+    if info_conv_handler:
+        application.add_handler(info_conv_handler)
+        logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
+    else:
+        logger.warning("info_conv_handler was not imported or is None, skipping addition.")
 
-    application.add_handler(stats_conv_handler)
-    logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
+    if stats_conv_handler:
+        application.add_handler(stats_conv_handler)
+        logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
+    else:
+        logger.warning("stats_conv_handler is None, skipping addition.")
 
     logger.info("Adding Admin Statistics handlers...")
     application.add_handler(CommandHandler("adminstats", stats_admin_panel_command_handler))

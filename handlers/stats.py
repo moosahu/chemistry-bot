@@ -1,4 +1,6 @@
-"""Handles displaying user statistics and leaderboards (SYNTAX FIX APPLIED)."""
+"""Handles displaying user statistics and leaderboards (SYNTAX FIX APPLIED).
+(PERSISTENCE_FIX: Set stats_conv_handler to persistent=False)
+"""
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -18,7 +20,7 @@ import matplotlib.pyplot as plt
 # Import necessary components from other modules
 try:
     from config import logger, MAIN_MENU, STATS_MENU, LEADERBOARD_LIMIT
-    from database.manager import DB_MANAGER 
+# from database.manager import DB_MANAGER # MODIFIED: DB_MANAGER will be fetched from context
     from utils.helpers import safe_send_message, safe_edit_message_text, format_duration
     from handlers.common import main_menu_callback # For returning to main menu
 except ImportError as e:
@@ -167,7 +169,8 @@ async def stats_menu(update: Update, context: CallbackContext) -> int:
         keyboard = create_stats_menu_keyboard()
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
     else:
-        logger.warning("stats_menu called without callback query.")
+        # This case might happen if stats_menu is an entry point for a CommandHandler
+        logger.info(f"User {user_id} entered stats menu via command.")
         text = "🏅 اختر الإحصائيات التي تريد عرضها:"
         keyboard = create_stats_menu_keyboard()
         await safe_send_message(context.bot, update.effective_chat.id, text=text, reply_markup=keyboard)
@@ -185,20 +188,21 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
     attachments = []
     stats_text = f"📊 *إحصائياتك المفصلة يا {user_first_name}* 📊\n\n══════════════════════\n📝 ملخص الأداء العام:\n"
 
-    if not DB_MANAGER:
+    db_manager = context.bot_data.get("db_manager")
+    if not db_manager:
         stats_text += "عذراً، خدمة الإحصائيات غير متاحة حالياً بسبب مشكلة في الاتصال بقاعدة البيانات."
     else:
         # These functions need to be implemented in database/manager.py
-        user_overall_stats = DB_MANAGER.get_user_overall_stats(user_id)
-        user_quiz_history_raw = DB_MANAGER.get_user_recent_quiz_history(user_id, limit=5)
+        user_overall_stats = db_manager.get_user_overall_stats(user_id)
+        user_quiz_history_raw = db_manager.get_user_recent_quiz_history(user_id, limit=5)
 
         if not user_overall_stats or user_overall_stats.get("total_quizzes_taken", 0) == 0:
             stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
         else:
-            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get('total_quizzes_taken', 0)}\n"
+            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get("total_quizzes_taken", 0)}\n"
             avg_score = user_overall_stats.get("average_score_percentage", 0.0)
             stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
-            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get('highest_score_percentage', 0.0):.1f}%\n\n"
+            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get("highest_score_percentage", 0.0):.1f}%\n\n"
             total_correct = user_overall_stats.get("total_correct_answers", 0)
             # Calculate total_incorrect from total_questions_attempted and total_correct
             total_questions_attempted = user_overall_stats.get("total_questions_attempted", 0)
@@ -214,8 +218,8 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
             quiz_history_for_charts = []
             if user_quiz_history_raw:
                 for qh_entry in user_quiz_history_raw:
-                    # Ensure qh_entry has \'score\', \'total_questions\', \'percentage\', \'completion_timestamp\'
-                    correct_count = qh_entry.get("score", 0) # Assuming \'score\' from DB is correct count
+                    # Ensure qh_entry has \"score\", \"total_questions\", \"percentage\", \"completion_timestamp\"
+                    correct_count = qh_entry.get("score", 0) # Assuming \"score\" from DB is correct count
                     total_q_in_quiz = qh_entry.get("total_questions", 0)
                     quiz_history_for_charts.append({
                         "score_percentage": qh_entry.get("percentage", 0.0),
@@ -282,10 +286,11 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     leaderboard_text = f"🏆 *لوحة الصدارة (أفضل {LEADERBOARD_LIMIT} لاعبين)*\n\n"
     rank_emojis = ["🥇", "🥈", "🥉"] + ["🏅"] * (LEADERBOARD_LIMIT - 3)
 
-    if DB_MANAGER:
+    db_manager = context.bot_data.get("db_manager")
+    if db_manager:
         # This function get_leaderboard() needs to be implemented in database/manager.py
         # It should query quiz_results, group by user_id, calculate average percentage, count quizzes, and get user display name.
-        leaderboard_data = DB_MANAGER.get_leaderboard(limit=LEADERBOARD_LIMIT)
+        leaderboard_data = db_manager.get_leaderboard(limit=LEADERBOARD_LIMIT)
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
                 rank = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
@@ -302,30 +307,24 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
-    
     return STATS_MENU
 
-# --- Conversation Handler Definition (SYNTAX FIX APPLIED) --- 
+# --- Conversation Handler for Statistics ---
 stats_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(stats_menu, pattern="^menu_stats$")], 
+    entry_points=[CallbackQueryHandler(stats_menu, pattern="^stats_menu$")],
     states={
         STATS_MENU: [
             CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
             CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
-            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"), # Allow returning to stats menu from itself (e.g. after viewing chart)
-            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
+            CallbackQueryHandler(main_menu_callback, pattern="^main_menu$") # Return to main menu
         ]
     },
-    fallbacks=[
-        CommandHandler("start", main_menu_callback),
-        CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"),
-        # Fallback to stats_menu for any other unhandled callback in STATS_MENU state
-        CallbackQueryHandler(stats_menu, pattern=".*") 
-    ],
+    fallbacks=[CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")],
     map_to_parent={
-        MAIN_MENU: MAIN_MENU,
+        MAIN_MENU: MAIN_MENU # Or END if you want to end the conversation entirely
     },
-    persistent=True, # Consider if persistence is truly needed here or if it causes issues
-    name="stats_conversation"
+    per_message=False,
+    name="stats_conversation",
+    persistent=False # *** MODIFICATION: Set persistent to False ***
 )
 
