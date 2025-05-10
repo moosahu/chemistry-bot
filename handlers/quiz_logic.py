@@ -305,7 +305,7 @@ class QuizLogic:
                 feedback_text = original_message.caption if original_message.caption else original_message.text
                 feedback_text = (feedback_text or "") + f"\n\n✅ تم استلام إجابتك."
                 if original_message.photo: # If it was a photo question
-                    await safe_edit_message_text(context.bot, self.chat_id, self.last_question_message_id, caption=feedback_text, reply_markup=None, parse_mode="HTML")
+                    await safe_edit_message_caption(context.bot, self.chat_id, self.last_question_message_id, caption=feedback_text, reply_markup=None, parse_mode="HTML")
                 else:
                     await safe_edit_message_text(context.bot, self.chat_id, self.last_question_message_id, text=feedback_text, reply_markup=None, parse_mode="HTML")
             except Exception as e_edit: logger.warning(f"[QuizLogic {self.quiz_id}] Failed to edit last main question message: {e_edit}")
@@ -346,7 +346,7 @@ class QuizLogic:
                 feedback_text = original_message.caption if original_message.caption else original_message.text
                 feedback_text = (feedback_text or "") + "\n\n⌛ انتهى الوقت لهذا السؤال."
                 if original_message.photo:
-                    await safe_edit_message_text(context.bot, self.chat_id, main_q_msg_id, caption=feedback_text, parse_mode="HTML")
+                    await safe_edit_message_caption(context.bot, self.chat_id, main_q_msg_id, caption=feedback_text, parse_mode="HTML")
                 else:
                     await safe_edit_message_text(context.bot, self.chat_id, main_q_msg_id, text=feedback_text, parse_mode="HTML")
             except Exception as e_edit_timeout: logger.warning(f"[QuizLogic Timeout] Failed to edit main question message on timeout: {e_edit_timeout}")
