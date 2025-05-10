@@ -74,12 +74,17 @@ def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> 
         return None
     grades = {"ممتاز (90+)": 0, "جيد جداً (80-89)": 0, "جيد (70-79)": 0, "مقبول (60-69)": 0, "يحتاج تحسين (<60)": 0}
     for quiz in quiz_history:
-        score = quiz.get("score_percentage", 0)
-        if score >= 90: grades["ممتاز (90+)"] += 1
-        elif score >= 80: grades["جيد جداً (80-89)"] += 1
-        elif score >= 70: grades["جيد (70-79)"] += 1
-        elif score >= 60: grades["مقبول (60-69)"] += 1
-        else: grades["يحتاج تحسين (<60)"] += 1
+        score = quiz.get("score_percentage") # Keep as is, might be None
+        # Check if score is not None before comparison
+        if score is not None:
+            if score >= 90: grades["ممتاز (90+)"] += 1
+            elif score >= 80: grades["جيد جداً (80-89)"] += 1
+            elif score >= 70: grades["جيد (70-79)"] += 1
+            elif score >= 60: grades["مقبول (60-69)"] += 1
+            else: grades["يحتاج تحسين (<60)"] += 1
+        else:
+            # Optionally, log or handle quizzes with None score if needed, e.g., count them in a separate category
+            logger.warning(f"[Stats Chart] Quiz entry for user {user_id} has None score_percentage. Skipping for grade distribution.")
     
     if all(v == 0 for v in grades.values()): return None
 
