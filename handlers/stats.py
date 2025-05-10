@@ -423,7 +423,8 @@ async def admin_stats_fetch_and_display(update: Update, context: CallbackContext
     stats_text += "\n"
 
     stats_text += f"❓ *إحصائيات الأسئلة ({display_period}):*\n"
-    stats_text += "  - الأسئلة الأكثر صعوبة (أعلى 3 نسبة خطأ):\n"    if question_difficulty['most_difficult']:
+    stats_text += "  - الأسئلة الأكثر صعوبة (أعلى 3 نسبة خطأ):\n"
+    if question_difficulty['most_difficult']:
         for i, q_diff in enumerate(question_difficulty['most_difficult']):
             q_text_short = q_diff['question_text'][:50] + "..." if len(q_diff['question_text']) > 50 else q_diff['question_text']
             stats_text += f"    {i+1}. \"{q_text_short}\" (ID: {q_diff['question_id']}) - نسبة الخطأ: {q_diff['incorrect_percentage']:.1f}% ({q_diff['incorrect_count']}/{q_diff['total_attempts']})\n"
