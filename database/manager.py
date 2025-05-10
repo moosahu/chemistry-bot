@@ -401,3 +401,40 @@ class DatabaseManager:
 
 # Instantiate the DatabaseManager for global use
 DB_MANAGER = DatabaseManager()
+
+    def get_overall_average_score(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching overall average score for period: {time_filter}.")
+        base_query = "SELECT COALESCE(AVG(score_percentage), 0.0) as average_score FROM quiz_results WHERE completed_at IS NOT NULL"
+        
+        filter_condition = ""
+        if time_filter == "today":
+            filter_condition = " AND DATE(completed_at) = CURRENT_DATE"
+        elif time_filter == "week":
+            filter_condition = " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
+        elif time_filter == "month":
+            filter_condition = " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
+            
+        query = base_query + filter_condition + ";"
+        result = self._execute_query(query, fetch_one=True)
+        avg_score = result["average_score"] if result and "average_score" in result else 0.0
+        logger.info(f"[DB Admin Stats] Overall average score for period {time_filter}: {avg_score:.2f}%")
+        return float(avg_score)
+
+    def get_average_quiz_duration(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching average quiz duration for period: {time_filter}.")
+        base_query = "SELECT COALESCE(AVG(time_taken_seconds), 0.0) as average_duration FROM quiz_results WHERE completed_at IS NOT NULL AND time_taken_seconds IS NOT NULL"
+        
+        filter_condition = ""
+        if time_filter == "today":
+            filter_condition = " AND DATE(completed_at) = CURRENT_DATE"
+        elif time_filter == "week":
+            filter_condition = " AND completed_at >= date_trunc('week', CURRENT_TIMESTAMP)"
+        elif time_filter == "month":
+            filter_condition = " AND completed_at >= date_trunc('month', CURRENT_TIMESTAMP)"
+            
+        query = base_query + filter_condition + ";"
+        result = self._execute_query(query, fetch_one=True)
+        avg_duration = result["average_duration"] if result and "average_duration" in result else 0.0
+        logger.info(f"[DB Admin Stats] Average quiz duration for period {time_filter}: {avg_duration:.2f} seconds")
+        return float(avg_duration)
+
