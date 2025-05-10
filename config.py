@@ -47,6 +47,8 @@ MAIN_MENU, QUIZ_MENU, SELECT_QUIZ_TYPE, SELECT_QUIZ_SCOPE, \
 ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, INFO_MENU, STATS_MENU, SHOW_INFO_DETAIL, \
 SELECT_COURSE_FOR_UNIT_QUIZ, SELECT_UNIT_FOR_COURSE = range(12) # Extended range to include new states (10 and 11)
 
+ADMIN_STATS_MENU = 12 # Added for admin stats menu (placeholder if not used directly by conv handler)
+
 # Fallback state
 END = ConversationHandler.END
 
