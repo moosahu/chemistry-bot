@@ -426,7 +426,7 @@ class QuizLogic:
         msg_to_edit_id = context.user_data.get(f"last_quiz_interaction_message_id_{self.chat_id}")
         kbd_after_results = InlineKeyboardMarkup([ [InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="stats_menu")], [InlineKeyboardButton("✨ ابدأ اختباراً جديداً", callback_data="quiz_menu")], [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")] ])
 
-         if msg_to_edit_id:
+        if msg_to_edit_id:
             edited_successfully = False
             logger.debug(f"[QuizLogic {self.quiz_id}] Attempting to update results message {msg_to_edit_id}.")
 
