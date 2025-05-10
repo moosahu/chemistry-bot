@@ -399,9 +399,6 @@ class DatabaseManager:
             logger.error(f"[DB Results] Failed to update (end) quiz session {quiz_session_uuid} in DB.")
         return success
 
-# Instantiate the DatabaseManager for global use
-DB_MANAGER = DatabaseManager()
-
     def get_overall_average_score(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching overall average score for period: {time_filter}.")
         base_query = "SELECT COALESCE(AVG(score_percentage), 0.0) as average_score FROM quiz_results WHERE completed_at IS NOT NULL"
@@ -438,3 +435,5 @@ DB_MANAGER = DatabaseManager()
         logger.info(f"[DB Admin Stats] Average quiz duration for period {time_filter}: {avg_duration:.2f} seconds")
         return float(avg_duration)
 
+# Instantiate the DatabaseManager for global use
+DB_MANAGER = DatabaseManager()
