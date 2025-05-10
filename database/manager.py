@@ -154,13 +154,12 @@ class DatabaseManager:
         
         session_uuid = str(uuid.uuid4())
         
-        query_insert_start = """
-        INSERT INTO quiz_results (
-            user_id, quiz_type, filter_id, quiz_name, total_questions, start_time, quiz_id_uuid, score, score_percentage
-            -- wrong_answers, skipped_answers, completed_at, time_taken_seconds, answers_details are implicitly NULL
+        query_insert_s        INSERT INTO quiz_results (
+            user_id, quiz_type, filter_id, quiz_name, total_questions, start_time, quiz_id_uuid, score, percentage
+            -- wrong_answers, skipped_answers, score_percentage, completed_at, time_taken_seconds, answers_details are implicitly NULL
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
-        """
+ """
         params = (user_id, quiz_type, quiz_scope_id, quiz_name, total_questions, start_time, session_uuid, score, initial_percentage)
         success = self._execute_query(query_insert_start, params, commit=True)
         
