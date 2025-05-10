@@ -3,6 +3,7 @@ Conversation handler for the quiz selection and execution flow.
 (DB_MANAGER_PASS_FIX: Passes db_manager instance directly to QuizLogic)
 (SHOW_RESULTS_FIX: Ensures last_quiz_interaction_message_id is updated)
 (QUIZ_MENU_ENTRY_FIX: Handles both CallbackQuery and Command inputs)
+(CALLBACK_PATTERN_FIX: Changed entry point pattern to match 'start_quiz')
 """
 
 import logging
@@ -551,7 +552,7 @@ async def quiz_timeout_handler_entry(update: Update, context: CallbackContext):
 
 quiz_conv_handler = ConversationHandler(
     entry_points=[
-        CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_menu_entry$"),
+        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"), # Corrected pattern
         CommandHandler("quiz", quiz_menu_entry)
     ],
     states={
@@ -578,14 +579,14 @@ quiz_conv_handler = ConversationHandler(
             CallbackQueryHandler(handle_quiz_answer, pattern="^ans_.+_.+_.+$")
         ],
         SHOWING_RESULTS: [
-            CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_menu_entry$"),
+            CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"), # Corrected pattern for re-entry
             CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"),
         ]
     },
     fallbacks=[
         CommandHandler("start", start_command_fallback_for_quiz),
         CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"),
-        CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_menu_entry$")
+        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$") # Corrected pattern in fallbacks
     ],
     map_to_parent={
         END: MAIN_MENU
