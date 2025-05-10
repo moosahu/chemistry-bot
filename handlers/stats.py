@@ -240,7 +240,10 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
                     total_q = test_entry.get("total_questions", 0)
                     incorrect_ans = total_q - correct_ans
                     details_str = "(صحيحة: {}, خاطئة: {})".format(correct_ans, incorrect_ans)
-                    stats_text += "{}. بتاريخ {}: {:.1f}% {}\n".format(i + 1, test_date, score_percent, details_str)
+                    if score_percent is not None:
+                        stats_text += "{}. بتاريخ {}: {:.1f}% {}\n".format(i + 1, test_date, score_percent, details_str)
+                    else:
+                        stats_text += "{}. بتاريخ {}: {} {}\n".format(i + 1, test_date, "N/A", details_str)
             stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
