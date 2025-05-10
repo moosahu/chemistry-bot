@@ -1,4 +1,4 @@
-"""Handles displaying user statistics and leaderboards (SYNTAX FIX APPLIED).
+"""Handles displaying user statistics and leaderboards (MODIFIED TO IMPORT DB_MANAGER DIRECTLY).
 (PERSISTENCE_FIX: Set stats_conv_handler to persistent=False)
 (FSTRING_DEBUG: Changed one f-string to .format() in show_my_stats)
 """
@@ -17,6 +17,10 @@ from datetime import datetime
 import matplotlib
 matplotlib.use("Agg") # Use Agg backend for non-interactive plotting
 import matplotlib.pyplot as plt
+
+# +++ MODIFICATION: Import DB_MANAGER directly +++
+from database.manager import DB_MANAGER
+# +++++++++++++++++++++++++++++++++++++++++++++++
 
 # Import necessary components from other modules
 try:
@@ -170,9 +174,13 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
     attachments = []
     stats_text = f"📊 *إحصائياتك المفصلة يا {user_first_name}* 📊\n\n══════════════════════\n📝 ملخص الأداء العام:\n"
 
-    db_manager = context.bot_data.get("db_manager")
+    # +++ MODIFICATION: Use imported DB_MANAGER +++
+    db_manager = DB_MANAGER
+    # +++++++++++++++++++++++++++++++++++++++++++
     if not db_manager:
         stats_text += "عذراً، خدمة الإحصائيات غير متاحة حالياً بسبب مشكلة في الاتصال بقاعدة البيانات."
+        # Log if DB_MANAGER is None after import (e.g. its own init failed)
+        logger.critical(f"[Stats] CRITICAL: Imported DB_MANAGER is None or not initialized! Database operations will fail for user {user_id}.")
     else:
         user_overall_stats = db_manager.get_user_overall_stats(user_id)
         user_quiz_history_raw = db_manager.get_user_recent_quiz_history(user_id, limit=LEADERBOARD_LIMIT)
@@ -221,7 +229,6 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
                     correct_ans = test_entry.get("score", 0)
                     total_q = test_entry.get("total_questions", 0)
                     incorrect_ans = total_q - correct_ans
-                    # MODIFIED LINE: Using .format() instead of f-string for diagnostics
                     details_str = "(صحيحة: {}, خاطئة: {})".format(correct_ans, incorrect_ans)
                     stats_text += "{}. بتاريخ {}: {:.1f}% {}\n".format(i + 1, test_date, score_percent, details_str)
             stats_text += "\n══════════════════════\n💡 نصيحة: استمر في التعلم والممارسة لتحسين نتائجك!"
@@ -261,7 +268,9 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     leaderboard_text = f"🏆 *لوحة الصدارة (أفضل {LEADERBOARD_LIMIT} لاعبين)*\n\n"
     rank_emojis = ["🥇", "🥈", "🥉"] + ["🏅"] * (LEADERBOARD_LIMIT - 3)
 
-    db_manager = context.bot_data.get("db_manager")
+    # +++ MODIFICATION: Use imported DB_MANAGER +++
+    db_manager = DB_MANAGER
+    # +++++++++++++++++++++++++++++++++++++++++++
     if db_manager:
         leaderboard_data = db_manager.get_leaderboard(limit=LEADERBOARD_LIMIT)
         if leaderboard_data:
@@ -277,6 +286,8 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
     else:
         leaderboard_text += "عذراً، لا يمكن استرجاع لوحة الصدارة حالياً (مشكلة في قاعدة البيانات)."
+        # Log if DB_MANAGER is None after import
+        logger.critical(f"[Stats] CRITICAL: Imported DB_MANAGER is None or not initialized! Leaderboard cannot be fetched for user {user_id}.")
 
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")

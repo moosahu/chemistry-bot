@@ -1,17 +1,22 @@
 """Manages the logic for conducting a quiz, including sending questions, handling answers, and calculating results."""
-# handlers/quiz_logic.py (NAMEERROR_FIX)
+# handlers/quiz_logic.py (Modified to import DB_MANAGER directly)
 
 import asyncio
 import logging
 import time
-import uuid # Not strictly needed if quiz_instance_id_for_logging is always provided
+import uuid 
 import telegram # For telegram.error types
-from datetime import datetime, timezone # Ensure timezone is imported
+from datetime import datetime, timezone 
 import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot 
 from telegram.ext import ConversationHandler, CallbackContext, JobQueue 
-from config import logger, TAKING_QUIZ, END, MAIN_MENU, SHOWING_RESULTS # SHOWING_RESULTS needed for return states
+
+from config import logger, TAKING_QUIZ, END, MAIN_MENU, SHOWING_RESULTS
 from utils.helpers import safe_send_message, safe_edit_message_text, remove_job_if_exists
+
+# +++ MODIFICATION: Import DB_MANAGER directly +++
+from database.manager import DB_MANAGER
+# +++++++++++++++++++++++++++++++++++++++++++++++
 
 MIN_OPTIONS_PER_QUESTION = 2
 
@@ -20,8 +25,7 @@ class QuizLogic:
 
     def __init__(self, user_id, chat_id, questions, quiz_name,
                  quiz_type_for_db_log, quiz_scope_id, total_questions_for_db_log,
-                 time_limit_per_question, quiz_instance_id_for_logging, 
-                 db_manager_instance):
+                 time_limit_per_question, quiz_instance_id_for_logging):
         
         self.user_id = user_id
         self.chat_id = chat_id
@@ -35,26 +39,29 @@ class QuizLogic:
         self.question_time_limit = time_limit_per_question
         self.quiz_id = quiz_instance_id_for_logging 
         
-        self.db_manager = db_manager_instance
+        # +++ MODIFICATION: Use imported DB_MANAGER +++
+        self.db_manager = DB_MANAGER
+        # +++++++++++++++++++++++++++++++++++++++++++
         
         self.current_question_index = 0
         self.score = 0
         self.answers = [] 
         self.question_start_time = None
         self.quiz_actual_start_time_dt = None
-        self.last_question_message_id = None # Retained for potential use, but show_results relies on user_data
+        self.last_question_message_id = None
         self.last_question_is_image = False
         self.active = False
         self.db_quiz_session_id = None
 
         if not self.db_manager:
-            logger.critical(f"[QuizLogic {self.quiz_id}] CRITICAL: db_manager_instance was None at __init__! Database operations will fail.")
+            # This check might still be relevant if DB_MANAGER itself could be None after import (e.g., if its own init fails)
+            logger.critical(f"[QuizLogic {self.quiz_id}] CRITICAL: Imported DB_MANAGER is None or not initialized! Database operations will fail.")
         
         self.total_questions = len(self.questions_data)
         if self.total_questions != self.total_questions_for_db:
              logger.warning(f"[QuizLogic {self.quiz_id}] Mismatch: total_questions_for_db ({self.total_questions_for_db}) vs actual len(questions_data) ({self.total_questions}). Using actual len for quiz flow, but total_questions_for_db for initial DB log.")
 
-        logger.debug(f"[QuizLogic {self.quiz_id}] Initialized. User: {self.user_id}, Chat: {self.chat_id}, QuizName: '{self.quiz_name}', DBQuizType: {self.quiz_type_for_db}, DBScopeID: {self.quiz_scope_id_for_db}, NumQsForDB: {self.total_questions_for_db}, ActualNumQs: {self.total_questions}. DB Manager Present: {bool(self.db_manager)}")
+        logger.debug(f"[QuizLogic {self.quiz_id}] Initialized. User: {self.user_id}, Chat: {self.chat_id}, QuizName: 	'{self.quiz_name}	', DBQuizType: {self.quiz_type_for_db}, DBScopeID: {self.quiz_scope_id_for_db}, NumQsForDB: {self.total_questions_for_db}, ActualNumQs: {self.total_questions}. DB Manager Present: {bool(self.db_manager)}")
 
     async def start_quiz(self, bot: Bot, context: CallbackContext, update: Update) -> int:
         logger.info(f"[QuizLogic {self.quiz_id}] start_quiz called for user {self.user_id}, chat {self.chat_id}")
@@ -127,9 +134,9 @@ class QuizLogic:
             button_text_str = str(button_text).strip()
             if not button_text_str: 
                 button_text_str = f"خيار {i + 1}"
-            if len(button_text_str.encode('utf-8')) > 60:
-                temp_bytes = button_text_str.encode('utf-8')[:57]
-                button_text_str = temp_bytes.decode('utf-8', 'ignore') + "..."
+            if len(button_text_str.encode(	'utf-8	')) > 60:
+                temp_bytes = button_text_str.encode(	'utf-8	')[:57]
+                button_text_str = temp_bytes.decode(	'utf-8	', 	'ignore	') + "..."
             callback_data = f"ans_{self.quiz_id}_{self.current_question_index}_{option_id}"
             keyboard.append([InlineKeyboardButton(text=button_text_str, callback_data=callback_data)])
         return InlineKeyboardMarkup(keyboard)
@@ -141,7 +148,7 @@ class QuizLogic:
 
         while self.current_question_index < self.total_questions:
             current_question_data = self.questions_data[self.current_question_index]
-            q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
+            q_id_log = current_question_data.get(	'question_id	', f	'q_idx_{self.current_question_index}	')
             options = current_question_data.get("options", [])
 
             if len(options) < MIN_OPTIONS_PER_QUESTION:
@@ -175,20 +182,20 @@ class QuizLogic:
                         display_label = self.ARABIC_CHOICE_LETTERS[option_image_counter] if option_image_counter < len(self.ARABIC_CHOICE_LETTERS) else f"صورة {option_image_counter + 1}"
                         logger.info(f"[QuizLogic {self.quiz_id}] Sending image option {i} (caption: {display_label}), q_id {q_id_log}. URL: {option_text_original}")
                         await bot.send_photo(chat_id=self.chat_id, photo=option_text_original, caption=f"الخيار: {display_label}")
-                        current_option_proc['is_image_option'] = True
-                        current_option_proc['image_option_display_label'] = display_label 
+                        current_option_proc[	'is_image_option	'] = True
+                        current_option_proc[	'image_option_display_label	'] = display_label 
                         option_image_counter += 1 
                         await asyncio.sleep(0.3) 
                     except Exception as e_img_opt:
                         logger.error(f"[QuizLogic {self.quiz_id}] Failed to send image option {i} (URL: {option_text_original}), q_id {q_id_log}: {e_img_opt}", exc_info=True)
-                        current_option_proc['is_image_option'] = False
-                        current_option_proc['image_option_display_label'] = None 
+                        current_option_proc[	'is_image_option	'] = False
+                        current_option_proc[	'image_option_display_label	'] = None 
                 else:
-                    current_option_proc['is_image_option'] = False 
-                    current_option_proc['image_option_display_label'] = None
+                    current_option_proc[	'is_image_option	'] = False 
+                    current_option_proc[	'image_option_display_label	'] = None
                 processed_options.append(current_option_proc)
             
-            current_question_data['options'] = processed_options 
+            current_question_data[	'options	'] = processed_options 
             options_keyboard = self.create_options_keyboard(processed_options)
             header = f"<b>السؤال {self.current_question_index + 1} من {self.total_questions}:</b>\n"
             image_url = current_question_data.get("image_url")
@@ -259,469 +266,437 @@ class QuizLogic:
             
             if sent_message:
                 self.last_question_message_id = sent_message.message_id
-                # Store the message_id of the question sent in user_data for show_results
-                if context and hasattr(context, 'user_data'):
+                if context and hasattr(context, 	'user_data	'):
                      context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = sent_message.message_id
                 self.question_start_time = time.time()
                 if self.question_time_limit > 0:
-                    timer_job_name = f"question_timer_{self.quiz_id}_{self.current_question_index}"
+                    timer_job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
                     remove_job_if_exists(timer_job_name, context)
                     context.job_queue.run_once(
-                        question_timeout_callback_wrapper, 
+                        self.question_timeout_auto_skip, 
                         self.question_time_limit, 
-                        data={
-                            "quiz_id": self.quiz_id,
-                            "user_id": self.user_id, 
-                            "chat_id": self.chat_id, 
-                            "question_index": self.current_question_index,
-                            "message_id": self.last_question_message_id,
-                            "question_was_image": self.last_question_is_image
-                        }, 
-                        name=timer_job_name
+                        chat_id=self.chat_id, 
+                        name=timer_job_name,
+                        data={ 	'quiz_id	': self.quiz_id, 	'question_index_at_schedule	': self.current_question_index, 	'message_id_to_edit	': sent_message.message_id, 	'is_photo_question	': self.last_question_is_image}
                     )
-                    logger.debug(f"[QuizLogic {self.quiz_id}] Timeout job '{timer_job_name}' scheduled for {self.question_time_limit}s for q_idx {self.current_question_index}")
-                return TAKING_QUIZ 
+                    logger.info(f"[QuizLogic {self.quiz_id}] Timer job 	'{timer_job_name}	' scheduled for {self.question_time_limit}s for q_idx {self.current_question_index}")
+                return TAKING_QUIZ # Wait for user's answer
             else:
-                logger.error(f"[QuizLogic {self.quiz_id}] sent_message was None after attempting to send q_idx {self.current_question_index}. This shouldn't happen if continue was hit.")
-                await safe_send_message(bot, self.chat_id, "حدث خطأ غير متوقع أثناء محاولة عرض السؤال التالي. سيتم إنهاء الاختبار.")
-                await self.cleanup_quiz_data(context, self.user_id, "send_question_critical_failure")
-                return END
+                logger.error(f"[QuizLogic {self.quiz_id}] Failed to send question {q_id_log} (idx {self.current_question_index}) after all attempts. Skipping.")
+                self.answers.append({
+                    "question_id": q_id_log,
+                    "question_text": question_text_display,
+                    "chosen_option_id": None,
+                    "chosen_option_text": "خطأ فادح في إرسال السؤال",
+                    "correct_option_id": None,
+                    "correct_option_text": self._get_correct_option_text_robust(current_question_data, for_skip=True),
+                    "is_correct": False,
+                    "time_taken": -996, 
+                    "status": "error_sending_final"
+                })
+                self.current_question_index += 1
+                await asyncio.sleep(0.1) # Small delay before trying next question or ending
+                # No return here, loop will continue to next question or exit if all skipped
 
-        logger.info(f"[QuizLogic {self.quiz_id}] All questions sent for user {self.user_id}.")
-        return await self.show_results(bot, context, update)
+        # If loop finishes, all questions are processed or skipped
+        logger.info(f"[QuizLogic {self.quiz_id}] All questions processed or skipped. Proceeding to show results. User {self.user_id}")
+        return await self.show_results(context.bot, context, update) # Pass update if available
 
-    async def handle_answer(self, update: Update, context: CallbackContext, **kwargs):
+    async def handle_answer(self, update: Update, context: CallbackContext) -> int:
         if not self.active:
-            logger.warning(f"[QuizLogic N/A] handle_answer: inactive quiz instance for user {self.user_id}. Callback: {update.callback_query.data if update.callback_query else 'NoCallback'}. Aborting.")
-            if update.callback_query:
-                try:
-                    await update.callback_query.answer(text="هذا الاختبار لم يعد نشطاً.")
-                except Exception as e_ans_inactive:
-                    logger.error(f"[QuizLogic N/A] Error sending inactive answer confirmation: {e_ans_inactive}")
-            return TAKING_QUIZ
+            logger.warning(f"[QuizLogic {self.quiz_id}] handle_answer: inactive. User {self.user_id}. Aborting.")
+            # Try to send a message to the user that the quiz is no longer active
+            try:
+                await safe_send_message(context.bot, chat_id=self.chat_id, text="انتهى هذا الاختبار أو لم يعد صالحاً.")
+            except Exception as e:
+                logger.error(f"[QuizLogic {self.quiz_id}] Error sending inactive quiz message: {e}")
+            return END 
 
         query = update.callback_query
-        await query.answer()
-
-        try:
-            parts = query.data.split("_")
-            if len(parts) < 4 or parts[0] != "ans":
-                raise ValueError("Callback data does not match expected format 'ans_quizid_qindex_optid' or is too short.")
-            
-            chosen_option_id = parts[-1]
-            q_index_str = parts[-2]
-            quiz_id_from_cb = "_".join(parts[1:-2])
-            q_index_from_cb = int(q_index_str)
-        except (ValueError, IndexError) as e:
-            logger.error(f"[QuizLogic {self.quiz_id if hasattr(self, 'quiz_id') else 'CB_PARSE_FAIL'}] Invalid callback_data format: {query.data}. Error: {e}")
-            await safe_edit_message_text(context.bot, self.chat_id, query.message.message_id, "حدث خطأ في معالجة إجابتك (بيانات خاطئة).", reply_markup=None)
-            return TAKING_QUIZ
-
-        if not hasattr(self, 'quiz_id') or self.quiz_id != quiz_id_from_cb:
-            logger.warning(f"[QuizLogic {self.quiz_id if hasattr(self, 'quiz_id') else 'N/A'}] Mismatched quiz_id in callback. Instance: {self.quiz_id}, CB: {quiz_id_from_cb}. User {self.user_id}. Ignoring.")
-            try:
-                await query.edit_message_text(text=query.message.text + "\n\n(إجابة من اختبار سابق أو غير صالح)", reply_markup=None)
-            except Exception as e_edit_old:
-                logger.debug(f"[QuizLogic {self.quiz_id if hasattr(self, 'quiz_id') else 'N/A'}] Failed to edit message for old/mismatched quiz answer: {e_edit_old}")
-            return TAKING_QUIZ 
-
-        if self.current_question_index != q_index_from_cb:
-            logger.warning(f"[QuizLogic {self.quiz_id}] Mismatched question_index in callback. Current: {self.current_question_index}, CB: {q_index_from_cb}. User {self.user_id}. Ignoring (likely late answer).")
-            try:
-                await query.edit_message_text(text=query.message.text + "\n\n(إجابة متأخرة لسؤال سابق)", reply_markup=None)
-            except Exception as e_edit_late:
-                logger.debug(f"[QuizLogic {self.quiz_id}] Failed to edit message for late answer: {e_edit_late}")
-            return TAKING_QUIZ
-
-        time_taken = -1
-        if self.question_start_time:
-            time_taken = time.time() - self.question_start_time
+        await query.answer() # Acknowledge callback
         
-        timer_job_name = f"question_timer_{self.quiz_id}_{self.current_question_index}"
+        time_taken = -1 # Default if question_start_time is None
+        if self.question_start_time:
+            time_taken = round(time.time() - self.question_start_time, 2)
+
+        # --- Cancel Timer --- 
+        timer_job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
         remove_job_if_exists(timer_job_name, context)
-        logger.debug(f"[QuizLogic {self.quiz_id}] Answer received for q_idx {self.current_question_index}. Timer job '{timer_job_name}' removed if it existed.")
+        logger.debug(f"[QuizLogic {self.quiz_id}] Timer job 	'{timer_job_name}	' removed for q_idx {self.current_question_index} due to answer.")
+
+        # --- Parse Callback Data --- 
+        # Expected format: "ans_{quiz_id}_{question_index}_{option_id}"
+        try:
+            _, quiz_id_from_cb, q_idx_from_cb_str, chosen_option_id_from_cb = query.data.split(	'_	', 3)
+            q_idx_from_cb = int(q_idx_from_cb_str)
+        except ValueError as ve:
+            logger.error(f"[QuizLogic {self.quiz_id}] Invalid callback_data format: {query.data}. Error: {ve}")
+            # Potentially resend question or end quiz if data is corrupt
+            await safe_send_message(context.bot, self.chat_id, "حدث خطأ في معالجة اختيارك. قد تحتاج لإعادة بدأ الاختبار.")
+            return END # Or resend current question if possible
+
+        # --- Validate Callback Data --- 
+        if quiz_id_from_cb != self.quiz_id or q_idx_from_cb != self.current_question_index:
+            logger.warning(f"[QuizLogic {self.quiz_id}] Mismatched callback data. Expected quiz_id 	'{self.quiz_id}	' (got 	'{quiz_id_from_cb}	'), q_idx 	'{self.current_question_index}	' (got 	'{q_idx_from_cb}	'). Ignoring old/invalid callback: {query.data}")
+            # Do not proceed with this answer, it's for a previous question or different quiz instance
+            # User might have clicked an old button. We don't resend the current question here as it might be confusing.
+            # We simply ignore this outdated callback.
+            return TAKING_QUIZ # Stay in the current state, waiting for a valid answer to the current question
 
         current_question_data = self.questions_data[self.current_question_index]
-        q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
-        options = current_question_data.get("options", [])
-        correct_option_id = current_question_data.get("correct_option_id")
-        
-        chosen_option_text = f"(خيار ID: {chosen_option_id} غير موجود)" 
+        q_id_log = current_question_data.get(	'question_id	', f	'q_idx_{self.current_question_index}	')
+        chosen_option_text = "غير متوفر"
+        correct_option_text = "غير متوفر"
         is_correct = False
-        option_found = False
+        correct_option_id_internal = None
 
-        for option_data in options:
-            if str(option_data.get("option_id")) == str(chosen_option_id):
-                option_found = True
-                if option_data.get('is_image_option'):
-                    img_label = option_data.get('image_option_display_label')
-                    chosen_option_text = f"الخيار المصور: {img_label}" if img_label else f"(صورة الخيار {chosen_option_id})"
-                else:
-                    opt_text = option_data.get("option_text")
-                    chosen_option_text = opt_text if opt_text and str(opt_text).strip() else f"(نص الخيار {chosen_option_id} فارغ)"
-                
-                if correct_option_id is not None and str(chosen_option_id) == str(correct_option_id):
-                    self.score += 1
+        # Find chosen option and correct option details
+        found_chosen = False
+        for option in current_question_data.get("options", []):
+            option_id_internal = option.get("option_id")
+            option_text_internal = option.get("option_text", "")
+            is_image_opt_internal = option.get("is_image_option", False)
+            image_label_internal = option.get("image_option_display_label", "")
+
+            current_opt_display_text = image_label_internal if is_image_opt_internal else option_text_internal
+
+            if str(option_id_internal) == str(chosen_option_id_from_cb):
+                chosen_option_text = current_opt_display_text
+                found_chosen = True
+            
+            if option.get("is_correct") is True: # Assuming API provides this
+                correct_option_text = current_opt_display_text
+                correct_option_id_internal = option_id_internal
+                if str(option_id_internal) == str(chosen_option_id_from_cb):
                     is_correct = True
-                elif correct_option_id is None:
-                    is_correct = None 
-                break
         
-        if not option_found:
-            logger.warning(f"[QuizLogic {self.quiz_id}] Chosen option ID {chosen_option_id} not found in question {self.current_question_index} options.")
+        if not found_chosen:
+            logger.warning(f"[QuizLogic {self.quiz_id}] Chosen option_id 	'{chosen_option_id_from_cb}	' not found in current question	's options (q_id {q_id_log}). This might indicate an issue with option_id generation or callback data.")
+            # Fallback, consider it an invalid choice for this question
+            chosen_option_text = f"اختيار غير صالح ({chosen_option_id_from_cb})"
+            is_correct = False
+
+        if correct_option_id_internal is None:
+            logger.error(f"[QuizLogic {self.quiz_id}] No correct option found (is_correct: True) in question data for q_id {q_id_log}. Cannot determine correctness.")
+            # This is a data integrity issue with the question itself.
+            # We will record the answer but correctness might be wrongly false.
 
         self.answers.append({
             "question_id": q_id_log,
-            "question_text": current_question_data.get("question_text", ""),
-            "chosen_option_id": chosen_option_id,
+            "question_text": current_question_data.get("question_text", "نص السؤال غير متوفر"),
+            "chosen_option_id": chosen_option_id_from_cb,
             "chosen_option_text": chosen_option_text,
-            "correct_option_id": correct_option_id,
-            "correct_option_text": self._get_correct_option_text_robust(current_question_data),
+            "correct_option_id": correct_option_id_internal,
+            "correct_option_text": correct_option_text,
             "is_correct": is_correct,
             "time_taken": time_taken,
             "status": "answered"
         })
 
+        if is_correct:
+            self.score += 1
+
+        # --- Edit previous question message to remove buttons and show feedback (optional) ---
+        # For now, we will just remove buttons to prevent re-answering.
+        # Feedback can be shown in the final results or immediately.
+        message_id_to_edit = query.message.message_id
+        original_question_text_for_edit = query.message.text or query.message.caption # Handle both text and photo questions
+        
+        feedback_text = " (تم اختيار: " + chosen_option_text + ")"
+        if original_question_text_for_edit:
+            new_text_for_edited_message = original_question_text_for_edit + feedback_text
+        else: # Should not happen if message_id_to_edit is valid
+            new_text_for_edited_message = "تم تسجيل إجابتك." + feedback_text
+
         try:
-            caption_or_text_to_edit = query.message.caption_html if query.message.photo else query.message.text_html
-            if not caption_or_text_to_edit: 
-                caption_or_text_to_edit = query.message.caption if query.message.photo else query.message.text
-            if not caption_or_text_to_edit: 
-                caption_or_text_to_edit = "" 
-
-            safe_chosen_opt_text = chosen_option_text if chosen_option_text is not None else "(خطأ في عرض الخيار)"
-
-            # Store message_id of the edited confirmation message for show_results
-            if context and hasattr(context, 'user_data'):
-                 context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = query.message.message_id
-
-            if query.message.photo:
-                await query.edit_message_caption(caption=caption_or_text_to_edit + f"\n<i><b>إجابتك ({safe_chosen_opt_text}) تم تسجيلها.</b></i>", reply_markup=None, parse_mode='HTML')
-            else:
-                await query.edit_message_text(text=caption_or_text_to_edit + f"\n<i><b>إجابتك ({safe_chosen_opt_text}) تم تسجيلها.</b></i>", reply_markup=None, parse_mode='HTML')
-            logger.debug(f"[QuizLogic {self.quiz_id}] Edited message for q_idx {self.current_question_index} after answer.")
+            if query.message.photo: # If it was a photo question
+                await safe_edit_message_text(context.bot, chat_id=self.chat_id, message_id=message_id_to_edit, text=new_text_for_edited_message, parse_mode="HTML", reply_markup=None, is_caption=True)
+            else: # Text question
+                await safe_edit_message_text(context.bot, chat_id=self.chat_id, message_id=message_id_to_edit, text=new_text_for_edited_message, parse_mode="HTML", reply_markup=None)
+            logger.debug(f"[QuizLogic {self.quiz_id}] Edited message {message_id_to_edit} for q_idx {self.current_question_index} to remove keyboard.")
         except telegram.error.BadRequest as e:
             if "message is not modified" in str(e).lower():
-                logger.debug(f"[QuizLogic {self.quiz_id}] Message for q_idx {self.current_question_index} not modified, or already changed: {e}")
+                logger.debug(f"[QuizLogic {self.quiz_id}] Message {message_id_to_edit} was not modified (already edited or no change). Error: {e}")
             else:
-                logger.warning(f"[QuizLogic {self.quiz_id}] Failed to edit message for q_idx {self.current_question_index} after answer: {e}")
+                logger.error(f"[QuizLogic {self.quiz_id}] Error editing message {message_id_to_edit} for q_idx {self.current_question_index}: {e}", exc_info=True)
         except Exception as e_edit:
-            logger.warning(f"[QuizLogic {self.quiz_id}] Generic fail to edit message for q_idx {self.current_question_index} after answer: {e_edit}")
+            logger.error(f"[QuizLogic {self.quiz_id}] Unexpected error editing message {message_id_to_edit} for q_idx {self.current_question_index}: {e_edit}", exc_info=True)
 
         self.current_question_index += 1
-        return await self.send_question(context.bot, context, update)
+        if self.current_question_index < self.total_questions:
+            return await self.send_question(context.bot, context, update) # Pass update for potential message_id
+        else:
+            logger.info(f"[QuizLogic {self.quiz_id}] All questions answered. Proceeding to show results. User {self.user_id}")
+            return await self.show_results(context.bot, context, update)
 
-    async def handle_timeout(self, bot: Bot, context: CallbackContext):
-        if not self.active:
-            logger.warning(f"[QuizLogic {self.quiz_id}] handle_timeout: inactive. User {self.user_id}. Aborting.")
-            return TAKING_QUIZ
+    async def question_timeout_auto_skip(self, context: CallbackContext):
+        job_data = context.job.data
+        quiz_id_from_job = job_data.get(	'quiz_id	')
+        question_index_from_job = job_data.get(	'question_index_at_schedule	')
+        message_id_to_edit = job_data.get(	'message_id_to_edit	')
+        is_photo_question = job_data.get(	'is_photo_question	', False)
 
-        logger.info(f"[QuizLogic {self.quiz_id}] Timeout for q_idx {self.current_question_index}, user {self.user_id}")
-        
+        logger.info(f"[QuizLogic {self.quiz_id}] Timeout job triggered for quiz_id: {quiz_id_from_job}, q_idx: {question_index_from_job}")
+
+        # --- Validate Job Data and Quiz State ---
+        if not self.active or quiz_id_from_job != self.quiz_id or question_index_from_job != self.current_question_index:
+            logger.warning(f"[QuizLogic {self.quiz_id}] Timeout job for quiz_id 	'{quiz_id_from_job}	'/q_idx 	'{question_index_from_job}	' is stale or quiz inactive. Current quiz_id: 	'{self.quiz_id}	', q_idx: 	'{self.current_question_index}	', active: {self.active}. Ignoring.")
+            return
+
         current_question_data = self.questions_data[self.current_question_index]
-        q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
+        q_id_log = current_question_data.get(	'question_id	', f	'q_idx_{self.current_question_index}	')
 
         self.answers.append({
             "question_id": q_id_log,
-            "question_text": current_question_data.get("question_text", ""),
+            "question_text": current_question_data.get("question_text", "نص السؤال غير متوفر"),
             "chosen_option_id": None,
             "chosen_option_text": "انتهى الوقت",
-            "correct_option_id": current_question_data.get("correct_option_id"),
-            "correct_option_text": self._get_correct_option_text_robust(current_question_data),
+            "correct_option_id": None, # Or try to get it if available
+            "correct_option_text": self._get_correct_option_text_robust(current_question_data, for_skip=True),
             "is_correct": False,
-            "time_taken": self.question_time_limit,
+            "time_taken": self.question_time_limit, # Or slightly more to indicate timeout
             "status": "timeout"
         })
-        
-        # Store message_id of the timed-out question message for show_results (if it was edited or a new one sent)
-        # This part is tricky as handle_timeout doesn't always edit the message directly.
-        # The timer job has 'message_id' of the question that timed out.
-        # For now, we rely on quiz.py to set last_quiz_interaction_message_id correctly.
-        # Or, if the question message itself was edited to show timeout, its ID would be relevant.
-        # The current timeout logic in quiz.py calls this, then this calls send_question.
-        # The message being edited for timeout is handled by question_timeout_callback_wrapper in quiz.py
-        # which then calls this handle_timeout method. So the interaction message_id should be set by the wrapper.
+
+        # --- Edit message to indicate timeout and remove keyboard ---
+        if message_id_to_edit:
+            timeout_feedback = "\n\n⏳ *انتهى وقت هذا السؤال.*	"
+            try:
+                # Fetch the original message text/caption to append to it
+                original_message = await context.bot.edit_message_reply_markup(chat_id=self.chat_id, message_id=message_id_to_edit, reply_markup=None) # First remove keyboard
+                
+                current_text_or_caption = ""
+                if is_photo_question and original_message.caption:
+                    current_text_or_caption = original_message.caption
+                elif not is_photo_question and original_message.text:
+                    current_text_or_caption = original_message.text
+                else: # Fallback if text/caption is somehow None after edit_reply_markup
+                    current_text_or_caption = "السؤال السابق"
+
+                new_text_with_timeout = current_text_or_caption + timeout_feedback
+
+                if is_photo_question:
+                    await safe_edit_message_text(context.bot, chat_id=self.chat_id, message_id=message_id_to_edit, text=new_text_with_timeout, parse_mode="MarkdownV2", reply_markup=None, is_caption=True)
+                else:
+                    await safe_edit_message_text(context.bot, chat_id=self.chat_id, message_id=message_id_to_edit, text=new_text_with_timeout, parse_mode="MarkdownV2", reply_markup=None)
+                logger.info(f"[QuizLogic {self.quiz_id}] Edited message {message_id_to_edit} for q_idx {self.current_question_index} to show timeout.")
+            except telegram.error.BadRequest as e:
+                if "message is not modified" in str(e).lower() or "message to edit not found" in str(e).lower():
+                    logger.warning(f"[QuizLogic {self.quiz_id}] Message {message_id_to_edit} not modified or not found on timeout for q_idx {self.current_question_index}. Error: {e}")
+                else:
+                    logger.error(f"[QuizLogic {self.quiz_id}] Error editing message {message_id_to_edit} on timeout for q_idx {self.current_question_index}: {e}", exc_info=True)
+            except Exception as e_timeout_edit:
+                 logger.error(f"[QuizLogic {self.quiz_id}] Unexpected error editing message {message_id_to_edit} on timeout for q_idx {self.current_question_index}: {e_timeout_edit}", exc_info=True)
+        else:
+            logger.warning(f"[QuizLogic {self.quiz_id}] No message_id_to_edit provided in timeout job for q_idx {self.current_question_index}. Cannot update message.")
 
         self.current_question_index += 1
-        return await self.send_question(bot, context) 
+        if self.current_question_index < self.total_questions:
+            await self.send_question(context.bot, context) # No update object here
+        else:
+            logger.info(f"[QuizLogic {self.quiz_id}] All questions processed (last one timed out). Proceeding to show results. User {self.user_id}")
+            await self.show_results(context.bot, context) # No update object here
 
     def _get_correct_option_text_robust(self, question_data, for_skip=False):
-        correct_option_id = question_data.get("correct_option_id")
-        if correct_option_id is None:
-            return "(لا توجد إجابة صحيحة محددة)" if not for_skip else "(غير محدد)"
+        """Safely gets the text/label of the correct option."""
+        try:
+            for option in question_data.get("options", []):
+                if option.get("is_correct") is True:
+                    if option.get("is_image_option") and option.get("image_option_display_label"):
+                        return option.get("image_option_display_label")
+                    elif option.get("option_text"):
+                        return option.get("option_text")
+                    else:
+                        return "الخيار الصحيح (بدون نص/تسمية)"
+            return "غير محدد (لا يوجد خيار صحيح)" if not for_skip else "-"
+        except Exception as e:
+            logger.error(f"[QuizLogic {self.quiz_id}] Error in _get_correct_option_text_robust: {e}")
+            return "خطأ في تحديد الإجابة الصحيحة" if not for_skip else "-"
 
-        options = question_data.get("options", [])
-        for option in options:
-            if str(option.get("option_id")) == str(correct_option_id):
-                if option.get('is_image_option'):
-                    img_label = option.get('image_option_display_label')
-                    return f"الخيار المصور: {img_label}" if img_label else f"(صورة الخيار {correct_option_id})"
-                
-                opt_text = option.get("option_text")
-                return opt_text if opt_text and str(opt_text).strip() else f"(نص الخيار الصحيح {correct_option_id} فارغ)"
-        
-        return f"(لم يتم العثور على نص الخيار الصحيح ID: {correct_option_id})"
-
-    async def show_results(self, bot: Bot, context: CallbackContext, update: Update = None):
+    async def show_results(self, bot: Bot, context: CallbackContext, update: Update = None) -> int:
         logger.info(f"[QuizLogic {self.quiz_id}] show_results called for user {self.user_id}. Score: {self.score}/{self.total_questions}")
+        self.active = False # Quiz is no longer active for answering
+        quiz_end_time_dt = datetime.now(timezone.utc)
 
-        summary_text = f"<b>ملخص اختبار '{self.quiz_name if self.quiz_name else 'غير مسمى'}' الخاص بك:</b>\n"
-        summary_text += f"مجموع النقاط: {self.score} من {self.total_questions}\n\n"
+        # --- Cancel any lingering timer (should not happen if logic is correct, but good for safety) ---
+        # This would be for the *next* question if one was about to be sent, or the current if it was mid-send_question
+        timer_job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+        remove_job_if_exists(timer_job_name, context)
+        logger.debug(f"[QuizLogic {self.quiz_id}] Ensured timer job 	'{timer_job_name}	' (for potential q_idx {self.current_question_index}) is removed at show_results.")
 
-        for i, ans_data in enumerate(self.answers):
-            q_text = ans_data.get("question_text") or f"(نص السؤال {i+1} غير متوفر)"
-            chosen_opt_text = ans_data.get("chosen_option_text")
-            correct_opt_text = ans_data.get("correct_option_text") or "(الإجابة الصحيحة غير محددة)"
-            is_corr = ans_data.get("is_correct")
-            status = ans_data.get("status", "unknown")
-
-            summary_text += f"<b>السؤال {i+1}:</b> {q_text}\n"
-            
-            chosen_opt_display = chosen_opt_text
-            if chosen_opt_text is None or str(chosen_opt_text).strip() == "" or str(chosen_opt_text).strip().upper() == "N/A":
-                if status == "timeout":
-                    chosen_opt_display = "انتهى الوقت"
-                elif status == "skipped_auto":
-                    chosen_opt_display = "تم تخطي السؤال (خيارات غير كافية)"
-                elif status == "error_sending":
-                     chosen_opt_display = "خطأ في إرسال السؤال"
-                else:
-                    chosen_opt_display = "(لم تتم الإجابة أو خطأ في تسجيلها)"
-                    
-            correct_opt_display = correct_opt_text
-            if correct_opt_text is None or str(correct_opt_text).strip() == "":
-                correct_opt_display = "(الإجابة الصحيحة غير متوفرة)"
-
-            if status == "answered":
-                corr_status_text = ""
-                if is_corr is True:
-                    corr_status_text = "صحيحة"
-                elif is_corr is False:
-                    corr_status_text = "خاطئة"
-                else: 
-                    corr_status_text = "(لا يوجد تصحيح)"
-                summary_text += f"إجابتك: {chosen_opt_display} ({corr_status_text})\n"
-                if not is_corr and is_corr is not None:
-                    summary_text += f"الإجابة الصحيحة: {correct_opt_display}\n"
-            elif status == "timeout":
-                summary_text += f"إجابتك: {chosen_opt_display}\n"
-                summary_text += f"الإجابة الصحيحة: {correct_opt_display}\n"
-            elif status == "skipped_auto":
-                summary_text += f"الحالة: {chosen_opt_display}\n"
-            elif status == "error_sending":
-                summary_text += f"الحالة: {chosen_opt_display}\n"
-            else:
-                summary_text += f"إجابتك: {chosen_opt_display if chosen_opt_display else '(غير مسجلة)'}\n"
-                if status != "answered" or (status == "answered" and not is_corr and is_corr is not None):
-                     summary_text += f"الإجابة الصحيحة: {correct_opt_display}\n"
-            summary_text += "\n"
+        results_summary = f"🏁 <b>نتائج اختبار: {self.quiz_name}</b> 🏁\n\n"
+        results_summary += f"✨ نتيجتك: {self.score} من {self.total_questions} ✨\n"
+        percentage = (self.score / self.total_questions * 100) if self.total_questions > 0 else 0
+        results_summary += f"🎯 النسبة المئوية: {percentage:.2f}%\n"
         
-        summary_text += f"\n🎉 نتيجتك النهائية: {self.score} من {self.total_questions} 🎉"
-        
-        final_text_to_display = summary_text
-
-        keyboard_buttons = [
-            [InlineKeyboardButton("ابدأ اختباراً جديداً", callback_data="quiz_menu_entry")],
-            [InlineKeyboardButton("📊 عرض إحصائياتي", callback_data="quiz_show_my_stats")],
-            [InlineKeyboardButton("القائمة الرئيسية", callback_data="main_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard_buttons)
-
-        message_id_to_edit = context.user_data.get(f"last_quiz_interaction_message_id_{self.chat_id}")
-        
-        edited_successfully = False
-        if message_id_to_edit:
-            logger.info(f"[QuizLogic {self.quiz_id}] Attempting to edit message {message_id_to_edit} for results.")
-            try:
-                await bot.edit_message_text(
-                    chat_id=self.chat_id,
-                    message_id=message_id_to_edit,
-                    text=final_text_to_display,
-                    reply_markup=reply_markup,
-                    parse_mode="HTML"
-                )
-                edited_successfully = True
-                logger.info(f"[QuizLogic {self.quiz_id}] Successfully edited message {message_id_to_edit} with results.")
-            except telegram.error.BadRequest as e_bad_request:
-                logger.warning(f"[QuizLogic {self.quiz_id}] BadRequest when editing message {message_id_to_edit} for results: {e_bad_request}. Details: {e_bad_request.message}. Will send new message.")
-            except Exception as e_generic_edit:
-                logger.error(f"[QuizLogic {self.quiz_id}] Generic error editing message {message_id_to_edit} for results: {e_generic_edit}. Will send new message.", exc_info=True)
+        # Calculate duration
+        duration_seconds = (quiz_end_time_dt - self.quiz_actual_start_time_dt).total_seconds() if self.quiz_actual_start_time_dt else -1
+        if duration_seconds >= 0:
+            results_summary += f"⏱️ الوقت المستغرق: {int(duration_seconds // 60)} دقيقة و {int(duration_seconds % 60)} ثانية\n"
         else:
-            logger.warning(f"[QuizLogic {self.quiz_id}] No 'last_quiz_interaction_message_id_{self.chat_id}' found in user_data. Will send new message for results.")
+            results_summary += f"⏱️ الوقت المستغرق: غير متوفر\n"
+        results_summary += "\n📝 <b>تفاصيل إجاباتك:</b>\n"
 
-        if not edited_successfully:
-            logger.info(f"[QuizLogic {self.quiz_id}] Sending new message for results as edit failed or was not possible.")
-            try:
-                await bot.send_message(
-                    chat_id=self.chat_id,
-                    text=final_text_to_display,
-                    reply_markup=reply_markup,
-                    parse_mode="HTML"
-                )
-                logger.info(f"[QuizLogic {self.quiz_id}] Successfully sent new message with results.")
-            except Exception as e_send_new:
-                logger.error(f"[QuizLogic {self.quiz_id}] Failed to send new message with results: {e_send_new}", exc_info=True)
-                try:
-                    await bot.send_message(chat_id=self.chat_id, text=f"انتهى الاختبار. نتيجتك: {self.score}/{self.total_questions}. حدث خطأ في عرض التفاصيل الكاملة.")
-                except Exception as e_fallback_send:
-                    logger.critical(f"[QuizLogic {self.quiz_id}] Failed even to send fallback results message: {e_fallback_send}")
+        detailed_answers_parts = []
+        for i, ans in enumerate(self.answers):
+            q_text_short = ans.get("question_text", "سؤال غير متوفر")[:50] + ("..." if len(ans.get("question_text", "")) > 50 else "")
+            chosen_opt = ans.get("chosen_option_text", "لم يتم الاختيار")
+            correct_opt = ans.get("correct_option_text", "-")
+            status_emoji = "✅" if ans.get("is_correct") else ("❌" if ans.get("status") == "answered" else ("⏳" if ans.get("status") == "timeout" else "⚠️"))
+            
+            part = f"\n{status_emoji} <b>سؤال {i+1}:</b> \"{q_text_short}\"
+            part += f"\n   - اخترت: {chosen_opt}"
+            if not ans.get("is_correct") and ans.get("status") != "skipped_auto" and ans.get("status") != "error_sending" and ans.get("status") != "error_sending_final": # Don	 show correct if skipped due to bad data
+                part += f"\n   - الصحيح: {correct_opt}"
+            
+            # Add explanation if available and answer was wrong or if always showing explanations
+            # For now, let's assume we only show explanation if the question data has it and answer was not correct
+            question_data_for_explanation = next((q for q_idx, q in enumerate(self.questions_data) if q_idx == i), None) # Find original question data
+            if question_data_for_explanation:
+                explanation = question_data_for_explanation.get("explanation")
+                if explanation and (not ans.get("is_correct") or True): # Modify `or True` to control when to show
+                    part += f"\n   - 💡 التوضيح: {explanation}"
+            detailed_answers_parts.append(part)
 
+        # --- Log results to DB ---
         if self.db_manager and self.db_quiz_session_id:
             try:
-                quiz_end_time = datetime.now(timezone.utc)
-                self.db_manager.log_quiz_completion(
+                # Convert answers to JSON string for DB storage
+                answers_json = json.dumps(self.answers, ensure_ascii=False) 
+                self.db_manager.end_quiz_session(
                     quiz_session_uuid=self.db_quiz_session_id,
-                    user_id=self.user_id,
+                    end_time=quiz_end_time_dt,
                     score=self.score,
-                    total_questions_answered=len(self.answers),
-                    end_time=quiz_end_time,
-                    answers_details=self.answers
+                    total_answered=len([a for a in self.answers if a.get("status")=="answered"]),
+                    answers_details_json=answers_json,
+                    duration_seconds=int(duration_seconds) if duration_seconds >=0 else None
                 )
-                logger.info(f"[QuizLogic {self.quiz_id}] Quiz completion logged to DB for session {self.db_quiz_session_id}")
-            except Exception as e_db_complete:
-                logger.error(f"[QuizLogic {self.quiz_id}] Error logging quiz completion to DB: {e_db_complete}", exc_info=True)
+                logger.info(f"[QuizLogic {self.quiz_id}] Quiz results for session {self.db_quiz_session_id} logged to DB successfully.")
+            except Exception as e:
+                logger.error(f"[QuizLogic {self.quiz_id}] Exception while logging quiz results to DB for session {self.db_quiz_session_id}: {e}", exc_info=True)
         elif not self.db_manager:
-            logger.warning(f"[QuizLogic {self.quiz_id}] db_manager is not available. Cannot log quiz completion to DB.")
+             logger.warning(f"[QuizLogic {self.quiz_id}] db_manager is not available. Cannot log quiz results to DB.")
         elif not self.db_quiz_session_id:
-            logger.warning(f"[QuizLogic {self.quiz_id}] db_quiz_session_id is None. Cannot log quiz completion to DB.")
+             logger.warning(f"[QuizLogic {self.quiz_id}] db_quiz_session_id is None. Cannot log quiz results to DB (likely quiz start failed to log).")
 
-        self.active = False 
-        await self.cleanup_quiz_data(context, self.user_id, "quiz_completed_show_results")
-        return SHOWING_RESULTS
+        # --- Send results to user --- 
+        # Determine the message_id to edit or if we need to send a new message
+        message_to_edit_id = None
+        if context and hasattr(context, 'user_data') and f"last_quiz_interaction_message_id_{self.chat_id}" in context.user_data:
+            message_to_edit_id = context.user_data.pop(f"last_quiz_interaction_message_id_{self.chat_id}", None)
+            logger.debug(f"[QuizLogic {self.quiz_id}] Retrieved message_id {message_to_edit_id} from user_data for editing results.")
+        elif update and update.callback_query and update.callback_query.message:
+            # Fallback if the specific user_data key wasn't set, use the last callback query's message
+            message_to_edit_id = update.callback_query.message.message_id
+            logger.debug(f"[QuizLogic {self.quiz_id}] Using callback_query message_id {message_to_edit_id} as fallback for editing results.")
+        else:
+            logger.warning(f"[QuizLogic {self.quiz_id}] No message_id found in user_data or update to edit for results. Will send as new message.")
+
+        # Split results if too long
+        MAX_MSG_LENGTH = 4000 # Telegram's limit is 4096, leave some buffer
+        current_message_content = results_summary
+        final_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="stats_menu_entry")],
+            [InlineKeyboardButton("العودة إلى القائمة الرئيسية", callback_data="main_menu")]
+        ])
+
+        for part_detail in detailed_answers_parts:
+            if len(current_message_content.encode(	'utf-8	')) + len(part_detail.encode(	'utf-8	')) > MAX_MSG_LENGTH - 100: # Buffer for keyboard etc.
+                # Send current part
+                if message_to_edit_id:
+                    await safe_edit_message_text(bot, chat_id=self.chat_id, message_id=message_to_edit_id, text=current_message_content, parse_mode="HTML", reply_markup=None) # No keyboard on intermediate parts
+                    message_to_edit_id = None # Subsequent parts must be new messages
+                else:
+                    await safe_send_message(bot, chat_id=self.chat_id, text=current_message_content, parse_mode="HTML", reply_markup=None)
+                current_message_content = "(تابع تفاصيل إجاباتك...)\n" + part_detail
+                await asyncio.sleep(0.2) # Small delay between messages
+            else:
+                current_message_content += part_detail
+        
+        # Send the last part (or the only part if it all fits)
+        try:
+            if message_to_edit_id:
+                await safe_edit_message_text(bot, chat_id=self.chat_id, message_id=message_to_edit_id, text=current_message_content, reply_markup=final_keyboard, parse_mode="HTML")
+                logger.info(f"[QuizLogic {self.quiz_id}] Edited message {message_to_edit_id} with final results.")
+            else:
+                await safe_send_message(bot, chat_id=self.chat_id, text=current_message_content, reply_markup=final_keyboard, parse_mode="HTML")
+                logger.info(f"[QuizLogic {self.quiz_id}] Sent final results as a new message.")
+        except Exception as e_send_results:
+            logger.error(f"[QuizLogic {self.quiz_id}] Error sending/editing final results message: {e_send_results}", exc_info=True)
+            # Fallback: try sending a very simple message if the detailed one failed
+            try:
+                simple_fallback_text = f"انتهى الاختبار! نتيجتك: {self.score}/{self.total_questions}. حدث خطأ في عرض التفاصيل."
+                await safe_send_message(bot, chat_id=self.chat_id, text=simple_fallback_text, reply_markup=final_keyboard)
+            except Exception as e_fallback_simple:
+                logger.error(f"[QuizLogic {self.quiz_id}] Error sending even simple fallback results: {e_fallback_simple}")
+
+        await self.cleanup_quiz_data(context, self.user_id, "quiz_completed_normally")
+        return SHOWING_RESULTS # Or END, depending on desired flow after results
 
     async def cleanup_quiz_data(self, context: CallbackContext, user_id: int, reason: str):
-        logger.debug(f"[QuizLogic {self.quiz_id}] cleanup_quiz_data called for user {user_id}. Reason: {reason}")
+        logger.info(f"[QuizLogic {self.quiz_id}] Cleaning up quiz data for user {user_id}. Reason: {reason}")
         self.active = False
-        # Clean up any pending timers associated with this specific quiz instance
-        if hasattr(context, 'job_queue') and context.job_queue:
-            for job in context.job_queue.jobs():
-                if job.name and self.quiz_id in job.name: # Check if quiz_id is part of job name
-                    job.schedule_removal()
-                    logger.debug(f"[QuizLogic {self.quiz_id}] Removed job: {job.name}")
+        # Remove quiz instance from user_data if it was stored there
+        if context and hasattr(context, 'user_data') and f"quiz_logic_instance_{user_id}" in context.user_data:
+            del context.user_data[f"quiz_logic_instance_{user_id}"]
+            logger.debug(f"[QuizLogic {self.quiz_id}] Removed quiz_logic_instance_{user_id} from user_data.")
         
-        # Clear quiz-specific data from user_data
-        if context.user_data.get("current_quiz_instance_id") == self.quiz_id:
-            context.user_data.pop(self.quiz_id, None) # Remove the quiz instance itself
-            context.user_data.pop("current_quiz_instance_id", None)
-            logger.debug(f"[QuizLogic {self.quiz_id}] Cleared quiz instance and current_quiz_instance_id from user_data for user {user_id}.")
-        else:
-            # This case might happen if cleanup is called after a new quiz has already started for the user
-            # or if current_quiz_instance_id was already cleared. Still attempt to remove the instance by its ID.
-            context.user_data.pop(self.quiz_id, None)
-            logger.debug(f"[QuizLogic {self.quiz_id}] Cleared quiz instance (by ID) from user_data for user {user_id}. 'current_quiz_instance_id' might have been different or already cleared.")
+        # Remove any associated job (should have been done, but as a safeguard)
+        # This needs to know the current_question_index at the time of cleanup, which might be tricky
+        # For now, we assume timers are handled at answer/timeout/end_quiz points.
+        # If a quiz is abruptly ended (e.g., by /cancel), specific timer cleanup might be missed if not handled by the cancel command itself.
 
-    async def end_quiz(self, bot: Bot, context: CallbackContext, update: Update, manual_end: bool = False, reason_suffix: str = "ended_manually", called_from_fallback: bool = False):
-        logger.info(f"[QuizLogic {self.quiz_id}] end_quiz called for user {self.user_id}. Manual: {manual_end}. Reason suffix: {reason_suffix}. Called from fallback: {called_from_fallback}")
-        self.active = False 
+        # Reset internal state for safety, though the instance should be discarded
+        self.questions_data = []
+        self.answers = []
+        self.current_question_index = 0
+        self.score = 0
+        logger.info(f"[QuizLogic {self.quiz_id}] Cleanup complete for user {user_id}.")
 
-        end_message = "تم إنهاء الاختبار."
-        if manual_end:
-            end_message = "لقد أنهيت الاختبار يدوياً."
-        
-        # Try to edit the last known message if possible, otherwise send a new one.
-        # If called from a fallback (like /start), update.callback_query might not exist.
-        message_to_edit_id = None
-        chat_id_for_message = self.chat_id
+# Example of how this might be used by the quiz handler (handlers/quiz.py)
+# This is conceptual and would be in the actual handler file.
 
-        if not called_from_fallback and update and update.callback_query and update.callback_query.message:
-            message_to_edit_id = update.callback_query.message.message_id
-            chat_id_for_message = update.callback_query.message.chat_id
-        elif self.last_question_message_id: # Fallback to last question message ID if available
-            message_to_edit_id = self.last_question_message_id
-        # If still no message_id, we'll have to send a new one.
+# async def start_actual_quiz(update: Update, context: CallbackContext):
+#     user_id = update.effective_user.id
+#     chat_id = update.effective_chat.id
+#     quiz_type = context.user_data.get("selected_quiz_type")
+#     num_questions = context.user_data.get("selected_num_questions")
+#     quiz_name = "Some Quiz Name" # Derived from quiz_type or other logic
+#     quiz_scope_id = context.user_data.get("selected_scope_id") # e.g., course_id, unit_id
 
-        keyboard_main_menu = InlineKeyboardMarkup([[InlineKeyboardButton("القائمة الرئيسية", callback_data="main_menu")]])
+#     # 1. Fetch questions using api_client.py
+#     # This is a placeholder for actual API call logic
+#     raw_api_questions = await some_api_fetching_function(quiz_type, num_questions, quiz_scope_id)
+#     if not raw_api_questions or raw_api_questions == "TIMEOUT" or not isinstance(raw_api_questions, list):
+#         await update.callback_query.edit_message_text("فشل في جلب الأسئلة من الـ API. يرجى المحاولة لاحقاً.")
+#         return END
 
-        if message_to_edit_id:
-            try:
-                # Determine if the message to edit was a photo
-                # This is tricky without knowing the exact message type. 
-                # For simplicity, try editing as text. If it fails with "message can't be edited" or similar, send new.
-                await safe_edit_message_text(bot, chat_id=chat_id_for_message, message_id=message_to_edit_id, text=end_message, reply_markup=keyboard_main_menu)
-                logger.info(f"[QuizLogic {self.quiz_id}] Edited message {message_to_edit_id} to show quiz ended.")
-            except Exception as e_edit_end:
-                logger.warning(f"[QuizLogic {self.quiz_id}] Failed to edit message {message_to_edit_id} on manual end ({e_edit_end}). Sending new message.")
-                await safe_send_message(bot, chat_id=chat_id_for_message, text=end_message, reply_markup=keyboard_main_menu)
-        else:
-            await safe_send_message(bot, chat_id=chat_id_for_message, text=end_message, reply_markup=keyboard_main_menu)
+#     # 2. Transform questions
+#     transformed_questions = []
+#     for raw_q in raw_api_questions:
+#         transformed_q = transform_api_question(raw_q) # from api_client.py
+#         if transformed_q:
+#             transformed_questions.append(transformed_q)
+#         else:
+#             logger.warning(f"Failed to transform question: {raw_q.get('id')}")
+    
+#     if not transformed_questions:
+#         await update.callback_query.edit_message_text("فشل في معالجة الأسئلة بعد جلبها. يرجى المحاولة لاحقاً.")
+#         return END
 
-        # Log partial completion if answers exist and DB manager is available
-        if self.db_manager and self.db_quiz_session_id and self.answers:
-            try:
-                quiz_end_time = datetime.now(timezone.utc)
-                self.db_manager.log_quiz_completion(
-                    quiz_session_uuid=self.db_quiz_session_id,
-                    user_id=self.user_id,
-                    score=self.score,
-                    total_questions_answered=len(self.answers),
-                    end_time=quiz_end_time,
-                    answers_details=self.answers,
-                    status_override="terminated_manually" if manual_end else "terminated_early"
-                )
-                logger.info(f"[QuizLogic {self.quiz_id}] Quiz early termination logged to DB for session {self.db_quiz_session_id}")
-            except Exception as e_db_terminate:
-                logger.error(f"[QuizLogic {self.quiz_id}] Error logging quiz early termination to DB: {e_db_terminate}", exc_info=True)
-        
-        await self.cleanup_quiz_data(context, self.user_id, f"quiz_{reason_suffix}")
-        return END
-
-async def question_timeout_callback_wrapper(context: CallbackContext):
-    job_data = context.job.data
-    quiz_id = job_data.get("quiz_id")
-    user_id = job_data.get("user_id")
-    chat_id = job_data.get("chat_id")
-    question_index = job_data.get("question_index")
-    message_id = job_data.get("message_id") # Message ID of the question that timed out
-    question_was_image = job_data.get("question_was_image", False)
-
-    logger.info(f"Timeout callback for quiz {quiz_id}, user {user_id}, q_idx {question_index}")
-
-    quiz_instance = context.user_data.get(quiz_id)
-    if isinstance(quiz_instance, QuizLogic) and quiz_instance.active and quiz_instance.current_question_index == question_index:
-        logger.debug(f"[WrapperTimeout {quiz_id}] Quiz instance found and active for q_idx {question_index}. Calling handle_timeout.")
-        
-        # Edit the timed-out question's message to indicate timeout
-        timeout_text_suffix = "\n\n<i><b>انتهى الوقت لهذا السؤال.</b></i>"
-        try:
-            if question_was_image:
-                original_caption = ""
-                # Attempt to get original caption - this is hard without the message object
-                # For now, just append. If bot.edit_message_caption is used, it replaces.
-                # We need to be careful. Let's assume we just append to a generic placeholder if we can't get it.
-                # A better way would be for QuizLogic to store the caption/text when sending.
-                # For now, we'll just try to edit the reply_markup and add a simple note.
-                await context.bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
-                # And send a new message or try to append to caption if possible (hard).
-                # The report's suggestion for show_results to send new message on error is a good pattern.
-                # Let's try to edit the caption if it's an image message.
-                # This is risky as we don't have the original caption easily.
-                # Simpler: just remove buttons. User will see next q or results.
-            else:
-                # For text messages, try to append to existing text.
-                # This also requires getting the original text, which is not directly available here.
-                # await context.bot.edit_message_text(text= ??? + timeout_text_suffix, chat_id=chat_id, message_id=message_id, reply_markup=None, parse_mode='HTML')
-                pass # For now, let QuizLogic handle advancing and user will see next question or results.
-            # The primary job of the timeout is to advance the quiz state.
-            # Editing the message here is secondary and can be complex.
-            # Let's ensure last_quiz_interaction_message_id is updated if we *do* edit something successfully.
-            if message_id:
-                 context.user_data[f"last_quiz_interaction_message_id_{chat_id}"] = message_id
-
-        except telegram.error.BadRequest as e:
-            if "message is not modified" in str(e).lower():
-                logger.debug(f"[WrapperTimeout {quiz_id}] Timed out question message {message_id} not modified (already changed or no markup). {e}")
-            else:
-                logger.warning(f"[WrapperTimeout {quiz_id}] Failed to edit timed out question message {message_id}: {e}")
-        except Exception as e_edit_timeout:
-            logger.warning(f"[WrapperTimeout {quiz_id}] Generic error editing timed out question message {message_id}: {e_edit_timeout}")
-
-        next_state = await quiz_instance.handle_timeout(context.bot, context)
-        # If next_state is SHOWING_RESULTS or END, the conversation might end here.
-        # If it's TAKING_QUIZ, a new question was sent by handle_timeout -> send_question.
-    elif not isinstance(quiz_instance, QuizLogic):
-        logger.warning(f"[WrapperTimeout {quiz_id}] No QuizLogic instance found in user_data for quiz_id {quiz_id}. User: {user_id}")
-    elif not quiz_instance.active:
-        logger.info(f"[WrapperTimeout {quiz_id}] Quiz instance found but not active for q_idx {question_index}. User: {user_id}. Quiz might have ended.")
-    elif quiz_instance.current_question_index != question_index:
-        logger.info(f"[WrapperTimeout {quiz_id}] Mismatched question index. Instance: {quiz_instance.current_question_index}, Job: {question_index}. User: {user_id}. Likely late timeout.")
+#     # 3. Create QuizLogic instance (NO db_manager passed here anymore)
+#     quiz_instance_id = str(uuid.uuid4())
+#     quiz_logic = QuizLogic(
+#         user_id=user_id,
+#         chat_id=chat_id,
+#         questions=transformed_questions,
+#         quiz_name=quiz_name,
+#         quiz_type_for_db_log=quiz_type,
+#         quiz_scope_id=quiz_scope_id,
+#         total_questions_for_db_log=len(transformed_questions), # Or num_questions if API guarantees it
+#         time_limit_per_question=context.user_data.get("time_limit_per_question", 30), # Default 30s
+#         quiz_instance_id_for_logging=quiz_instance_id
+#     )
+#     context.user_data[f"quiz_logic_instance_{user_id}"] = quiz_logic
+#     return await quiz_logic.start_quiz(context.bot, context, update)
 
