@@ -364,3 +364,41 @@ class DatabaseManager:
 # Instantiate the DatabaseManager for global use
 DB_MANAGER = DatabaseManager()
 
+
+
+    def end_quiz_session(self,
+                         quiz_session_uuid: str,
+                         score: int,
+                         wrong_answers: int,
+                         skipped_answers: int,
+                         score_percentage: float,
+                         completed_at: datetime,
+                         time_taken_seconds: int,
+                         answers_details_json: str
+                         ) -> bool:
+        """Updates the results of a completed quiz session identified by quiz_session_uuid."""
+        logger.info(f"[DB Results] Ending quiz session {quiz_session_uuid}: Score={score}, Percentage={score_percentage:.2f}%")
+
+        query_update_end = """
+        UPDATE quiz_results 
+        SET 
+            score = %s, 
+            wrong_answers = %s, 
+            skipped_answers = %s,
+            score_percentage = %s, 
+            completed_at = %s, 
+            time_taken_seconds = %s, 
+            answers_details = %s
+        WHERE quiz_id_uuid = %s;
+        """
+        params = (score, wrong_answers, skipped_answers, score_percentage,
+                  completed_at, time_taken_seconds, answers_details_json,
+                  quiz_session_uuid)
+        
+        success = self._execute_query(query_update_end, params, commit=True)
+        if success:
+            logger.info(f"[DB Results] Successfully updated (ended) quiz session {quiz_session_uuid} in DB.")
+        else:
+            logger.error(f"[DB Results] Failed to update (end) quiz session {quiz_session_uuid} in DB.")
+        return success
+
