@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v11 with JobQueue enabled)."""
+"""Main script for the Chemistry Quiz Telegram Bot (Modular Version - v12 with PicklePersistence fix)."""
 
 import logging
 import sys
@@ -108,9 +108,6 @@ def main() -> None:
         conn = create_connection()
         if conn:
             logger.info("Database connected successfully.")
-            # When calling from bot.py, it's safer to default drop_first to False.
-            # The user can change this to True for an initial clean setup if needed,
-            # or manage it via the __main__ in db_setup.py for manual setup.
             create_tables(conn, drop_first=False) 
             logger.info("Database tables checked/created successfully.")
         else:
@@ -128,8 +125,14 @@ def main() -> None:
         persistence_dir = os.path.join(project_root, 'persistence')
         os.makedirs(persistence_dir, exist_ok=True)
         persistence_file = os.path.join(persistence_dir, 'bot_conversation_persistence.pkl')
-        persistence = PicklePersistence(filepath=persistence_file)
-        logger.info(f"PicklePersistence configured at {persistence_file}.")
+        # *** MODIFICATION: Tell PicklePersistence not to store bot_data ***
+        persistence = PicklePersistence(
+            filepath=persistence_file,
+            store_user_data=True,  # Default
+            store_chat_data=True,  # Default
+            store_bot_data=False   # Explicitly set to False
+        )
+        logger.info(f"PicklePersistence configured at {persistence_file} with store_bot_data=False.")
     except Exception as pers_exc:
         logger.error(f"Error configuring persistence: {pers_exc}")
         persistence = None
@@ -154,8 +157,10 @@ def main() -> None:
         logger.info("Telegram Application built.")
 
         # +++ REQUIRED: Add DB_MANAGER to bot_data +++
+        # This will now be the only source of db_manager in bot_data, as it won't be loaded from persistence.
         application.bot_data["db_manager"] = DB_MANAGER
-        logger.info("DB_MANAGER added to application.bot_data.")
+        logger.info(f"DB_MANAGER added to application.bot_data. ID of application.bot_data: {id(application.bot_data)}")
+        logger.info(f"DB_MANAGER instance ID: {id(DB_MANAGER)}")
         # +++++++++++++++++++++++++++++++++++++++++++++
 
         if job_queue: 
@@ -169,12 +174,10 @@ def main() -> None:
         exit(1)
 
     # --- Register Handlers Directly ---
-    # 1. Start command handler
     print("DEBUG: Adding start_handler...")
     application.add_handler(start_handler)
     print("DEBUG: start_handler added.")
 
-    # 2. Quiz conversation handler (only if imported successfully)
     if quiz_conv_handler:
         print("DEBUG: Adding quiz_conv_handler...")
         application.add_handler(quiz_conv_handler)
@@ -182,29 +185,22 @@ def main() -> None:
     else:
         print("WARNING: quiz_conv_handler was not imported successfully or failed during import, skipping addition.")
 
-    # --- MODIFIED: Uncommented info and stats handlers registration ---
     application.add_handler(info_conv_handler)
     logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
 
     application.add_handler(stats_conv_handler)
     logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
-    # ---------------------------------------------------------------
 
-    # +++ ADDED: Admin Statistics Handlers +++
     logger.info("Adding Admin Statistics handlers...")
     application.add_handler(CommandHandler("adminstats", stats_admin_panel_command_handler))
     application.add_handler(CallbackQueryHandler(stats_menu_callback_handler, pattern=f"^{STATS_PREFIX_MAIN_MENU}"))
     application.add_handler(CallbackQueryHandler(stats_fetch_stats_callback_handler, pattern=f"^{STATS_PREFIX_FETCH}"))
     logger.info("Admin Statistics handlers added.")
-    # ++++++++++++++++++++++++++++++++++++++++
 
-    # --- ADDED GLOBAL HANDLER FOR MAIN MENU ---
     logger.info("Adding global main_menu_callback handler...")
     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
-    # ------------------------------------------
 
-    # 5. Error handler (add last)
     print("DEBUG: Adding error_handler...")
     application.add_error_handler(error_handler)
     print("DEBUG: error_handler added.")
