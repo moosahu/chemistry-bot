@@ -1,18 +1,13 @@
-# -*- coding: utf-8 -*-
 """Utility functions for the Chemistry Telegram Bot."""
 
 import logging
-import re # Moved import re to the top with other imports
-import telegram # Added import telegram for error types
-from telegram import Update, InlineKeyboardMarkup, Bot # Added Bot and InlineKeyboardMarkup here
-from telegram.ext import CallbackContext # Already present
-# from telegram.error import BadRequest, TelegramError # These are now handled via telegram.error.BadRequest etc.
+import re
+import telegram
+from telegram import Update, InlineKeyboardMarkup, Bot
+from telegram.ext import CallbackContext
 
-# Import logger from config, or define a local one if preferred
-# Assuming logger is configured and imported from config.py as we discussed
-from config import logger # Make sure this line is present and correct
+from config import logger
 
-# Original safe_send_message - seems okay but ensure bot object is passed correctly if used elsewhere
 async def safe_send_message(bot: Bot, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = None):
     """Safely send a message, handling potential Telegram errors."""
     try:
@@ -22,26 +17,28 @@ async def safe_send_message(bot: Bot, chat_id: int, text: str, reply_markup: Inl
             reply_markup=reply_markup,
             parse_mode=parse_mode
         )
-    except telegram.error.BadRequest as e: # Use telegram.error.BadRequest
+    except telegram.error.BadRequest as e:
         logger.error(f"BadRequest sending message to {chat_id}: {e}")
-    except telegram.error.TelegramError as e: # Use telegram.error.TelegramError
+    except telegram.error.TelegramError as e:
         logger.error(f"TelegramError sending message to {chat_id}: {e}")
     except Exception as e:
         logger.exception(f"Unexpected error sending message to {chat_id}: {e}")
     return None
 
-# NEW and CORRECTED safe_edit_message_text function
 async def safe_edit_message_text(
-    bot: Bot,  # Should be an instance of telegram.Bot
+    bot: Bot,
     chat_id: int,
     message_id: int,
     text: str,
-    reply_markup: InlineKeyboardMarkup = None, # Should be an instance of telegram.InlineKeyboardMarkup or None
+    reply_markup: InlineKeyboardMarkup = None,
     parse_mode: str = "HTML"
-):
-    """Safely edits a message text, handling potential errors."""
+) -> bool | str:
+    """Safely edits a message text, handling potential errors.
+    Returns True if successful.
+    Returns "NO_TEXT_IN_MESSAGE" if edit failed due to no text in the original message.
+    Returns False for other errors.
+    """
     try:
-        # logger.debug(f"Attempting to edit message: chat_id={chat_id}, msg_id={message_id}, text=\'{text[:50]}...	_markup={reply_markup}")
         await bot.edit_message_text(
             text=text,
             chat_id=chat_id,
@@ -54,16 +51,22 @@ async def safe_edit_message_text(
     except telegram.error.BadRequest as e:
         if "message is not modified" in str(e).lower():
             logger.warning(f"Failed to edit message {message_id} in chat {chat_id} (not modified): {e}")
-            pass # Often, not modifying is not a critical error, can be ignored silently
-        elif "message can	t be edited" in str(e).lower():
+            return False
+        elif "message can't be edited" in str(e).lower():
              logger.warning(f"Message {message_id} in chat {chat_id} cannot be edited (likely too old or deleted): {e}")
+             return False
+        elif "there is no text in the message to edit" in str(e).lower():
+            logger.warning(f"Failed to edit message {message_id} in chat {chat_id}: There is no text in the message to edit. Error: {e}")
+            return "NO_TEXT_IN_MESSAGE"
         else:
             logger.error(f"Failed to edit message {message_id} in chat {chat_id} (BadRequest): {e}")
+            return False
     except telegram.error.TelegramError as e:
         logger.error(f"Failed to edit message {message_id} in chat {chat_id} (TelegramError): {e}")
+        return False
     except Exception as e:
         logger.error(f"Unexpected error editing message {message_id} in chat {chat_id}: {e}", exc_info=True)
-    return False
+        return False
 
 async def safe_edit_message_caption(bot: Bot, chat_id: int, message_id: int, caption: str, reply_markup: InlineKeyboardMarkup = None, parse_mode: str = None):
     """
@@ -83,8 +86,10 @@ async def safe_edit_message_caption(bot: Bot, chat_id: int, message_id: int, cap
     except telegram.error.BadRequest as e:
         if "Message is not modified" in str(e):
             logger.warning(f"Attempted to edit caption of message {message_id} in chat {chat_id}, but it was not modified. Error: {e}")
-        elif "message to edit not found" in str(e).lower() or "message can	t be edited" in str(e).lower():
-            logger.warning(f"Failed to edit caption of message {message_id} in chat {chat_id}: Message not found or can	t be edited. Error: {e}")
+        elif "message to edit not found" in str(e).lower() or "message can't be edited" in str(e).lower():
+            logger.warning(f"Failed to edit caption of message {message_id} in chat {chat_id}: Message not found or can't be edited. Error: {e}")
+        elif "there is no caption in the message to edit" in str(e).lower() or "message doesn't have a caption" in str(e).lower():
+             logger.warning(f"Failed to edit caption of message {message_id} in chat {chat_id}: No caption to edit. Error: {e}")
         else:
             logger.error(f"Failed to edit caption of message {message_id} in chat {chat_id} due to BadRequest: {e}")
     except telegram.error.Forbidden as e:
@@ -109,7 +114,6 @@ def remove_job_if_exists(name: str, context: CallbackContext) -> bool:
 def process_text_with_chemical_notation(text):
     if not text:
         return text
-    # Ensure subscript mapping is correct and handles all digits
     subscript_map = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
     text = re.sub(r'([A-Za-z])(\d+)', lambda m: m.group(1) + m.group(2).translate(subscript_map), text)
     text = text.replace(" -> ", " → ")
@@ -144,12 +148,12 @@ async def safe_delete_message(bot: Bot, chat_id: int, message_id: int) -> bool:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
         logger.info(f"Successfully deleted message {message_id} from chat {chat_id}")
         return True
-    except telegram.error.BadRequest as e: # Use telegram.error.BadRequest
-        if "message to delete not found" in str(e).lower() or "message can	t be deleted" in str(e).lower():
+    except telegram.error.BadRequest as e:
+        if "message to delete not found" in str(e).lower() or "message can't be deleted" in str(e).lower():
             logger.warning(f"Message {message_id} in chat {chat_id} not found or already deleted: {e}")
         else:
             logger.error(f"BadRequest deleting message {message_id} in chat {chat_id}: {e}")
-    except telegram.error.TelegramError as e: # Use telegram.error.TelegramError
+    except telegram.error.TelegramError as e:
         logger.error(f"TelegramError deleting message {message_id} in chat {chat_id}: {e}")
     except Exception as e:
         logger.exception(f"Unexpected error deleting message {message_id} in chat {chat_id}: {e}")
@@ -159,7 +163,7 @@ def get_quiz_type_string(type_display_name: str) -> str:
     """Returns the quiz type display string, possibly with minor formatting."""
     if not type_display_name:
         return "غير محدد"
-    return str(type_display_name) # Returns the name as is, assuming it	s already user-friendly
+    return str(type_display_name)
 
 logger.info("utils/helpers.py loaded with corrected safe_edit_message_text and added safe_edit_message_caption.")
 

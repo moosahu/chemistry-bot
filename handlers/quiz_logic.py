@@ -426,8 +426,43 @@ class QuizLogic:
         msg_to_edit_id = context.user_data.get(f"last_quiz_interaction_message_id_{self.chat_id}")
         kbd_after_results = InlineKeyboardMarkup([ [InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="stats_menu")], [InlineKeyboardButton("✨ ابدأ اختباراً جديداً", callback_data="quiz_menu")], [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")] ])
 
-        if msg_to_edit_id: await safe_edit_message_text(bot, self.chat_id, msg_to_edit_id, full_results_text, kbd_after_results, parse_mode="HTML")
-        else: 
+         if msg_to_edit_id:
+            edited_successfully = False
+            logger.debug(f"[QuizLogic {self.quiz_id}] Attempting to update results message {msg_to_edit_id}.")
+
+            # Attempt 1: Try to edit caption. This is generally safer for media messages or messages where text presence is uncertain.
+            logger.debug(f"[QuizLogic {self.quiz_id}] Attempting to edit caption of message {msg_to_edit_id} for results.")
+            caption_edit_result = await safe_edit_message_caption(
+                bot=bot, chat_id=self.chat_id, message_id=msg_to_edit_id,
+                caption=full_results_text, reply_markup=kbd_after_results, parse_mode="HTML"
+            )
+            if caption_edit_result is True:
+                edited_successfully = True
+                logger.info(f"[QuizLogic {self.quiz_id}] Successfully edited caption of message {msg_to_edit_id} for results.")
+            else: # caption_edit_result is False (could be "no caption to edit", "not modified", or other errors)
+                logger.info(f"[QuizLogic {self.quiz_id}] Editing caption for results message {msg_to_edit_id} failed or was not applicable. Will try editing as text.")
+
+                # Attempt 2: If caption edit failed or was not applicable, try editing as text.
+                logger.debug(f"[QuizLogic {self.quiz_id}] Attempting to edit text of message {msg_to_edit_id} for results (caption edit failed or not applicable).")
+                text_edit_result = await safe_edit_message_text(
+                    bot=bot, chat_id=self.chat_id, message_id=msg_to_edit_id,
+                    text=full_results_text, reply_markup=kbd_after_results, parse_mode="HTML"
+                )
+                if text_edit_result is True:
+                    edited_successfully = True
+                    logger.info(f"[QuizLogic {self.quiz_id}] Successfully edited text of message {msg_to_edit_id} for results.")
+                elif text_edit_result == "NO_TEXT_IN_MESSAGE":
+                    logger.info(f"[QuizLogic {self.quiz_id}] Cannot edit message {msg_to_edit_id} as text (it has no text body). Will send new message for results.")
+                    # edited_successfully remains False, new message will be sent
+                else: # text_edit_result is False for other errors
+                    logger.info(f"[QuizLogic {self.quiz_id}] Failed to edit message {msg_to_edit_id} as text for other reasons. Will send new message for results.")
+                    # edited_successfully remains False, new message will be sent
+            
+            if not edited_successfully:
+                logger.info(f"[QuizLogic {self.quiz_id}] All edit attempts failed for message {msg_to_edit_id}. Sending new message for results.")
+                new_msg = await safe_send_message(bot, self.chat_id, full_results_text, kbd_after_results, parse_mode="HTML")
+                if new_msg: context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = new_msg.message_id
+        else: # No msg_to_edit_id found
             logger.warning(f"[QuizLogic {self.quiz_id}] No last_quiz_interaction_message_id to edit. Sending results as new message.")
             new_msg = await safe_send_message(bot, self.chat_id, full_results_text, kbd_after_results, parse_mode="HTML")
             if new_msg: context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = new_msg.message_id
