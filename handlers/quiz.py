@@ -543,7 +543,7 @@ async def show_results_entry(update: Update, context: CallbackContext) -> int:
 
 # --- Conversation Handler Setup --- 
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_menu$")],
+    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")],
     states={
         SELECT_QUIZ_TYPE: [
             CallbackQueryHandler(select_quiz_type_handler, pattern="^quiz_type_|^quiz_action_main_menu$|^quiz_action_back_to_type_selection$")
