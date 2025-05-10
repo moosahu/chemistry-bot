@@ -90,7 +90,7 @@ class QuizLogic:
                     user_id=self.user_id, quiz_type=self.quiz_type_for_db, 
                     quiz_scope_id=scope_id_for_db_call, quiz_name=self.quiz_name,
                     total_questions=self.total_questions_for_db, start_time=self.quiz_actual_start_time_dt,
-                    score=0, initial_percentage=0.0) # Added initial score and percentage
+                    score=0, initial_percentage=0.0, initial_time_taken_seconds=0) # Added initial score, percentage and time_taken_seconds
                 if self.db_quiz_session_id: logger.info(f"[QuizLogic {self.quiz_id}] Quiz session logged to DB: {self.db_quiz_session_id}")
                 else: logger.error(f"[QuizLogic {self.quiz_id}] Failed to log quiz start to DB.")
             except Exception as e: logger.error(f"[QuizLogic {self.quiz_id}] DB exception on quiz start: {e}", exc_info=True)
