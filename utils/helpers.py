@@ -111,11 +111,11 @@ def process_text_with_chemical_notation(text):
         return text
     # Ensure subscript mapping is correct and handles all digits
     subscript_map = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
-    text = re.sub(r	([A-Za-z])(\d+)	, lambda m: m.group(1) + m.group(2).translate(subscript_map), text)
-    text = text.replace(	 -> 	, 	 → 	)
-    text = text.replace(	 => 	, 	 ⇒ 	)
-    text = text.replace(	 <-> 	, 	 ⇄ 	)
-    text = text.replace(	 <=> 	, 	 ⇌ 	)
+    text = re.sub(r'([A-Za-z])(\d+)', lambda m: m.group(1) + m.group(2).translate(subscript_map), text)
+    text = text.replace(" -> ", " → ")
+    text = text.replace(" => ", " ⇒ ")
+    text = text.replace(" <-> ", " ⇄ ")
+    text = text.replace(" <=> ", " ⇌ ")
     return text
 
 def format_chemical_equation(equation):
