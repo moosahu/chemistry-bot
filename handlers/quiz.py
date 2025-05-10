@@ -5,6 +5,7 @@ Conversation handler for the quiz selection and execution flow.
 (QUIZ_MENU_ENTRY_FIX: Handles both CallbackQuery and Command inputs)
 (CALLBACK_PATTERN_FIX: Changed entry point pattern to match 'start_quiz')
 (DB_ACCESS_DIAGNOSTICS: Added detailed logging for db_manager access)
+(PERSISTENCE_FIX: Set quiz_conv_handler to persistent=False)
 """
 
 import logging
@@ -490,7 +491,6 @@ async def start_actual_quiz(update: Update, context: CallbackContext, questions_
     else:
         logger.warning("[DB_DIAG] context.application.bot_data is not available or not a dict.")
 
-    # Fallback attempt if not found in application.bot_data (though it should be there)
     if not db_m_instance and hasattr(context, 'bot_data') and isinstance(context.bot_data, dict):
         logger.warning(f"[DB_DIAG] db_manager not in application.bot_data, trying context.bot_data for user {user_id}.")
         db_m_instance = context.bot_data.get("db_manager")
@@ -607,6 +607,7 @@ quiz_conv_handler = ConversationHandler(
     },
     per_message=False,
     name="quiz_conversation",
-    persistent=True
+    # *** MODIFICATION: Set persistent to False to avoid conflict with PicklePersistence issues ***
+    persistent=False 
 )
 
