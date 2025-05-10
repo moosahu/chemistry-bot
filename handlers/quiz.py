@@ -439,7 +439,7 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
         return SELECT_QUIZ_TYPE
 
     # Start the quiz via QuizLogic
-    initial_quiz_message, initial_keyboard, success = await quiz_logic_instance.start_quiz(update, context)
+    initial_quiz_message, initial_keyboard, success = await quiz_logic_instance.start_quiz(context.bot, context, update)
     if success:
         await safe_edit_message_text(context.bot, chat_id, message_id_to_edit, initial_quiz_message, initial_keyboard)
         return TAKING_QUIZ
