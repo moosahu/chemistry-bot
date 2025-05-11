@@ -104,10 +104,10 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
     current_filter_text = TIME_FILTERS.get(time_filter, "غير محدد")
 
     if stat_category == "usage_overview":
-        total_users = DB_MANAGER.get_total_users_count() # MODIFIED
-        active_users = DB_MANAGER.get_active_users_count(time_filter=time_filter) # MODIFIED
-        total_quizzes = DB_MANAGER.get_total_quizzes_taken(time_filter=time_filter) # MODIFIED
-        avg_quizzes_user = DB_MANAGER.get_average_quizzes_per_user(time_filter=time_filter) # MODIFIED
+        total_users = DB_MANAGER.get_total_users_count() 
+        active_users = DB_MANAGER.get_active_users_count(time_filter=time_filter) 
+        total_quizzes = DB_MANAGER.get_total_quizzes_count(time_filter=time_filter) # MODIFIED from get_total_quizzes_taken
+        avg_quizzes_user = DB_MANAGER.get_average_quizzes_per_active_user(time_filter=time_filter) # MODIFIED from get_average_quizzes_per_user
         text_response = (
             f"📊 *نظرة عامة على الاستخدام ({current_filter_text}):*\n"
             f"- إجمالي المستخدمين (الكلي): {total_users}\n"
@@ -117,29 +117,30 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         )
 
     elif stat_category == "quiz_performance":
-        avg_correct = DB_MANAGER.get_average_correct_answer_rate(time_filter=time_filter) # MODIFIED
-        popular_units = DB_MANAGER.get_popular_units(time_filter=time_filter, limit=3) # MODIFIED
-        difficult_units = DB_MANAGER.get_difficulty_units(time_filter=time_filter, limit=3, easiest=False) # MODIFIED
-        easiest_units = DB_MANAGER.get_difficulty_units(time_filter=time_filter, limit=3, easiest=True) # MODIFIED
+        avg_correct = DB_MANAGER.get_overall_average_score(time_filter=time_filter) # MODIFIED from get_average_correct_answer_rate
+        unit_engagement = DB_MANAGER.get_unit_engagement_stats(time_filter=time_filter, limit=3) # MODIFIED from get_popular_units
+        popular_units = unit_engagement.get("popular_units", [])
+        difficult_units = DB_MANAGER.get_most_difficult_units(time_filter=time_filter, limit=3) # MODIFIED from get_difficulty_units
+        easiest_units = DB_MANAGER.get_easiest_units(time_filter=time_filter, limit=3) # MODIFIED from get_difficulty_units
 
         pop_items = []
         for pu in popular_units:
-            unit_id_val = pu.get("unit_id", "غير متوفر")
-            quiz_count_val = pu.get("quiz_count", "0")
+            unit_id_val = pu.get("quiz_name", "غير متوفر") # MODIFIED from unit_id
+            quiz_count_val = pu.get("times_taken", "0") # MODIFIED from quiz_count
             pop_items.append(f"  - {unit_id_val} ({quiz_count_val} مرة)")
         pop_units_str = "\n".join(pop_items) or "  لا توجد بيانات"
 
         diff_items = []
         for du in difficult_units:
-            unit_id_val = du.get("unit_id", "غير متوفر")
-            avg_score_val = float(du.get("average_score_percent", 0))
+            unit_id_val = du.get("quiz_name", "غير متوفر") # MODIFIED from unit_id
+            avg_score_val = float(du.get("average_score", 0)) # MODIFIED from average_score_percent
             diff_items.append(f"  - {unit_id_val} ({avg_score_val:.0f}٪)")
         diff_units_str = "\n".join(diff_items) or "  لا توجد بيانات"
 
         easy_items = []
         for eu in easiest_units:
-            unit_id_val = eu.get("unit_id", "غير متوفر")
-            avg_score_val = float(eu.get("average_score_percent", 0))
+            unit_id_val = eu.get("quiz_name", "غير متوفر") # MODIFIED from unit_id
+            avg_score_val = float(eu.get("average_score", 0)) # MODIFIED from average_score_percent
             easy_items.append(f"  - {unit_id_val} ({avg_score_val:.0f}٪)")
         easy_units_str = "\n".join(easy_items) or "  لا توجد بيانات"
 
@@ -152,8 +153,9 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         )
 
     elif stat_category == "user_interaction":
-        avg_completion_time = DB_MANAGER.get_average_quiz_completion_time(time_filter=time_filter) # MODIFIED
-        completion_rate = DB_MANAGER.get_quiz_completion_rate(time_filter=time_filter) # MODIFIED
+        avg_completion_time = DB_MANAGER.get_average_quiz_duration(time_filter=time_filter) # MODIFIED from get_average_quiz_completion_time
+        completion_stats = DB_MANAGER.get_quiz_completion_rate_stats(time_filter=time_filter) # MODIFIED from get_quiz_completion_rate
+        completion_rate = completion_stats.get("completion_rate", 0.0)
         text_response = (
             f"👥 *تفاعل المستخدمين ({current_filter_text}):*\n"
             f"- متوسط وقت إكمال الاختبار: {float(avg_completion_time):.2f} ثانية\n"
@@ -161,8 +163,9 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         )
 
     elif stat_category == "question_stats":
-        difficult_questions = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter, limit=3, easiest=False) # MODIFIED (assuming get_question_difficulty_stats is the correct replacement)
-        easiest_questions = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter, limit=3, easiest=True) # MODIFIED (assuming get_question_difficulty_stats is the correct replacement)
+        question_difficulty_data = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter, limit=3) # MODIFIED from get_question_difficulty
+        difficult_questions = question_difficulty_data.get("most_difficult", [])
+        easiest_questions = question_difficulty_data.get("easiest", [])
         
         diff_q_items = []
         for dq in difficult_questions:
