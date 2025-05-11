@@ -160,7 +160,7 @@ async def send_dashboard_stats_v4(update: Update, context: CallbackContext, stat
     elif stat_category == "question_stats":
         text_response, chart_path = await get_question_stats_display(time_filter)
     else:
-        text_response = f"فئة الإحصائيات \'{stat_category}\' غير معروفة أو لم يتم تنفيذها بعد."
+        text_response = f"فئة الإحصائيات 	'{stat_category}	' غير معروفة أو لم يتم تنفيذها بعد."
 
     # Prepare reply markup (time filter buttons for re-selection or back to main menu)
     fetch_base_callback = f"{STATS_PREFIX_FETCH}{stat_category}"
@@ -171,7 +171,7 @@ async def send_dashboard_stats_v4(update: Update, context: CallbackContext, stat
             # Send chart first, then edit the message with text and buttons
             # Or, edit message to a generic one, then send photo with caption and buttons
             # For simplicity, let's edit the original message with text, then send photo separately.
-            await query.edit_message_text(text=text_response, reply_markup=reply_markup, parse_mode=\'Markdown\')
+            await query.edit_message_text(text=text_response, reply_markup=reply_markup, parse_mode="Markdown")
             with open(chart_path, "rb") as photo_file:
                 await context.bot.send_photo(chat_id=query.message.chat_id, photo=photo_file, caption=f"رسم بياني لـ: {stat_category.replace('_', ' ').title()}")
             # try:
@@ -180,9 +180,9 @@ async def send_dashboard_stats_v4(update: Update, context: CallbackContext, stat
             # except OSError as e:
             #     logger.error(f"Error deleting chart file {chart_path}: {e}")
         else:
-            if chart_path: # Path was returned but file doesn\'t exist
+            if chart_path: # Path was returned but file doesn't exist
                 logger.warning(f"Chart path {chart_path} was returned but file not found.")
-            await query.edit_message_text(text=text_response, reply_markup=reply_markup, parse_mode=\'Markdown\')
+            await query.edit_message_text(text=text_response, reply_markup=reply_markup, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Error sending/editing message in send_dashboard_stats_v4: {e}")
         # Fallback if edit_message_text fails
