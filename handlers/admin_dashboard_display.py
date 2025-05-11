@@ -68,7 +68,7 @@ def generate_usage_overview_chart(active_users: int, total_quizzes_in_period: in
     for bar in bars:
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.02 * max(counts) if max(counts) > 0 else 0.5, int(yval), ha="center", va="bottom", fontsize=11)
-    chart_filename = f"usage_overview_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S")}.png"
+    chart_filename = f"usage_overview_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
@@ -116,7 +116,7 @@ def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) 
     for bar in bars:
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.02 * max(values) if max(values) > 0 else 0.5, int(yval), ha="center", va="bottom", fontsize=9)
-    chart_filename = f"quiz_performance_scores_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S")}.png"
+    chart_filename = f"quiz_performance_scores_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
@@ -173,7 +173,7 @@ def generate_user_interaction_chart(interaction_data: dict, time_filter: str) ->
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 2, f"{yval:.1f}%", ha="center", va="bottom", fontsize=10)
 
-    chart_filename = f"user_interaction_completion_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S")}.png"
+    chart_filename = f"user_interaction_completion_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
@@ -208,14 +208,6 @@ async def get_user_interaction_display(time_filter: str) -> tuple[str, str | Non
     text_response_parts.append(f"- معدل إكمال الاختبارات: {float(completion_rate):.2f}%")
     text_response_parts.append(f"- معدل التسرب من الاختبارات: {float(drop_off_rate):.2f}%")
     
-    # Placeholder for most active times/days - requires new DB functions
-    # most_active_day = DB_MANAGER.get_most_active_day(time_filter=time_filter) # e.g., "Monday"
-    # most_active_hour = DB_MANAGER.get_most_active_hour(time_filter=time_filter) # e.g., "17:00-18:00"
-    # if most_active_day:
-    #     text_response_parts.append(f"- اليوم الأكثر نشاطاً: {process_arabic_text(most_active_day)}")
-    # if most_active_hour:
-    #     text_response_parts.append(f"- الساعة الأكثر نشاطاً: {process_arabic_text(most_active_hour)}")
-
     text_response = "\n".join(text_response_parts)
 
     chart_data = {}
@@ -240,14 +232,13 @@ def generate_question_difficulty_chart(difficulty_data: dict, time_filter: str, 
         logger.info(f"No {chart_type} question data to generate chart for time_filter {time_filter}.")
         return None
 
-    # Take top N questions for the chart, e.g., top 5
     questions_to_chart = questions[:5]
     
     labels = [process_arabic_text(q["text"][:30] + "...") for q in questions_to_chart]
     values = [q["correct_percentage"] for q in questions_to_chart]
     
-    fig, ax = plt.subplots(figsize=(12, 7)) # Wider for question text
-    bars = ax.bar(labels, values, color="#9467bd" if chart_type == "hardest" else "#8c564b", width=0.5) # Purple for hardest, Brown for easiest
+    fig, ax = plt.subplots(figsize=(12, 7)) 
+    bars = ax.bar(labels, values, color="#9467bd" if chart_type == "hardest" else "#8c564b", width=0.5)
 
     ax.set_ylabel(process_arabic_text("نسبة الإجابة الصحيحة (%)"))
     time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, time_filter)
@@ -261,7 +252,7 @@ def generate_question_difficulty_chart(difficulty_data: dict, time_filter: str, 
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 2, f"{yval:.1f}%", ha="center", va="bottom", fontsize=9)
 
-    chart_filename = f"question_difficulty_{chart_type}_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S")}.png"
+    chart_filename = f"question_difficulty_{chart_type}_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
@@ -274,14 +265,11 @@ def generate_question_difficulty_chart(difficulty_data: dict, time_filter: str, 
         plt.close(fig)
         return None
 
-async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] | None]: # Return list of chart paths
+async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] | None]:
     logger.info(f"[AdminDashboardDisplay] get_question_stats_display called for {time_filter}")
     time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, time_filter)
     
-    # Fetch up to 5 hardest and easiest questions
     question_difficulty_data = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter, limit=5) 
-    # Fetch most attempted questions (assuming a new DB function)
-    # most_attempted_questions = DB_MANAGER.get_most_attempted_questions(time_filter=time_filter, limit=5)
 
     text_response_parts = [f"❓ *إحصائيات الأسئلة ({time_filter_display}):*"]
 
@@ -289,7 +277,7 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
     if hardest_questions:
         text_response_parts.append("\n📉 *أصعب الأسئلة (حسب أقل نسبة إجابات صحيحة):*")
         for i, q in enumerate(hardest_questions):
-            text_response_parts.append(f"  {i+1}. \"{process_arabic_text(q["text"][:40])}...\" (صحة: {q["correct_percentage"]:.2f}%, محاولات: {q.get("attempts", "غير متوفر")})")
+            text_response_parts.append(f"  {i+1}. \"{process_arabic_text(q['text'][:40])}...\" (صحة: {q['correct_percentage']:.2f}%, محاولات: {q.get('attempts', 'غير متوفر')})")
     else:
         text_response_parts.append("\n📉 *أصعب الأسئلة:* لا توجد بيانات كافية.")
 
@@ -297,15 +285,9 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
     if easiest_questions:
         text_response_parts.append("\n📈 *أسهل الأسئلة (حسب أعلى نسبة إجابات صحيحة):*")
         for i, q in enumerate(easiest_questions):
-            text_response_parts.append(f"  {i+1}. \"{process_arabic_text(q["text"][:40])}...\" (صحة: {q["correct_percentage"]:.2f}%, محاولات: {q.get("attempts", "غير متوفر")})")
+            text_response_parts.append(f"  {i+1}. \"{process_arabic_text(q['text'][:40])}...\" (صحة: {q['correct_percentage']:.2f}%, محاولات: {q.get('attempts', 'غير متوفر')})")
     else:
         text_response_parts.append("\n📈 *أسهل الأسئلة:* لا توجد بيانات كافية.")
-
-    # Placeholder for most attempted questions
-    # if most_attempted_questions:
-    #     text_response_parts.append("\n🔥 *الأسئلة الأكثر محاولة:*")
-    #     for i, q in enumerate(most_attempted_questions):
-    #         text_response_parts.append(f"  {i+1}. \"{process_arabic_text(q["text"][:40])}...\" (محاولات: {q.get("attempts", "N/A")}, صحة: {q.get("correct_percentage", "N/A"):.2f}%)")
 
     text_response = "\n".join(text_response_parts)
     
