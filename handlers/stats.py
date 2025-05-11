@@ -8,6 +8,7 @@
 (FSTRING_FIX_V6: Replaced specific problematic f-string with .format() to rule out parsing issues for completion rate line)
 (FSTRING_FIX_V7: Proactively converted all f-strings in the admin question stats section to .format() to prevent further parsing errors)
 (FSTRING_FIX_V8: Comprehensive conversion of nearly ALL f-strings in the file to .format() or string concatenation to eliminate f-string parsing errors entirely.)
+(ADMIN_STATS_FIX_V9: Corrected key for popular units and added display for most difficult/easiest units in admin panel.)
 """
 
 import logging
@@ -42,7 +43,7 @@ try:
 except ImportError as e:
     # Fallback logger configuration if config import fails
     logging.basicConfig(level=logging.INFO) # Basic config for fallback
-    logger = logging.getLogger(__name__) # Use module's name for logger
+    logger = logging.getLogger(__name__) # Use module\'s name for logger
     # Using .format() for error logging
     logger.error("[stats.py] CRITICAL Error importing core modules (config, helpers, common): {}. Using placeholders. Bot functionality will be SEVERELY AFFECTED.".format(e))
     MAIN_MENU, STATS_MENU, ADMIN_STATS_MENU = 0, 8, 9
@@ -407,19 +408,44 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     avg_correct_rate = db_manager.get_overall_average_score(time_filter)
     # Using .format() for stats_text line
     stats_text += "- متوسط نسبة الإجابات الصحيحة: {:.2f}%\n".format(avg_correct_rate)
+    
+    # Popular Units/Quizzes
     unit_engagement = db_manager.get_unit_engagement_stats(time_filter=time_filter, limit=3)
-    popular_units = unit_engagement.get("popular_units_or_quizzes", [])
-    stats_text += "- الوحدات/الاختبارات الأكثر شعبية (أعلى 3):\n"
+    popular_units = unit_engagement.get("popular_units", []) # Corrected key from popular_units_or_quizzes
+    stats_text += "- الوحدات/الاختبارات الأكثر شعبية (أعلى 3 حسب عدد مرات اللعب):\n"
     if popular_units:
         for i, unit_stat in enumerate(popular_units):
             quiz_name_display = unit_stat.get("quiz_name", "غير معروف")
             times_taken = unit_stat.get("times_taken", 0)
             avg_score_unit = unit_stat.get("average_score", 0.0)
-            # Using .format() for stats_text line
             stats_text += "  {}. \"{}\" (لُعِبت {} مرات, متوسط {:.1f}%)\n".format(i+1, quiz_name_display, times_taken, avg_score_unit)
     else:
         stats_text += "  لا توجد بيانات\n"
-    stats_text += "\n"
+
+    # Most Difficult Units/Quizzes
+    difficult_units_data = db_manager.get_most_difficult_units(time_filter=time_filter, limit=3)
+    stats_text += "- الوحدات/الاختبارات الأكثر صعوبة (أقل 3 متوسط نتيجة):\n"
+    if difficult_units_data:
+        for i, unit_stat in enumerate(difficult_units_data):
+            quiz_name_display = unit_stat.get("quiz_name", "غير معروف")
+            times_taken = unit_stat.get("times_taken", 0)
+            avg_score_unit = unit_stat.get("average_score", 0.0)
+            stats_text += "  {}. \"{}\" (لُعِبت {} مرات, متوسط {:.1f}%)\n".format(i+1, quiz_name_display, times_taken, avg_score_unit)
+    else:
+        stats_text += "  لا توجد بيانات\n"
+
+    # Easiest Units/Quizzes
+    easiest_units_data = db_manager.get_easiest_units(time_filter=time_filter, limit=3)
+    stats_text += "- الوحدات/الاختبارات الأسهل (أعلى 3 متوسط نتيجة):\n"
+    if easiest_units_data:
+        for i, unit_stat in enumerate(easiest_units_data):
+            quiz_name_display = unit_stat.get("quiz_name", "غير معروف")
+            times_taken = unit_stat.get("times_taken", 0)
+            avg_score_unit = unit_stat.get("average_score", 0.0)
+            stats_text += "  {}. \"{}\" (لُعِبت {} مرات, متوسط {:.1f}%)\n".format(i+1, quiz_name_display, times_taken, avg_score_unit)
+    else:
+        stats_text += "  لا توجد بيانات\n"
+    stats_text += "\n" # Add a newline after the units section
     
     stats_text += "*تفاعل المستخدمين: *\n"
     avg_quiz_duration_secs = db_manager.get_average_quiz_duration(time_filter)
@@ -431,7 +457,6 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     completed_quizzes_val = completion_stats.get("completed_quizzes", 0)
     started_quizzes_val = completion_stats.get("started_quizzes", 0)
     
-    # This was already .format(), kept as is
     line_text_completion_rate = "- معدل إكمال الاختبارات: {:.2f}% (اكتمل {} من {} بدأ)\n\n".format(
         completion_rate_val,
         completed_quizzes_val,
@@ -451,7 +476,6 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             q_text_short = (q_text[:50] + "...") if q_text and len(q_text) > 53 else q_text
             error_perc = q_stat.get("error_percentage", 0.0)
             times_ans = q_stat.get("times_answered", 0)
-            # Using .format() for this potentially complex line (already was)
             stats_text += "  {}. \"{}\" ({:.1f}% خطأ من {} إجابات)\n".format(i+1, q_text_short, error_perc, times_ans)
     else:
         stats_text += "  لا توجد بيانات\n"
@@ -463,7 +487,6 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             q_text_short = (q_text[:50] + "...") if q_text and len(q_text) > 53 else q_text
             correct_perc = q_stat.get("correct_percentage", 0.0)
             times_ans = q_stat.get("times_answered", 0)
-            # Using .format() for this potentially complex line (already was)
             stats_text += "  {}. \"{}\" ({:.1f}% صحة من {} إجابات)\n".format(i+1, q_text_short, correct_perc, times_ans)
     else:
         stats_text += "  لا توجد بيانات\n"

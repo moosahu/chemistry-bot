@@ -11,12 +11,12 @@ import uuid # Added for generating UUIDs
 # Import config, connection, and schema setup
 try:
     from config import logger
-    from .connection import connect_db
+    from .connection import connect_db # Assuming connection.py is in the same directory (database/)
 except ImportError:
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
     logger.error("Failed to import config or connection. DB Manager might not function correctly.")
-    def connect_db():
+    def connect_db(): # Dummy for fallback
         logger.error("Dummy connect_db called!")
         return None
 
@@ -38,7 +38,7 @@ class DatabaseManager:
         result = None
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            logger.debug(f"[DB Manager] Executing query: {cur.mogrify(query, params)}")
+            # logger.debug(f"[DB Manager] Executing query: {cur.mogrify(query, params)}") # Mogrify can be verbose
             cur.execute(query, params)
 
             if commit:
@@ -47,10 +47,11 @@ class DatabaseManager:
                 result = True
             elif fetch_one:
                 result = cur.fetchone()
-                logger.debug(f"[DB Manager] Fetched one row: {dict(result) if result else None}")
+                if result: result = dict(result) # Ensure it's a dict
+                # logger.debug(f"[DB Manager] Fetched one row: {result}")
             elif fetch_all:
                 result_list = cur.fetchall()
-                logger.debug(f"[DB Manager] Fetched {len(result_list)} rows.")
+                # logger.debug(f"[DB Manager] Fetched {len(result_list)} rows.")
                 result = [dict(row) for row in result_list] if result_list else []
             
             return result
@@ -59,8 +60,8 @@ class DatabaseManager:
                 failed_query = cur.mogrify(query, params) if cur else query
             except Exception as mogrify_error:
                 logger.error(f"[DB Manager] Error formatting query for logging: {mogrify_error}")
-                failed_query = query
-            logger.error(f"[DB Manager] Database query error: {error}\nFailed Query: {failed_query}")
+                failed_query = query # Fallback to unformatted query
+            logger.error(f"[DB Manager] Database query error: {error}\nFailed Query (params might not be expanded): {failed_query}")
             if conn:
                 conn.rollback()
             return None
@@ -69,7 +70,7 @@ class DatabaseManager:
                 cur.close()
             if conn:
                 conn.close()
-                logger.debug("[DB Manager] Database connection closed after query execution.")
+                # logger.debug("[DB Manager] Database connection closed after query execution.")
 
     def register_or_update_user(self, user_id: int, first_name: str, last_name: str | None, username: str | None, language_code: str | None):
         logger.info(f"[DB User] Registering/updating user: id={user_id}, name={first_name}, username={username}")
@@ -96,7 +97,7 @@ class DatabaseManager:
         logger.debug(f"[DB User] Checking admin status for user {user_id}.")
         query = "SELECT is_admin FROM users WHERE user_id = %s;"
         result = self._execute_query(query, (user_id,), fetch_one=True)
-        is_admin = result["is_admin"] if result and result["is_admin"] is True else False
+        is_admin = result["is_admin"] if result and result.get("is_admin") is True else False
         logger.debug(f"[DB User] Admin status for user {user_id}: {is_admin}")
         return is_admin
 
@@ -139,7 +140,7 @@ class DatabaseManager:
             
         query = base_query + where_clause + ";"
         result = self._execute_query(query, tuple(params), fetch_one=True)
-        count = result["count"] if result else 0
+        count = result["count"] if result and "count" in result else 0
         logger.info(f"[DB Questions] Found {count} questions in DB for type=\"{scope_type}\" id={scope_id}")
         return count
 
@@ -162,18 +163,15 @@ class DatabaseManager:
             logger.error(f"[DB Session] Failed to start and log quiz session for user {user_id}.")
             return None
 
-    # This method was previously named save_quiz_result and is called by quiz_logic.py
-    # Renaming and adjusting to match the expected call from quiz_logic.py
     def end_quiz_session(self, 
-                           quiz_session_uuid: str, # Changed from quiz_id_uuid
-                           score: int, # Changed from correct_count
-                           wrong_answers: int, # Changed from wrong_count
-                           skipped_answers: int, # Changed from skipped_count
-                           score_percentage: float, # Changed from score_percentage_calculated
-                           completed_at: datetime, # Changed from end_time
-                           time_taken_seconds: int | None, # Added, was time_taken_seconds_val
-                           answers_details_json: str, # Changed from answers_details_list (now expects JSON string)
-                           # user_id and quiz_type_for_log are not directly passed but can be inferred or logged differently if needed
+                           quiz_session_uuid: str, 
+                           score: int, 
+                           wrong_answers: int, 
+                           skipped_answers: int, 
+                           score_percentage: float, 
+                           completed_at: datetime, 
+                           time_taken_seconds: int | None, 
+                           answers_details_json: str,
                            ):
         logger.info(f"[DB Results] Ending quiz session {quiz_session_uuid}: Score={score}, Wrong={wrong_answers}, Skipped={skipped_answers}, Percentage={score_percentage:.2f}%")
         
@@ -186,7 +184,7 @@ class DatabaseManager:
             score_percentage = %s, 
             completed_at = %s, 
             time_taken_seconds = %s, 
-            answers_details = %s::jsonb -- Ensure it's treated as JSONB
+            answers_details = %s::jsonb
         WHERE quiz_id_uuid = %s;
         """
         params = (score, wrong_answers, skipped_answers, score_percentage,
@@ -198,10 +196,6 @@ class DatabaseManager:
         else:
             logger.error(f"[DB Results] Failed to update (end) quiz session {quiz_session_uuid} in DB.")
         return success
-
-    # Keep the original save_quiz_result if it's used elsewhere, or mark as deprecated
-    # For now, we assume end_quiz_session replaces its direct usage from quiz_logic
-    # def save_quiz_result(self, ...): # Original save_quiz_result can be here if needed by other parts
 
     def get_user_overall_stats(self, user_id: int):
         logger.info(f"[DB Stats] Fetching overall stats for user_id: {user_id}")
@@ -217,9 +211,9 @@ class DatabaseManager:
         WHERE user_id = %s AND completed_at IS NOT NULL;
         """
         stats = self._execute_query(query, (user_id,), fetch_one=True)
-        if stats and stats["total_quizzes_taken"] > 0:
-            logger.info(f"[DB Stats] Overall stats found for user {user_id}: {dict(stats)}")
-            return dict(stats)
+        if stats and stats.get("total_quizzes_taken", 0) > 0:
+            logger.info(f"[DB Stats] Overall stats found for user {user_id}: {stats}")
+            return stats 
         else:
             logger.warning(f"[DB Stats] No overall stats found for user {user_id} or query failed.")
             return {
@@ -252,10 +246,10 @@ class DatabaseManager:
         history = self._execute_query(query, (user_id, limit), fetch_all=True)
         if history:
             logger.info(f"[DB Stats] Found {len(history)} recent quizzes for user {user_id}.")
-            return history
         else:
             logger.warning(f"[DB Stats] No recent quiz history found for user {user_id} or query failed.")
-            return []
+            history = [] 
+        return history
 
     def get_leaderboard(self, limit: int = 10):
         logger.info(f"[DB Stats] Fetching top {limit} users for leaderboard.")
@@ -267,7 +261,7 @@ class DatabaseManager:
             COUNT(r.result_id) as total_quizzes_taken
         FROM quiz_results r
         LEFT JOIN users u ON r.user_id = u.user_id
-        WHERE r.completed_at IS NOT NULL
+        WHERE r.completed_at IS NOT NULL AND r.score_percentage IS NOT NULL
         GROUP BY r.user_id, u.username, u.first_name
         HAVING COUNT(r.result_id) > 0
         ORDER BY average_score_percentage DESC, total_quizzes_taken DESC
@@ -287,14 +281,14 @@ class DatabaseManager:
         if time_filter == "today":
             return f" AND DATE({date_column}) = CURRENT_DATE "
         elif time_filter == "last_7_days":
-            return f" AND {date_column} >= CURRENT_DATE - INTERVAL '7 days' AND {date_column} < CURRENT_DATE + INTERVAL '1 day' "
+            return f" AND {date_column} >= CURRENT_DATE - INTERVAL '6 days' AND {date_column} < CURRENT_DATE + INTERVAL '1 day' "
         elif time_filter == "last_30_days":
-            return f" AND {date_column} >= CURRENT_DATE - INTERVAL '30 days' AND {date_column} < CURRENT_DATE + INTERVAL '1 day' "
+            return f" AND {date_column} >= CURRENT_DATE - INTERVAL '29 days' AND {date_column} < CURRENT_DATE + INTERVAL '1 day' "
         elif time_filter == "all":
-            return " " # Returns a space to be appended, ensuring valid SQL
+            return " " 
         else:
             logger.warning(f"[DB Admin Stats] Unknown time_filter: {time_filter}. Defaulting to 'all'.")
-            return " " # Default to all if filter is unknown
+            return " "
 
     def get_total_users_count(self):
         logger.info("[DB Admin Stats] Fetching total users count.")
@@ -305,43 +299,39 @@ class DatabaseManager:
     def get_active_users_count(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching active users count for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "last_interaction_date")
-        where_clause = "WHERE 1=1" + time_condition 
-        query = f"SELECT COUNT(DISTINCT user_id) as active_users FROM users {where_clause};"
+        query = f"SELECT COUNT(DISTINCT user_id) as active_users FROM users WHERE 1=1 {time_condition};"
         result = self._execute_query(query, fetch_one=True)
         return result["active_users"] if result and "active_users" in result else 0
-
+        
     def get_total_quizzes_count(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats] Fetching total quizzes taken count for filter: {time_filter}")
+        logger.info(f"[DB Admin Stats] Fetching total quizzes completed count for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "completed_at")
-        where_clause = "WHERE completed_at IS NOT NULL" + time_condition
-        query = f"SELECT COUNT(result_id) as total_quizzes FROM quiz_results {where_clause};"
+        query = f"SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at IS NOT NULL {time_condition};"
         result = self._execute_query(query, fetch_one=True)
         return result["total_quizzes"] if result and "total_quizzes" in result else 0
 
     def get_overall_average_score(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching overall average score for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "completed_at")
-        where_clause = "WHERE completed_at IS NOT NULL" + time_condition
-        query = f"SELECT COALESCE(AVG(score_percentage), 0.0) as average_score FROM quiz_results {where_clause};"
+        query = f"SELECT COALESCE(AVG(score_percentage), 0.0) as average_score FROM quiz_results WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition};"
         result = self._execute_query(query, fetch_one=True)
         return result["average_score"] if result and "average_score" in result else 0.0
 
     def get_average_quiz_duration(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching average quiz duration for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "completed_at")
-        where_clause = "WHERE completed_at IS NOT NULL AND time_taken_seconds IS NOT NULL" + time_condition
-        query = f"SELECT COALESCE(AVG(time_taken_seconds), 0) as average_duration FROM quiz_results {where_clause};"
+        query = f"SELECT COALESCE(AVG(time_taken_seconds), 0) as average_duration FROM quiz_results WHERE completed_at IS NOT NULL AND time_taken_seconds IS NOT NULL {time_condition};"
         result = self._execute_query(query, fetch_one=True)
         avg_duration = result["average_duration"] if result and "average_duration" in result else 0
         return int(avg_duration) if avg_duration is not None else 0
 
     def get_average_quizzes_per_active_user(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching average quizzes per active user for filter: {time_filter}")
-        total_quizzes = self.get_total_quizzes_count(time_filter)
+        total_quizzes_completed = self.get_total_quizzes_count(time_filter)
         active_users = self.get_active_users_count(time_filter)
         if active_users == 0:
             return 0.0
-        return round(total_quizzes / active_users, 2)
+        return round(total_quizzes_completed / active_users, 2)
 
     def get_quiz_completion_rate_stats(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching quiz completion rate stats for filter: {time_filter}")
@@ -360,7 +350,9 @@ class DatabaseManager:
         completion_rate = 0.0
         if started_count > 0:
             completion_rate = round((completed_count / started_count) * 100, 2)
-            
+        elif completed_count > 0 and started_count == 0: 
+             logger.warning(f"[DB Admin Stats] Completion rate: {completed_count} quizzes completed but 0 started within filter '{time_filter}'. Rate will be 0%.")
+
         return {
             "started_quizzes": started_count,
             "completed_quizzes": completed_count,
@@ -371,7 +363,7 @@ class DatabaseManager:
         logger.info(f"[DB Admin Stats] Fetching question difficulty stats for filter: {time_filter}, limit: {limit}")
         time_condition = self._get_time_filter_condition(time_filter, "qr.completed_at")
         
-        base_query = """
+        base_query = f"""
         SELECT 
             ad.question_id,
             q.question_text,
@@ -401,25 +393,64 @@ class DatabaseManager:
         }
 
     def get_unit_engagement_stats(self, time_filter="all", limit=5):
-        logger.info(f"[DB Admin Stats] Fetching unit engagement stats for filter: {time_filter}, limit: {limit}")
-        time_condition = self._get_time_filter_condition(time_filter, "qr.completed_at")
+        logger.info(f"[DB Admin Stats] Fetching unit engagement (popularity) stats for filter: {time_filter}, limit: {limit}")
+        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
         
         query_popular_quizzes = f"""
         SELECT 
             quiz_name, 
             COUNT(result_id) as times_taken,
-            AVG(score_percentage) as average_score
+            COALESCE(AVG(score_percentage), 0.0) as average_score 
         FROM quiz_results
-        WHERE completed_at IS NOT NULL {time_condition}
+        WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition} 
         GROUP BY quiz_name
+        HAVING COUNT(result_id) > 0
         ORDER BY times_taken DESC, average_score DESC
         LIMIT %s;
         """
         popular_quizzes = self._execute_query(query_popular_quizzes, (limit,), fetch_all=True)
 
         return {
-            "popular_units_or_quizzes": popular_quizzes if popular_quizzes else [] 
+            "popular_units": popular_quizzes if popular_quizzes else [] 
         }
+
+    def get_most_difficult_units(self, time_filter="all", limit=3):
+        logger.info(f"[DB Admin Stats] Fetching most difficult units for filter: {time_filter}, limit: {limit}")
+        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
+        
+        query_difficult_units = f"""
+        SELECT 
+            quiz_name, 
+            COUNT(result_id) as times_taken,
+            COALESCE(AVG(score_percentage), 0.0) as average_score 
+        FROM quiz_results
+        WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition}
+        GROUP BY quiz_name
+        HAVING COUNT(result_id) > 0 
+        ORDER BY average_score ASC, times_taken DESC 
+        LIMIT %s;
+        """
+        difficult_units = self._execute_query(query_difficult_units, (limit,), fetch_all=True)
+        return difficult_units if difficult_units else []
+
+    def get_easiest_units(self, time_filter="all", limit=3):
+        logger.info(f"[DB Admin Stats] Fetching easiest units for filter: {time_filter}, limit: {limit}")
+        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
+        
+        query_easiest_units = f"""
+        SELECT 
+            quiz_name, 
+            COUNT(result_id) as times_taken,
+            COALESCE(AVG(score_percentage), 0.0) as average_score
+        FROM quiz_results
+        WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition}
+        GROUP BY quiz_name
+        HAVING COUNT(result_id) > 0
+        ORDER BY average_score DESC, times_taken DESC
+        LIMIT %s;
+        """
+        easiest_units = self._execute_query(query_easiest_units, (limit,), fetch_all=True)
+        return easiest_units if easiest_units else []
 
     def get_user_activity_summary(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching user activity summary for filter: {time_filter}")
@@ -431,7 +462,7 @@ class DatabaseManager:
             WHERE completed_at IS NOT NULL {time_condition_quiz};
         """
         active_takers_result = self._execute_query(query_active_quiz_takers, fetch_one=True)
-        active_quiz_takers = active_takers_result['active_quiz_takers'] if active_takers_result else 0
+        active_quiz_takers = active_takers_result['active_quiz_takers'] if active_takers_result and 'active_quiz_takers' in active_takers_result else 0
 
         total_users = self.get_total_users_count()
         general_active_users = self.get_active_users_count(time_filter)
