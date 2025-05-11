@@ -61,6 +61,7 @@ try:
         
     from handlers.stats import stats_conv_handler
 
+    # Original Admin Interface Handlers
     from handlers.admin_interface import (
         stats_admin_panel_command_handler, 
         stats_menu_callback_handler, 
@@ -68,6 +69,28 @@ try:
         STATS_PREFIX_MAIN_MENU, 
         STATS_PREFIX_FETCH
     )
+
+    # New Admin Interface (v4) Handlers
+    # Assuming admin_interface_v4.py is renamed to admin_interface.py OR placed in handlers/
+    # If you named the new file admin_interface_v4.py and it's in handlers/
+    # you would import like this: from handlers.admin_interface_v4 import ...
+    # For this example, I'll assume the user will replace the old admin_interface.py with the new one,
+    # or that the new file is named admin_interface.py. 
+    # If the new file is admin_interface_v4.py, the import needs to be adjusted.
+    # For now, let's assume the new functions are in a module that can be imported as admin_interface_v4
+    # To avoid conflict if the user hasn't renamed, we'll use distinct names for v4 handlers.
+    try:
+        from handlers.admin_interface_v4 import (
+            stats_admin_panel_command_handler_v4,
+            stats_menu_callback_handler_v4,
+            stats_fetch_callback_handler_v4,
+            STATS_PREFIX_MAIN_MENU as STATS_PREFIX_MAIN_MENU_V4, # Alias to avoid name clash
+            STATS_PREFIX_FETCH as STATS_PREFIX_FETCH_V4 # Alias to avoid name clash
+        )
+        logger.info("Successfully imported Admin Interface V4 handlers.")
+    except ImportError as ie_v4:
+        logger.warning(f"Could not import Admin Interface V4 handlers (admin_interface_v4.py): {ie_v4}. The new admin dashboard will not be available.")
+        stats_admin_panel_command_handler_v4 = None # Set to None if import fails
 
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
@@ -96,12 +119,10 @@ def main() -> None:
     logger.info("Setting up database connection and tables...")
     conn_check = None
     try:
-        # This block is for initial table creation using db_setup.
-        # DB_MANAGER (imported from database.manager) is assumed to manage its own connections for operations.
-        conn_check = create_connection() # from database.db_setup
+        conn_check = create_connection() 
         if conn_check:
             logger.info("Database connection for setup check successful.")
-            create_tables(conn_check, drop_first=False) # from database.db_setup
+            create_tables(conn_check, drop_first=False) 
             logger.info("Database tables checked/created successfully via db_setup.")
         else:
             logger.error("Failed to create database connection for setup. Bot may not function correctly with database features.")
@@ -147,10 +168,7 @@ def main() -> None:
         application = app_builder.build()
         logger.info("Telegram Application built.")
 
-        # --- DB_MANAGER is NO LONGER added to application.bot_data ---
-        # Handlers will import and use DB_MANAGER directly from database.manager
         logger.info("DB_MANAGER will be imported and used directly by handlers, not stored in bot_data.")
-        # ---
 
         if job_queue:
             job_queue.set_application(application)
@@ -185,11 +203,21 @@ def main() -> None:
     else:
         logger.warning("stats_conv_handler is None, skipping addition.")
 
-    logger.info("Adding Admin Statistics handlers...")
+    logger.info("Adding Original Admin Statistics handlers (/adminstats)...")
     application.add_handler(CommandHandler("adminstats", stats_admin_panel_command_handler))
     application.add_handler(CallbackQueryHandler(stats_menu_callback_handler, pattern=f"^{STATS_PREFIX_MAIN_MENU}"))
     application.add_handler(CallbackQueryHandler(stats_fetch_stats_callback_handler, pattern=f"^{STATS_PREFIX_FETCH}"))
-    logger.info("Admin Statistics handlers added.")
+    logger.info("Original Admin Statistics handlers added.")
+
+    # Add New Admin Statistics (v4) Handlers if imported successfully
+    if stats_admin_panel_command_handler_v4:
+        logger.info("Adding New Admin Statistics (V4) handlers (/adminstats_v4)...")
+        application.add_handler(CommandHandler("adminstats_v4", stats_admin_panel_command_handler_v4))
+        application.add_handler(CallbackQueryHandler(stats_menu_callback_handler_v4, pattern=f"^{STATS_PREFIX_MAIN_MENU_V4}"))
+        application.add_handler(CallbackQueryHandler(stats_fetch_callback_handler_v4, pattern=f"^{STATS_PREFIX_FETCH_V4}"))
+        logger.info("New Admin Statistics (V4) handlers added.")
+    else:
+        logger.warning("New Admin Statistics (V4) handlers were not imported, skipping their addition.")
 
     logger.info("Adding global main_menu_callback handler...")
     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
@@ -205,4 +233,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
