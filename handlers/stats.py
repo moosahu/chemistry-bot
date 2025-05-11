@@ -6,6 +6,7 @@
 (FSTRING_FIX_V4: Corrected unmatched parenthesis in an f-string)
 (FSTRING_FIX_V5: Simplified complex f-string by using intermediate variables to avoid parsing issues)
 (FSTRING_FIX_V6: Replaced specific problematic f-string with .format() to rule out parsing issues for completion rate line)
+(FSTRING_FIX_V7: Proactively converted all f-strings in the admin question stats section to .format() to prevent further parsing errors)
 """
 
 import logging
@@ -40,7 +41,7 @@ try:
 except ImportError as e:
     # Fallback logger configuration if config import fails
     logging.basicConfig(level=logging.INFO) # Basic config for fallback
-    logger = logging.getLogger(__name__) # Use module\\\\'s name for logger
+    logger = logging.getLogger(__name__) # Use module\\\\\\\\'s name for logger
     logger.error(f"[stats.py] CRITICAL Error importing core modules (config, helpers, common): {e}. Using placeholders. Bot functionality will be SEVERELY AFFECTED.")
     MAIN_MENU, STATS_MENU, ADMIN_STATS_MENU = 0, 8, 9
     LEADERBOARD_LIMIT = 10
@@ -353,21 +354,21 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     time_filter = context.user_data.get(f"admin_stats_filter_{user_id}", "today")
     logger.info(f"[AdminStats] Admin user {user_id} accessing panel with filter: {time_filter}")
 
-    stats_text = f"📊 *لوحة التحكم الإدارية* ({time_filter.replace("_", " ").capitalize()}) 📊\n\n"
+    stats_text = "📊 *لوحة التحكم الإدارية* ({}) 📊\n\n".format(time_filter.replace("_", " ").capitalize())
     
     stats_text += "*نظرة عامة على الاستخدام: *\n"
     total_users = db_manager.get_total_users_count()
     active_users_general = db_manager.get_active_users_count(time_filter)
     total_quizzes_completed = db_manager.get_total_quizzes_count(time_filter)
     avg_quizzes_per_active_user = db_manager.get_average_quizzes_per_active_user(time_filter)
-    stats_text += f"- إجمالي المستخدمين (الكلي): {total_users}\n"
-    stats_text += f"- المستخدمون النشطون: {active_users_general}\n"
-    stats_text += f"- إجمالي الاختبارات التي تم إجراؤها: {total_quizzes_completed}\n"
-    stats_text += f"- متوسط الاختبارات لكل مستخدم نشط: {avg_quizzes_per_active_user:.2f}\n\n"
+    stats_text += "- إجمالي المستخدمين (الكلي): {}\n".format(total_users)
+    stats_text += "- المستخدمون النشطون: {}\n".format(active_users_general)
+    stats_text += "- إجمالي الاختبارات التي تم إجراؤها: {}\n".format(total_quizzes_completed)
+    stats_text += "- متوسط الاختبارات لكل مستخدم نشط: {:.2f}\n\n".format(avg_quizzes_per_active_user)
 
     stats_text += "*أداء الاختبارات: *\n"
     avg_correct_rate = db_manager.get_overall_average_score(time_filter)
-    stats_text += f"- متوسط نسبة الإجابات الصحيحة: {avg_correct_rate:.2f}%\n"
+    stats_text += "- متوسط نسبة الإجابات الصحيحة: {:.2f}%\n".format(avg_correct_rate)
     unit_engagement = db_manager.get_unit_engagement_stats(time_filter=time_filter, limit=3)
     popular_units = unit_engagement.get("popular_units_or_quizzes", [])
     stats_text += "- الوحدات/الاختبارات الأكثر شعبية (أعلى 3):\n"
@@ -376,22 +377,20 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             quiz_name_display = unit_stat.get("quiz_name", "غير معروف")
             times_taken = unit_stat.get("times_taken", 0)
             avg_score_unit = unit_stat.get("average_score", 0.0)
-            stats_text += f"  {i+1}. \"{quiz_name_display}\" (لُعِبت {times_taken} مرات, متوسط {avg_score_unit:.1f}%)\n"
+            stats_text += "  {}. \"{}\" (لُعِبت {} مرات, متوسط {:.1f}%)\n".format(i+1, quiz_name_display, times_taken, avg_score_unit)
     else:
         stats_text += "  لا توجد بيانات\n"
     stats_text += "\n"
     
     stats_text += "*تفاعل المستخدمين: *\n"
     avg_quiz_duration_secs = db_manager.get_average_quiz_duration(time_filter)
-    stats_text += f"- متوسط وقت إكمال الاختبار: {format_duration(avg_quiz_duration_secs)}\n"
+    stats_text += "- متوسط وقت إكمال الاختبار: {}\n".format(format_duration(avg_quiz_duration_secs))
     completion_stats = db_manager.get_quiz_completion_rate_stats(time_filter)
     
-    # Intermediate variables for clarity and to simplify the f-string
     completion_rate_val = completion_stats.get("completion_rate", 0.0)
     completed_quizzes_val = completion_stats.get("completed_quizzes", 0)
     started_quizzes_val = completion_stats.get("started_quizzes", 0)
     
-    # Replaced f-string with .format() for this specific line to avoid parsing issues
     line_text_completion_rate = "- معدل إكمال الاختبارات: {:.2f}% (اكتمل {} من {} بدأ)\n\n".format(
         completion_rate_val,
         completed_quizzes_val,
@@ -411,7 +410,8 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             q_text_short = (q_text[:50] + "...") if q_text and len(q_text) > 53 else q_text
             error_perc = q_stat.get("error_percentage", 0.0)
             times_ans = q_stat.get("times_answered", 0)
-            stats_text += f"  {i+1}. \"{q_text_short}\" ({error_perc:.1f}% خطأ من {times_ans} إجابات)\n"
+            # Using .format() for this potentially complex line
+            stats_text += "  {}. \"{}\" ({:.1f}% خطأ من {} إجابات)\n".format(i+1, q_text_short, error_perc, times_ans)
     else:
         stats_text += "  لا توجد بيانات\n"
 
@@ -422,7 +422,8 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             q_text_short = (q_text[:50] + "...") if q_text and len(q_text) > 53 else q_text
             correct_perc = q_stat.get("correct_percentage", 0.0)
             times_ans = q_stat.get("times_answered", 0)
-            stats_text += f"  {i+1}. \"{q_text_short}\" ({correct_perc:.1f}% صحة من {times_ans} إجابات)\n"
+            # Using .format() for this potentially complex line
+            stats_text += "  {}. \"{}\" ({:.1f}% صحة من {} إجابات)\n".format(i+1, q_text_short, correct_perc, times_ans)
     else:
         stats_text += "  لا توجد بيانات\n"
 
