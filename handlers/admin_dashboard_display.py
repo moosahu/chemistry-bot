@@ -1,7 +1,7 @@
 """Module for generating display content (text and charts) for the Admin Dashboard.
 
-Version 8: Further simplifies f-string construction in get_usage_overview_display
-and other functions to prevent "unmatched parenthesis" errors. 
+Version 9: Completely removes f-strings and uses basic string concatenation
+or .format() to prevent "unmatched parenthesis" errors. 
 Ensures ALL user-facing Arabic strings, static or dynamic, in text responses
 and chart elements are passed through process_arabic_text.
 """
@@ -32,7 +32,7 @@ try:
         logger.warning("Amiri and DejaVu Sans fonts not found. Using Matplotlib default sans-serif. Arabic text in charts might not render correctly.")
         plt.rcParams["font.family"] = "sans-serif"
 except Exception as e:
-    logger.warning(f"Font setup issue: {e}. Using Matplotlib default sans-serif. Arabic text in charts might not render correctly.")
+    logger.warning("Font setup issue: {}. Using Matplotlib default sans-serif. Arabic text in charts might not render correctly.".format(e))
     plt.rcParams["font.family"] = "sans-serif"
 
 plt.rcParams["axes.unicode_minus"] = False
@@ -58,7 +58,7 @@ def process_arabic_text(text_to_process):
         bidi_text = get_display(reshaped_text)
         return bidi_text
     except Exception as ex_arabic:
-        logger.error(f"Error processing Arabic text with reshaper/bidi: {ex_arabic}. Text was: {text_to_process}")
+        logger.error("Error processing Arabic text with reshaper/bidi: {}. Text was: {}".format(ex_arabic, text_to_process))
         return text_str
 
 TIME_FILTERS_DISPLAY = {
@@ -78,23 +78,23 @@ def generate_usage_overview_chart(active_users: int, total_quizzes_in_period: in
     bars = ax.bar(categories, counts, color=colors, width=0.5)
     ax.set_ylabel(process_arabic_text("العدد"))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
-    title_chart = process_arabic_text(f"نظرة عامة على الاستخدام ({time_filter_display_val})")
+    title_chart = process_arabic_text("نظرة عامة على الاستخدام ({})".format(time_filter_display_val))
     ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=12)
     for bar in bars:
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.02 * max(counts) if max(counts) > 0 else 0.5, int(yval), ha="center", va="bottom", fontsize=11)
-    chart_filename = f"usage_overview_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S%f")}.png"
+    chart_filename = "usage_overview_{}_{}.png".format(time_filter, datetime.now().strftime("%Y%m%d%H%M%S%f"))
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
         plt.close(fig)
-        logger.info(f"Generated usage overview chart: {chart_path}")
+        logger.info("Generated usage overview chart: {}".format(chart_path))
         return chart_path
     except Exception as e:
-        logger.error(f"Error generating usage overview chart for time_filter {time_filter}: {e}", exc_info=True)
+        logger.error("Error generating usage overview chart for time_filter {}: {}".format(time_filter, e), exc_info=True)
         plt.close(fig)
         return None
 
@@ -111,14 +111,13 @@ async def get_usage_overview_display(time_filter: str) -> tuple[str, str | None]
     str_total_quizzes_label = process_arabic_text("- إجمالي الاختبارات")
     str_avg_quizzes_label = process_arabic_text("- متوسط الاختبارات لكل مستخدم نشط")
 
-    # Simplified string construction
-    text_response_parts = []
-    text_response_parts.append(f"{str_title_overview} ({time_filter_display_val}):")
-    text_response_parts.append(f"{str_total_users_label} {total_users_overall}")
-    text_response_parts.append(f"{str_active_users_label} ({time_filter_display_val}): {active_users_period}")
-    text_response_parts.append(f"{str_total_quizzes_label} ({time_filter_display_val}): {total_quizzes_period}")
-    text_response_parts.append(f"{str_avg_quizzes_label} ({time_filter_display_val}): {avg_quizzes_active_user_period:.2f}")
-    text_response = "\n".join(text_response_parts)
+    # Completely avoid f-strings, use concatenation and .format()
+    line1 = str_title_overview + " (" + time_filter_display_val + "):\n"
+    line2 = str_total_users_label + " " + str(total_users_overall) + "\n"
+    line3 = str_active_users_label + " (" + time_filter_display_val + "): " + str(active_users_period) + "\n"
+    line4 = str_total_quizzes_label + " (" + time_filter_display_val + "): " + str(total_quizzes_period) + "\n"
+    line5 = str_avg_quizzes_label + " (" + time_filter_display_val + "): {:.2f}".format(avg_quizzes_active_user_period if avg_quizzes_active_user_period is not None else 0.0)
+    text_response = line1 + line2 + line3 + line4 + line5
 
     chart_path = None
     if active_users_period > 0 or total_quizzes_period > 0:
@@ -127,7 +126,7 @@ async def get_usage_overview_display(time_filter: str) -> tuple[str, str | None]
 
 def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) -> str | None:
     if not score_distribution or not any(score_distribution.values()):
-        logger.info(f"No score distribution data to generate chart for time_filter {time_filter}.")
+        logger.info("No score distribution data to generate chart for time_filter {}.".format(time_filter))
         return None
     labels = [process_arabic_text(label) for label in score_distribution.keys()]
     values = list(score_distribution.values())
@@ -136,28 +135,28 @@ def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) 
     ax.set_ylabel(process_arabic_text("عدد المستخدمين"))
     ax.set_xlabel(process_arabic_text("نطاق الدرجات"))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
-    title_chart = process_arabic_text(f"توزيع درجات الاختبارات ({time_filter_display_val})")
+    title_chart = process_arabic_text("توزيع درجات الاختبارات ({})".format(time_filter_display_val))
     ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=10, rotation=45, ha="right")
     ax.tick_params(axis="y", labelsize=10)
     for bar in bars:
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.02 * max(values) if max(values) > 0 else 0.5, int(yval), ha="center", va="bottom", fontsize=9)
-    chart_filename = f"quiz_performance_scores_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S%f")}.png"
+    chart_filename = "quiz_performance_scores_{}_{}.png".format(time_filter, datetime.now().strftime("%Y%m%d%H%M%S%f"))
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
         plt.close(fig)
-        logger.info(f"Generated quiz performance chart: {chart_path}")
+        logger.info("Generated quiz performance chart: {}".format(chart_path))
         return chart_path
     except Exception as e:
-        logger.error(f"Error generating quiz performance chart for time_filter {time_filter}: {e}", exc_info=True)
+        logger.error("Error generating quiz performance chart for time_filter {}: {}".format(time_filter, e), exc_info=True)
         plt.close(fig)
         return None
 
 async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info(f"[AdminDashboardDisplayV8] get_quiz_performance_display called for {time_filter}")
+    logger.info("[AdminDashboardDisplayV9] get_quiz_performance_display called for {}".format(time_filter))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     avg_correct_percentage = DB_MANAGER.get_overall_average_score(time_filter=time_filter)
     score_distribution_data = DB_MANAGER.get_score_distribution(time_filter=time_filter)
@@ -168,15 +167,16 @@ async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | Non
     users_str = process_arabic_text("مستخدمين")
     avg_correct_label = process_arabic_text("- متوسط نسبة الإجابات الصحيحة:")
 
-    text_response_parts = [f"{title_str} ({time_filter_display_val}):"]
-    text_response_parts.append(f"{avg_correct_label} {float(avg_correct_percentage):.2f}%")
+    text_response_parts = []
+    text_response_parts.append(title_str + " (" + time_filter_display_val + "):")
+    text_response_parts.append(avg_correct_label + " {:.2f}%".format(float(avg_correct_percentage if avg_correct_percentage is not None else 0.0)))
     if score_distribution_data and isinstance(score_distribution_data, dict) and any(score_distribution_data.values()):
-        text_response_parts.append(f"\n{dist_title_str}")
+        text_response_parts.append("\n" + dist_title_str)
         for score_range, count in score_distribution_data.items():
-            processed_score_range = process_arabic_text(str(score_range)) # Ensure score_range is processed
-            text_response_parts.append(f"  - {processed_score_range}: {count} {users_str}")
+            processed_score_range = process_arabic_text(str(score_range))
+            text_response_parts.append("  - " + processed_score_range + ": " + str(count) + " " + users_str)
     else:
-        text_response_parts.append(f"\n{dist_title_str} {no_data_str}")
+        text_response_parts.append("\n" + dist_title_str + " " + no_data_str)
     text_response = "\n".join(text_response_parts)
     chart_path = None
     if score_distribution_data and isinstance(score_distribution_data, dict) and any(score_distribution_data.values()):
@@ -187,7 +187,7 @@ async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | Non
 
 def generate_user_interaction_chart(interaction_data: dict, time_filter: str) -> str | None:
     if not interaction_data or not any(str(val) for val in interaction_data.values()):
-        logger.info(f"No user interaction data to generate chart for time_filter {time_filter}.")
+        logger.info("No user interaction data to generate chart for time_filter {}.".format(time_filter))
         return None
 
     labels = [process_arabic_text(label) for label in interaction_data.keys()]
@@ -197,14 +197,14 @@ def generate_user_interaction_chart(interaction_data: dict, time_filter: str) ->
             values.append(float(value))
         except (ValueError, TypeError):
             values.append(0.0)
-            logger.warning(f"Could not convert interaction data value: {value}", exc_info=True)
+            logger.warning("Could not convert interaction data value: {}".format(value), exc_info=True)
 
     fig, ax = plt.subplots(figsize=(8, 6))
     bars = ax.bar(labels, values, color=["#ff7f0e", "#d62728"], width=0.5)
 
     ax.set_ylabel(process_arabic_text("النسبة المئوية (%)"))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
-    title_chart = process_arabic_text(f"معدلات إكمال الاختبارات ({time_filter_display_val})")
+    title_chart = process_arabic_text("معدلات إكمال الاختبارات ({})".format(time_filter_display_val))
     ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=10)
@@ -212,23 +212,23 @@ def generate_user_interaction_chart(interaction_data: dict, time_filter: str) ->
 
     for bar in bars:
         yval = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 2, f"{yval:.1f}%", ha="center", va="bottom", fontsize=10)
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 2, "{:.1f}%".format(yval), ha="center", va="bottom", fontsize=10)
 
-    chart_filename = f"user_interaction_completion_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S%f")}.png"
+    chart_filename = "user_interaction_completion_{}_{}.png".format(time_filter, datetime.now().strftime("%Y%m%d%H%M%S%f"))
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
         plt.close(fig)
-        logger.info(f"Generated user interaction chart: {chart_path}")
+        logger.info("Generated user interaction chart: {}".format(chart_path))
         return chart_path
     except Exception as e:
-        logger.error(f"Error generating user interaction chart for time_filter {time_filter}: {e}", exc_info=True)
+        logger.error("Error generating user interaction chart for time_filter {}: {}".format(time_filter, e), exc_info=True)
         plt.close(fig)
         return None
 
 async def get_user_interaction_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info(f"[AdminDashboardDisplayV8] get_user_interaction_display called for {time_filter}")
+    logger.info("[AdminDashboardDisplayV9] get_user_interaction_display called for {}".format(time_filter))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
 
     avg_completion_time_seconds_data = DB_MANAGER.get_average_quiz_duration(time_filter=time_filter)
@@ -250,12 +250,13 @@ async def get_user_interaction_display(time_filter: str) -> tuple[str, str | Non
     completion_rate_label = process_arabic_text("- معدل إكمال الاختبارات:")
     drop_off_rate_label = process_arabic_text("- معدل التسرب من الاختبارات:")
 
-    text_response_parts = [f"{title_str} ({time_filter_display_val}):"]
-    text_response_parts.append(f"{avg_time_label} {avg_completion_time_seconds:.2f} {seconds_str}")
-    text_response_parts.append(f"{total_started_label} {total_started}")
-    text_response_parts.append(f"{total_completed_label} {total_completed}")
-    text_response_parts.append(f"{completion_rate_label} {float(completion_rate):.2f}%")
-    text_response_parts.append(f"{drop_off_rate_label} {float(drop_off_rate):.2f}%")
+    text_response_parts = []
+    text_response_parts.append(title_str + " (" + time_filter_display_val + "):")
+    text_response_parts.append(avg_time_label + " {:.2f} ".format(avg_completion_time_seconds) + seconds_str)
+    text_response_parts.append(total_started_label + " " + str(total_started))
+    text_response_parts.append(total_completed_label + " " + str(total_completed))
+    text_response_parts.append(completion_rate_label + " {:.2f}%".format(float(completion_rate)))
+    text_response_parts.append(drop_off_rate_label + " {:.2f}%".format(float(drop_off_rate)))
     text_response = "\n".join(text_response_parts)
 
     chart_data = {}
@@ -275,7 +276,7 @@ async def get_user_interaction_display(time_filter: str) -> tuple[str, str | Non
 
 def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: str, chart_type: str) -> str | None:
     if not difficulty_data_list:
-        logger.info(f"No {chart_type} question data to generate chart for time_filter {time_filter}.")
+        logger.info("No {} question data to generate chart for time_filter {}.".format(chart_type, time_filter))
         return None
 
     questions_to_chart = difficulty_data_list[:5]
@@ -290,7 +291,8 @@ def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: 
     ax.set_ylabel(process_arabic_text("نسبة الإجابة الصحيحة (%)"))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     chart_title_type_str = process_arabic_text("الأصعب") if chart_type == "hardest" else process_arabic_text("الأسهل")
-    title_chart = process_arabic_text(f"الأسئلة الـ{len(questions_to_chart)} {chart_title_type_str} ({time_filter_display_val})")
+    # title_chart = process_arabic_text(f"الأسئلة الـ{len(questions_to_chart)} {chart_title_type_str} ({time_filter_display_val})")
+    title_chart = process_arabic_text("الأسئلة الـ{} {} ({})".format(len(questions_to_chart), chart_title_type_str, time_filter_display_val))
     ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=9, rotation=35, ha="right")
     ax.tick_params(axis="y", labelsize=10)
@@ -298,23 +300,23 @@ def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: 
 
     for bar in bars:
         yval = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 1.5, f"{yval:.1f}%", ha="center", va="bottom", fontsize=9)
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 1.5, "{:.1f}%".format(yval), ha="center", va="bottom", fontsize=9)
 
-    chart_filename = f"question_difficulty_{chart_type}_{time_filter}_{datetime.now().strftime("%Y%m%d%H%M%S%f")}.png"
+    chart_filename = "question_difficulty_{}_{}_{}.png".format(chart_type, time_filter, datetime.now().strftime("%Y%m%d%H%M%S%f"))
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
         plt.close(fig)
-        logger.info(f"Generated question difficulty ({chart_type}) chart: {chart_path}")
+        logger.info("Generated question difficulty ({}) chart: {}".format(chart_type, chart_path))
         return chart_path
     except Exception as e:
-        logger.error(f"Error generating question difficulty ({chart_type}) chart for time_filter {time_filter}: {e}", exc_info=True)
+        logger.error("Error generating question difficulty ({}) chart for time_filter {}: {}".format(chart_type, time_filter, e), exc_info=True)
         plt.close(fig)
         return None
 
 async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] | None]:
-    logger.info(f"[AdminDashboardDisplayV8] get_question_stats_display called for {time_filter}")
+    logger.info("[AdminDashboardDisplayV9] get_question_stats_display called for {}".format(time_filter))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     
     question_difficulty_list = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter) 
@@ -328,30 +330,32 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
     attempts_str = process_arabic_text("محاولات:")
     not_available_str = process_arabic_text("غير متوفر")
 
-    text_response_parts = [f"{title_str} ({time_filter_display_val}):"]
+    text_response_parts = [title_str + " (" + time_filter_display_val + "):"]
 
     hardest_questions = sorted([q for q in question_difficulty_list if q.get("correct_percentage") is not None], key=lambda x: x["correct_percentage"])[:5]
     easiest_questions = sorted([q for q in question_difficulty_list if q.get("correct_percentage") is not None], key=lambda x: x["correct_percentage"], reverse=True)[:5]
 
     if hardest_questions:
-        text_response_parts.append(f"\n{hardest_title_str}")
+        text_response_parts.append("\n" + hardest_title_str)
         for i, q in enumerate(hardest_questions):
             q_text = q.get("question_text", "N/A")
             attempts_val = q.get("total_attempts", not_available_str)
             processed_q_text = process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))
-            text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
+            # text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
+            text_response_parts.append("  {}. \"{}\" ({} {:.2f}%, {} {})".format(i+1, processed_q_text, correctness_str, q.get("correct_percentage", 0.0), attempts_str, attempts_val))
     else:
-        text_response_parts.append(f"\n{no_data_hardest_str}")
+        text_response_parts.append("\n" + no_data_hardest_str)
 
     if easiest_questions:
-        text_response_parts.append(f"\n{easiest_title_str}")
+        text_response_parts.append("\n" + easiest_title_str)
         for i, q in enumerate(easiest_questions):
             q_text = q.get("question_text", "N/A")
             attempts_val = q.get("total_attempts", not_available_str)
             processed_q_text = process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))
-            text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
+            # text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
+            text_response_parts.append("  {}. \"{}\" ({} {:.2f}%, {} {})".format(i+1, processed_q_text, correctness_str, q.get("correct_percentage", 0.0), attempts_str, attempts_val))
     else:
-        text_response_parts.append(f"\n{no_data_easiest_str}")
+        text_response_parts.append("\n" + no_data_easiest_str)
 
     text_response = "\n".join(text_response_parts)
     
@@ -375,5 +379,5 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
 
     return text_response, chart_paths
 
-logger.info("[AdminDashboardDisplayV8] Module loaded, f-string construction simplified.")
+logger.info("[AdminDashboardDisplayV9] Module loaded, all f-strings replaced with concatenation or .format().")
 
