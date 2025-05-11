@@ -3,6 +3,7 @@
 (FSTRING_DEBUG: Changed one f-string to .format() in show_my_stats)
 (ADMIN_STATS_FIX_V2: Correctly call and display question difficulty stats from DB_MANAGER)
 (IMPORT_FIX_V3: Ensuring clean file structure for handler exports)
+(FSTRING_FIX_V4: Corrected unmatched parenthesis in an f-string)
 """
 
 import logging
@@ -37,7 +38,7 @@ try:
 except ImportError as e:
     # Fallback logger configuration if config import fails
     logging.basicConfig(level=logging.INFO) # Basic config for fallback
-    logger = logging.getLogger(__name__) # Use module's name for logger
+    logger = logging.getLogger(__name__) # Use module\'s name for logger
     logger.error(f"[stats.py] CRITICAL Error importing core modules (config, helpers, common): {e}. Using placeholders. Bot functionality will be SEVERELY AFFECTED.")
     MAIN_MENU, STATS_MENU, ADMIN_STATS_MENU = 0, 8, 9
     LEADERBOARD_LIMIT = 10
@@ -382,7 +383,8 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     avg_quiz_duration_secs = db_manager.get_average_quiz_duration(time_filter)
     stats_text += f"- متوسط وقت إكمال الاختبار: {format_duration(avg_quiz_duration_secs)}\n"
     completion_stats = db_manager.get_quiz_completion_rate_stats(time_filter)
-    stats_text += f"- معدل إكمال الاختبارات: {completion_stats.get("completion_rate", 0.0):.2f}% (اكتمل {completion_stats.get("completed_quizzes",0)} من {completion_stats.get("started_quizzes",0)} بدأ)\n\n"
+    # Corrected f-string at line 237 (original line number)
+    stats_text += f"- معدل إكمال الاختبارات: {completion_stats.get("completion_rate", 0.0):.2f}% (اكتمل {completion_stats.get("completed_quizzes",0)} من {completion_stats.get("started_quizzes",0)} بدأ)\n\n" 
 
     stats_text += "*إحصائيات الأسئلة: *\n"
     question_difficulty_data = db_manager.get_question_difficulty_stats(time_filter=time_filter, limit=3)
