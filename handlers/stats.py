@@ -7,6 +7,7 @@
 (FSTRING_FIX_V5: Simplified complex f-string by using intermediate variables to avoid parsing issues)
 (FSTRING_FIX_V6: Replaced specific problematic f-string with .format() to rule out parsing issues for completion rate line)
 (FSTRING_FIX_V7: Proactively converted all f-strings in the admin question stats section to .format() to prevent further parsing errors)
+(FSTRING_FIX_V8: Comprehensive conversion of nearly ALL f-strings in the file to .format() or string concatenation to eliminate f-string parsing errors entirely.)
 """
 
 import logging
@@ -41,13 +42,14 @@ try:
 except ImportError as e:
     # Fallback logger configuration if config import fails
     logging.basicConfig(level=logging.INFO) # Basic config for fallback
-    logger = logging.getLogger(__name__) # Use module\\\\\\\\'s name for logger
-    logger.error(f"[stats.py] CRITICAL Error importing core modules (config, helpers, common): {e}. Using placeholders. Bot functionality will be SEVERELY AFFECTED.")
+    logger = logging.getLogger(__name__) # Use module's name for logger
+    # Using .format() for error logging
+    logger.error("[stats.py] CRITICAL Error importing core modules (config, helpers, common): {}. Using placeholders. Bot functionality will be SEVERELY AFFECTED.".format(e))
     MAIN_MENU, STATS_MENU, ADMIN_STATS_MENU = 0, 8, 9
     LEADERBOARD_LIMIT = 10
     async def safe_send_message(*args, **kwargs): logger.error("Placeholder safe_send_message called!")
     async def safe_edit_message_text(*args, **kwargs): logger.error("Placeholder safe_edit_message_text called!")
-    def format_duration(seconds): logger.warning("Placeholder format_duration called!"); return f"{seconds}s"
+    def format_duration(seconds): logger.warning("Placeholder format_duration called!"); return "{}s".format(seconds)
     async def main_menu_callback(*args, **kwargs): logger.error("Placeholder main_menu_callback called!"); return MAIN_MENU
 
 import arabic_reshaper
@@ -74,7 +76,8 @@ def process_arabic_text(text_to_process):
         bidi_text = get_display(reshaped_text)
         return bidi_text
     except Exception as ex_arabic:
-        logger.error(f"Error processing Arabic text with reshaper/bidi: {ex_arabic}. Text was: {text_to_process}")
+        # Using .format() for error logging
+        logger.error("Error processing Arabic text with reshaper/bidi: {}. Text was: {}".format(ex_arabic, text_to_process))
         return text_str # Fallback
 
 
@@ -92,21 +95,24 @@ def generate_bar_chart_correct_incorrect(user_id: int, correct: int, incorrect: 
     colors = ["#4CAF50", "#F44336"]
     bars = ax.bar(categories, counts, color=colors)
     ax.set_ylabel(process_arabic_text("العدد"))
-    ax.set_title(process_arabic_text(f"مقارنة الإجابات للمستخدم {user_id}"), pad=20)
+    # Using .format() for title
+    ax.set_title(process_arabic_text("مقارنة الإجابات للمستخدم {}".format(user_id)), pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=12)
     for bar in bars:
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.05 * max(counts) if max(counts)>0 else 0.5, int(yval), ha="center", va="bottom", fontsize=11)
     
-    chart_path = os.path.join(CHARTS_DIR, f"{user_id}_correct_incorrect_chart.png")
+    # Using .format() for chart path
+    chart_path = os.path.join(CHARTS_DIR, "{}_correct_incorrect_chart.png".format(user_id))
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
         plt.close(fig)
         return chart_path
     except Exception as e:
-        logger.error(f"Error generating correct/incorrect chart for user {user_id}: {e}")
+        # Using .format() for error logging
+        logger.error("Error generating correct/incorrect chart for user {}: {}".format(user_id, e))
         return None
 
 def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> str | None:
@@ -122,7 +128,8 @@ def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> 
             elif score >= 60: grades[process_arabic_text("مقبول (60-69)")] += 1
             else: grades[process_arabic_text("يحتاج تحسين (<60)")] += 1
         else:
-            logger.warning(f"[Stats Chart] Quiz entry for user {user_id} has None score_percentage. Skipping for grade distribution.")
+            # Using .format() for warning
+            logger.warning("[Stats Chart] Quiz entry for user {} has None score_percentage. Skipping for grade distribution.".format(user_id))
     
     if all(v == 0 for v in grades.values()): return None
 
@@ -132,27 +139,31 @@ def generate_bar_chart_grades_distribution(user_id: int, quiz_history: list) -> 
     colors = ["#4CAF50", "#8BC34A", "#CDDC39", "#FFEB3B", "#FFC107", "#F44336"][::-1]
     bars = ax.barh(categories, counts, color=colors[:len(categories)])
     ax.set_xlabel(process_arabic_text("عدد الاختبارات"))
-    ax.set_title(process_arabic_text(f"توزيع تقديرات الاختبارات للمستخدم {user_id}"), pad=20)
+    # Using .format() for title
+    ax.set_title(process_arabic_text("توزيع تقديرات الاختبارات للمستخدم {}".format(user_id)), pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=12)
     for i, bar in enumerate(bars):
         xval = bar.get_width()
         ax.text(xval + 0.02 * max(counts) if max(counts)>0 else 0.2, i, int(xval), ha="left", va="center", fontsize=11)
 
-    chart_path = os.path.join(CHARTS_DIR, f"{user_id}_grades_dist_chart.png")
+    # Using .format() for chart path
+    chart_path = os.path.join(CHARTS_DIR, "{}_grades_dist_chart.png".format(user_id))
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
         plt.close(fig)
         return chart_path
     except Exception as e:
-        logger.error(f"Error generating grades distribution chart for user {user_id}: {e}")
+        # Using .format() for error logging
+        logger.error("Error generating grades distribution chart for user {}: {}".format(user_id, e))
         return None
 
 def generate_line_chart_performance_trend(user_id: int, quiz_history: list) -> str | None:
     valid_quiz_history = [quiz for quiz in quiz_history if quiz.get("score_percentage") is not None]
     if not valid_quiz_history or len(valid_quiz_history) < 2:
-        logger.info(f"[Stats Chart] Not enough valid data points to generate performance trend for user {user_id} after filtering None scores.")
+        # Using .format() for info logging
+        logger.info("[Stats Chart] Not enough valid data points to generate performance trend for user {} after filtering None scores.".format(user_id))
         return None
     
     scores = [quiz.get("score_percentage") for quiz in valid_quiz_history] 
@@ -162,23 +173,27 @@ def generate_line_chart_performance_trend(user_id: int, quiz_history: list) -> s
     ax.plot(test_numbers, scores, marker="o", linestyle="-", color="#007BFF", linewidth=2, markersize=8)
     ax.set_xlabel(process_arabic_text("رقم الاختبار (الأحدث على اليمين)"))
     ax.set_ylabel(process_arabic_text("النتيجة (%)"))
-    ax.set_title(process_arabic_text(f"تطور الأداء للمستخدم {user_id} (آخر {len(valid_quiz_history)} اختبارات صالحة)"), pad=20)
+    # Using .format() for title
+    ax.set_title(process_arabic_text("تطور الأداء للمستخدم {} (آخر {} اختبارات صالحة)".format(user_id, len(valid_quiz_history))), pad=20)
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.tick_params(axis="both", labelsize=12)
     ax.set_ylim(0, 105)
     ax.set_xticks(test_numbers)
     
     for i, score_val in enumerate(scores):
-        ax.text(test_numbers[i], score_val + 2, f"{score_val:.1f}%", ha="center", fontsize=10)
+        # Using .format() for text annotation
+        ax.text(test_numbers[i], score_val + 2, "{:.1f}%".format(score_val), ha="center", fontsize=10)
 
-    chart_path = os.path.join(CHARTS_DIR, f"{user_id}_performance_trend_chart.png")
+    # Using .format() for chart path
+    chart_path = os.path.join(CHARTS_DIR, "{}_performance_trend_chart.png".format(user_id))
     try:
         plt.tight_layout()
         plt.savefig(chart_path)
         plt.close(fig)
         return chart_path
     except Exception as e:
-        logger.error(f"Error generating performance trend chart for user {user_id}: {e}")
+        # Using .format() for error logging
+        logger.error("Error generating performance trend chart for user {}: {}".format(user_id, e))
         return None
 
 # --- Helper Functions (User Stats) ---
@@ -202,19 +217,23 @@ async def stats_menu(update: Update, context: CallbackContext) -> int:
     if query:
         await query.answer()
         original_message_id = query.message.message_id if query.message else "N/A"
-        logger.info(f"User {user_id} entered stats menu via callback from message ID {original_message_id}.")
+        # Using .format() for info logging
+        logger.info("User {} entered stats menu via callback from message ID {}.".format(user_id, original_message_id))
         if query.message and query.message.text:
             try:
                 await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard)
             except Exception as e:
-                logger.warning(f"stats_menu: Failed to edit message {original_message_id} for user {user_id}, sending new. Error: {e}")
+                # Using .format() for warning
+                logger.warning("stats_menu: Failed to edit message {} for user {}, sending new. Error: {}".format(original_message_id, user_id, e))
                 await safe_send_message(context.bot, query.message.chat_id, text=text, reply_markup=keyboard)
         else:
-            logger.info(f"stats_menu: Original message (ID: {original_message_id}) for user {user_id} has no text or message is missing. Sending new message.")
+            # Using .format() for info logging
+            logger.info("stats_menu: Original message (ID: {}) for user {} has no text or message is missing. Sending new message.".format(original_message_id, user_id))
             target_chat_id_for_send = query.message.chat_id if query.message else chat_id
             await safe_send_message(context.bot, target_chat_id_for_send, text=text, reply_markup=keyboard)
     else:
-        logger.info(f"User {user_id} entered stats menu via command.")
+        # Using .format() for info logging
+        logger.info("User {} entered stats menu via command.".format(user_id))
         await safe_send_message(context.bot, chat_id, text=text, reply_markup=keyboard)
     return STATS_MENU
 
@@ -223,14 +242,17 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
     await query.answer()
     user_id = update.effective_user.id
     user_first_name = update.effective_user.first_name
-    logger.info(f"User {user_id} requested personal stats (DB-driven).")
+    # Using .format() for info logging
+    logger.info("User {} requested personal stats (DB-driven).".format(user_id))
 
     attachments = []
-    stats_text = f"📊 *إحصائياتك المفصلة يا {user_first_name}* 📊\n\n══════════════════════\n📝 ملخص الأداء العام:\n"
+    # Using .format() for stats_text
+    stats_text = "📊 *إحصائياتك المفصلة يا {}* 📊\n\n══════════════════════\n📝 ملخص الأداء العام:\n".format(user_first_name)
     db_manager = DB_MANAGER
     if not db_manager:
         stats_text += "عذراً، خدمة الإحصائيات غير متاحة حالياً بسبب مشكلة في الاتصال بقاعدة البيانات."
-        logger.critical(f"[Stats] CRITICAL: Imported DB_MANAGER is None or not initialized! Database operations will fail for user {user_id}.")
+        # Using .format() for critical logging
+        logger.critical("[Stats] CRITICAL: Imported DB_MANAGER is None or not initialized! Database operations will fail for user {}.".format(user_id))
     else:
         user_overall_stats = db_manager.get_user_overall_stats(user_id)
         user_quiz_history_raw = db_manager.get_user_recent_quiz_history(user_id, limit=LEADERBOARD_LIMIT)
@@ -238,15 +260,16 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
         if not user_overall_stats or user_overall_stats.get("total_quizzes_taken", 0) == 0:
             stats_text += "لم تقم بإكمال أي اختبارات بعد. ابدأ اختباراً لتظهر إحصائياتك هنا!"
         else:
-            stats_text += f"🔹 إجمالي الاختبارات المكتملة: {user_overall_stats.get("total_quizzes_taken", 0)}\n"
+            # Using .format() for stats_text lines
+            stats_text += "🔹 إجمالي الاختبارات المكتملة: {}\n".format(user_overall_stats.get("total_quizzes_taken", 0))
             avg_score = user_overall_stats.get("average_score_percentage", 0.0)
-            stats_text += f"🔸 متوسط الدقة الإجمالي: {avg_score:.1f}%\n"
-            stats_text += f"🌟 أعلى نتيجة فردية: {user_overall_stats.get("highest_score_percentage", 0.0):.1f}%\n\n"
+            stats_text += "🔸 متوسط الدقة الإجمالي: {:.1f}%\n".format(avg_score)
+            stats_text += "🌟 أعلى نتيجة فردية: {:.1f}%\n\n".format(user_overall_stats.get("highest_score_percentage", 0.0))
             total_correct = user_overall_stats.get("total_correct_answers", 0)
             total_questions_attempted = user_overall_stats.get("total_questions_attempted", 0)
             total_incorrect = total_questions_attempted - total_correct
-            stats_text += f"✅ مجموع الإجابات الصحيحة: {total_correct}\n"
-            stats_text += f"❌ مجموع الإجابات الخاطئة: {total_incorrect}\n"
+            stats_text += "✅ مجموع الإجابات الصحيحة: {}\n".format(total_correct)
+            stats_text += "❌ مجموع الإجابات الخاطئة: {}\n".format(total_incorrect)
 
             chart1_path = generate_bar_chart_correct_incorrect(user_id, total_correct, total_incorrect)
             if chart1_path: attachments.append(chart1_path)
@@ -290,7 +313,8 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
     if message_id_to_edit:
         await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=message_id_to_edit, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
     else:
-        logger.warning(f"show_my_stats: No message to edit for user {user_id}. Sending new message.")
+        # Using .format() for warning
+        logger.warning("show_my_stats: No message to edit for user {}. Sending new message.".format(user_id))
         await safe_send_message(context.bot, query.message.chat_id if query and query.message else update.effective_chat.id, text=stats_text, reply_markup=keyboard, parse_mode="Markdown")
 
     if attachments:
@@ -298,30 +322,38 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
             try:
                 with open(attachment_path, "rb") as photo_file:
                     await context.bot.send_photo(chat_id=query.message.chat_id, photo=photo_file)
-                logger.info(f"Sent chart {attachment_path} to user {user_id}")
+                # Using .format() for info logging
+                logger.info("Sent chart {} to user {}".format(attachment_path, user_id))
             except Exception as e:
-                logger.error(f"Failed to send chart {attachment_path} to user {user_id}: {e}")
+                # Using .format() for error logging
+                logger.error("Failed to send chart {} to user {}: {}".format(attachment_path, user_id, e))
     return STATS_MENU
 
 async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    logger.info(f"User {user_id} requested leaderboard.")
+    # Using .format() for info logging
+    logger.info("User {} requested leaderboard.".format(user_id))
 
     leaderboard_text = "🏆 *لوحة الصدارة لأفضل اللاعبين* 🏆\n\n"
     db_manager = DB_MANAGER
     if not db_manager:
         leaderboard_text += "عذراً، خدمة لوحة الصدارة غير متاحة حالياً."
-        logger.critical(f"[Leaderboard] CRITICAL: DB_MANAGER is None! Cannot fetch leaderboard for user {user_id}.")
+        # Using .format() for critical logging
+        logger.critical("[Leaderboard] CRITICAL: DB_MANAGER is None! Cannot fetch leaderboard for user {}.".format(user_id))
     else:
         leaderboard_data = db_manager.get_leaderboard(limit=LEADERBOARD_LIMIT)
         if leaderboard_data:
             for i, entry in enumerate(leaderboard_data):
-                user_name = entry.get("user_display_name", f"مستخدم {entry.get("user_id")}")
+                # Using .format() for user_name if needed
+                user_name_val = entry.get("user_display_name")
+                if not user_name_val:
+                    user_name_val = "مستخدم {}".format(entry.get("user_id"))
                 avg_score = entry.get("average_score_percentage", 0.0)
                 quizzes_taken = entry.get("total_quizzes_taken", 0)
-                leaderboard_text += f"{i+1}. {user_name} - متوسط: {avg_score:.1f}% (من {quizzes_taken} اختبارات)\n"
+                # Using .format() for leaderboard line
+                leaderboard_text += "{}. {} - متوسط: {:.1f}% (من {} اختبارات)\n".format(i+1, user_name_val, avg_score, quizzes_taken)
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
     
@@ -340,20 +372,24 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     db_manager = DB_MANAGER # Use the directly imported instance
 
     if not db_manager:
-        # Ensure logger is available even if config import failed
         current_logger = logger if "logger" in globals() and logger else logging.getLogger(__name__)
-        current_logger.critical(f"[AdminStats] CRITICAL: DB_MANAGER is None! Cannot show admin panel for user {user_id}.")
+        # Using .format() for critical logging
+        current_logger.critical("[AdminStats] CRITICAL: DB_MANAGER is None! Cannot show admin panel for user {}.".format(user_id))
         await safe_send_message(context.bot, chat_id, "عذراً، لا يمكن الوصول إلى مدير قاعدة البيانات.")
         return ConversationHandler.END
 
     if not db_manager.is_user_admin(user_id):
         await safe_send_message(context.bot, chat_id, "عذراً، هذه اللوحة مخصصة للمشرفين فقط.")
-        logger.warning(f"[AdminStats] Non-admin user {user_id} tried to access admin panel.")
+        # Using .format() for warning
+        logger.warning("[AdminStats] Non-admin user {} tried to access admin panel.".format(user_id))
         return ConversationHandler.END
 
-    time_filter = context.user_data.get(f"admin_stats_filter_{user_id}", "today")
-    logger.info(f"[AdminStats] Admin user {user_id} accessing panel with filter: {time_filter}")
+    # Using .format() for user_data key
+    time_filter = context.user_data.get("admin_stats_filter_{}".format(user_id), "today")
+    # Using .format() for info logging
+    logger.info("[AdminStats] Admin user {} accessing panel with filter: {}".format(user_id, time_filter))
 
+    # Using .format() for stats_text title
     stats_text = "📊 *لوحة التحكم الإدارية* ({}) 📊\n\n".format(time_filter.replace("_", " ").capitalize())
     
     stats_text += "*نظرة عامة على الاستخدام: *\n"
@@ -361,6 +397,7 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     active_users_general = db_manager.get_active_users_count(time_filter)
     total_quizzes_completed = db_manager.get_total_quizzes_count(time_filter)
     avg_quizzes_per_active_user = db_manager.get_average_quizzes_per_active_user(time_filter)
+    # Using .format() for stats_text lines
     stats_text += "- إجمالي المستخدمين (الكلي): {}\n".format(total_users)
     stats_text += "- المستخدمون النشطون: {}\n".format(active_users_general)
     stats_text += "- إجمالي الاختبارات التي تم إجراؤها: {}\n".format(total_quizzes_completed)
@@ -368,6 +405,7 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
 
     stats_text += "*أداء الاختبارات: *\n"
     avg_correct_rate = db_manager.get_overall_average_score(time_filter)
+    # Using .format() for stats_text line
     stats_text += "- متوسط نسبة الإجابات الصحيحة: {:.2f}%\n".format(avg_correct_rate)
     unit_engagement = db_manager.get_unit_engagement_stats(time_filter=time_filter, limit=3)
     popular_units = unit_engagement.get("popular_units_or_quizzes", [])
@@ -377,6 +415,7 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             quiz_name_display = unit_stat.get("quiz_name", "غير معروف")
             times_taken = unit_stat.get("times_taken", 0)
             avg_score_unit = unit_stat.get("average_score", 0.0)
+            # Using .format() for stats_text line
             stats_text += "  {}. \"{}\" (لُعِبت {} مرات, متوسط {:.1f}%)\n".format(i+1, quiz_name_display, times_taken, avg_score_unit)
     else:
         stats_text += "  لا توجد بيانات\n"
@@ -384,6 +423,7 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     
     stats_text += "*تفاعل المستخدمين: *\n"
     avg_quiz_duration_secs = db_manager.get_average_quiz_duration(time_filter)
+    # Using .format() for stats_text line
     stats_text += "- متوسط وقت إكمال الاختبار: {}\n".format(format_duration(avg_quiz_duration_secs))
     completion_stats = db_manager.get_quiz_completion_rate_stats(time_filter)
     
@@ -391,6 +431,7 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     completed_quizzes_val = completion_stats.get("completed_quizzes", 0)
     started_quizzes_val = completion_stats.get("started_quizzes", 0)
     
+    # This was already .format(), kept as is
     line_text_completion_rate = "- معدل إكمال الاختبارات: {:.2f}% (اكتمل {} من {} بدأ)\n\n".format(
         completion_rate_val,
         completed_quizzes_val,
@@ -410,7 +451,7 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             q_text_short = (q_text[:50] + "...") if q_text and len(q_text) > 53 else q_text
             error_perc = q_stat.get("error_percentage", 0.0)
             times_ans = q_stat.get("times_answered", 0)
-            # Using .format() for this potentially complex line
+            # Using .format() for this potentially complex line (already was)
             stats_text += "  {}. \"{}\" ({:.1f}% خطأ من {} إجابات)\n".format(i+1, q_text_short, error_perc, times_ans)
     else:
         stats_text += "  لا توجد بيانات\n"
@@ -422,7 +463,7 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
             q_text_short = (q_text[:50] + "...") if q_text and len(q_text) > 53 else q_text
             correct_perc = q_stat.get("correct_percentage", 0.0)
             times_ans = q_stat.get("times_answered", 0)
-            # Using .format() for this potentially complex line
+            # Using .format() for this potentially complex line (already was)
             stats_text += "  {}. \"{}\" ({:.1f}% صحة من {} إجابات)\n".format(i+1, q_text_short, correct_perc, times_ans)
     else:
         stats_text += "  لا توجد بيانات\n"
@@ -432,7 +473,8 @@ async def admin_stats_panel(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [InlineKeyboardButton("اليوم", callback_data="admin_filter_today"), InlineKeyboardButton("آخر 7 أيام", callback_data="admin_filter_last_7_days")],
         [InlineKeyboardButton("آخر 30 يوماً", callback_data="admin_filter_last_30_days"), InlineKeyboardButton("كل الوقت", callback_data="admin_filter_all")],
-        [InlineKeyboardButton("🔄 تحديث", callback_data=f"admin_filter_{time_filter}")],
+        # Using .format() for callback_data
+        [InlineKeyboardButton("🔄 تحديث", callback_data="admin_filter_{}".format(time_filter))],
         [InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -449,8 +491,10 @@ async def admin_stats_filter_callback(update: Update, context: CallbackContext) 
     query = update.callback_query
     user_id = update.effective_user.id
     filter_choice = query.data.replace("admin_filter_", "")
-    context.user_data[f"admin_stats_filter_{user_id}"] = filter_choice
-    logger.info(f"[AdminStats] User {user_id} changed filter to: {filter_choice}")
+    # Using .format() for user_data key
+    context.user_data["admin_stats_filter_{}".format(user_id)] = filter_choice
+    # Using .format() for info logging
+    logger.info("[AdminStats] User {} changed filter to: {}".format(user_id, filter_choice))
     return await admin_stats_panel(update, context)
 
 
