@@ -80,7 +80,7 @@ def generate_usage_overview_chart(active_users: int, total_quizzes_in_period: in
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.02 * max(counts) if max(counts) > 0 else 0.5, int(yval), ha="center", va="bottom", fontsize=11)
     
-    chart_filename = f"usage_overview_{time_filter}_{datetime.now().strftime(	'%Y%m%d%H%M%S	')}.png"
+    chart_filename = f"usage_overview_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
