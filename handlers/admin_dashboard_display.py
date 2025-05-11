@@ -1,3 +1,4 @@
+from datetime import datetime
 """Module for generating display content (text and charts) for the Admin Dashboard."""
 
 import logging
@@ -72,14 +73,14 @@ def generate_usage_overview_chart(active_users: int, total_quizzes_in_period: in
     ax.set_ylabel(process_arabic_text("العدد"))
     time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, time_filter)
     ax.set_title(process_arabic_text(f"نظرة عامة على الاستخدام ({time_filter_display})"), pad=20)
-    ax.tick_params(axis='x', labelsize=12)
-    ax.tick_params(axis='y', labelsize=12)
+    ax.tick_params(axis=	'x	', labelsize=12)
+    ax.tick_params(axis=	'y	', labelsize=12)
 
     for bar in bars:
         yval = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2.0, yval + 0.02 * max(counts) if max(counts) > 0 else 0.5, int(yval), ha="center", va="bottom", fontsize=11)
     
-    chart_filename = f"usage_overview_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+    chart_filename = f"usage_overview_{time_filter}_{datetime.now().strftime(	'%Y%m%d%H%M%S	')}.png"
     chart_path = os.path.join(CHARTS_DIR, chart_filename)
     try:
         plt.tight_layout()
