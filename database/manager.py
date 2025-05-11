@@ -513,3 +513,9 @@ if __name__ == '__main__':
     # print(f"Unit engagement (all): {db_manager.get_unit_engagement_stats('all', limit=3)}")
     # print(f"User activity summary (all): {db_manager.get_user_activity_summary('all')}")
 
+
+
+
+# Create an instance of the DatabaseManager for other modules to import
+DB_MANAGER = DatabaseManager()
+
