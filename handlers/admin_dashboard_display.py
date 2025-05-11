@@ -73,8 +73,8 @@ def generate_usage_overview_chart(active_users: int, total_quizzes_in_period: in
     ax.set_ylabel(process_arabic_text("العدد"))
     time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, time_filter)
     ax.set_title(process_arabic_text(f"نظرة عامة على الاستخدام ({time_filter_display})"), pad=20)
-    ax.tick_params(axis=	'x	', labelsize=12)
-    ax.tick_params(axis=	'y	', labelsize=12)
+    ax.tick_params(axis="x", labelsize=12)
+    ax.tick_params(axis="y", labelsize=12)
 
     for bar in bars:
         yval = bar.get_height()
