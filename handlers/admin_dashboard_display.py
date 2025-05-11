@@ -1,6 +1,8 @@
 """Module for generating display content (text and charts) for the Admin Dashboard.
 
-Version 9: Completely removes f-strings and uses basic string concatenation
+Version 10: Fixes 'logger not defined' error by ensuring logger is imported
+from config before its first use, especially in font setup.
+Completely removes f-strings and uses basic string concatenation
 or .format() to prevent "unmatched parenthesis" errors. 
 Ensures ALL user-facing Arabic strings, static or dynamic, in text responses
 and chart elements are passed through process_arabic_text.
@@ -14,6 +16,14 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 import numpy as np # Added for potential numerical operations in charts
 from datetime import datetime
+
+# Attempt to import logger from config first
+try:
+    from config import logger
+except ImportError:
+    # Fallback to a basic logger if config.logger is not available
+    logger = logging.getLogger(__name__)
+    logger.warning("Could not import logger from config, using basic logger for this module.")
 
 # Configure Matplotlib for Arabic text
 try:
@@ -41,7 +51,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 
 from database.manager import DB_MANAGER
-from config import logger
+# logger is already imported from config or defined above
 
 CHARTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user_data", "charts")
 os.makedirs(CHARTS_DIR, exist_ok=True)
@@ -111,7 +121,6 @@ async def get_usage_overview_display(time_filter: str) -> tuple[str, str | None]
     str_total_quizzes_label = process_arabic_text("- إجمالي الاختبارات")
     str_avg_quizzes_label = process_arabic_text("- متوسط الاختبارات لكل مستخدم نشط")
 
-    # Completely avoid f-strings, use concatenation and .format()
     line1 = str_title_overview + " (" + time_filter_display_val + "):\n"
     line2 = str_total_users_label + " " + str(total_users_overall) + "\n"
     line3 = str_active_users_label + " (" + time_filter_display_val + "): " + str(active_users_period) + "\n"
@@ -156,7 +165,7 @@ def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) 
         return None
 
 async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info("[AdminDashboardDisplayV9] get_quiz_performance_display called for {}".format(time_filter))
+    logger.info("[AdminDashboardDisplayV10] get_quiz_performance_display called for {}".format(time_filter))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     avg_correct_percentage = DB_MANAGER.get_overall_average_score(time_filter=time_filter)
     score_distribution_data = DB_MANAGER.get_score_distribution(time_filter=time_filter)
@@ -228,7 +237,7 @@ def generate_user_interaction_chart(interaction_data: dict, time_filter: str) ->
         return None
 
 async def get_user_interaction_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info("[AdminDashboardDisplayV9] get_user_interaction_display called for {}".format(time_filter))
+    logger.info("[AdminDashboardDisplayV10] get_user_interaction_display called for {}".format(time_filter))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
 
     avg_completion_time_seconds_data = DB_MANAGER.get_average_quiz_duration(time_filter=time_filter)
@@ -291,7 +300,6 @@ def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: 
     ax.set_ylabel(process_arabic_text("نسبة الإجابة الصحيحة (%)"))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     chart_title_type_str = process_arabic_text("الأصعب") if chart_type == "hardest" else process_arabic_text("الأسهل")
-    # title_chart = process_arabic_text(f"الأسئلة الـ{len(questions_to_chart)} {chart_title_type_str} ({time_filter_display_val})")
     title_chart = process_arabic_text("الأسئلة الـ{} {} ({})".format(len(questions_to_chart), chart_title_type_str, time_filter_display_val))
     ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=9, rotation=35, ha="right")
@@ -316,7 +324,7 @@ def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: 
         return None
 
 async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] | None]:
-    logger.info("[AdminDashboardDisplayV9] get_question_stats_display called for {}".format(time_filter))
+    logger.info("[AdminDashboardDisplayV10] get_question_stats_display called for {}".format(time_filter))
     time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     
     question_difficulty_list = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter) 
@@ -341,7 +349,6 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
             q_text = q.get("question_text", "N/A")
             attempts_val = q.get("total_attempts", not_available_str)
             processed_q_text = process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))
-            # text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
             text_response_parts.append("  {}. \"{}\" ({} {:.2f}%, {} {})".format(i+1, processed_q_text, correctness_str, q.get("correct_percentage", 0.0), attempts_str, attempts_val))
     else:
         text_response_parts.append("\n" + no_data_hardest_str)
@@ -352,7 +359,6 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
             q_text = q.get("question_text", "N/A")
             attempts_val = q.get("total_attempts", not_available_str)
             processed_q_text = process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))
-            # text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
             text_response_parts.append("  {}. \"{}\" ({} {:.2f}%, {} {})".format(i+1, processed_q_text, correctness_str, q.get("correct_percentage", 0.0), attempts_str, attempts_val))
     else:
         text_response_parts.append("\n" + no_data_easiest_str)
@@ -379,5 +385,5 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
 
     return text_response, chart_paths
 
-logger.info("[AdminDashboardDisplayV9] Module loaded, all f-strings replaced with concatenation or .format().")
+logger.info("[AdminDashboardDisplayV10] Module loaded, logger defined, all f-strings replaced.")
 
