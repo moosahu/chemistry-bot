@@ -4,6 +4,7 @@ from telegram.ext import CommandHandler, CallbackQueryHandler, CallbackContext
 
 from utils.admin_auth import is_admin
 # from utils import admin_logic # MODIFIED: This line was causing an ImportError and has been commented out as admin_logic is deprecated.
+from database.manager import DB_MANAGER # ADDED: Import DB_MANAGER
 
 # Callback data prefixes
 STATS_PREFIX_MAIN_MENU = "stats_menu_"
@@ -103,10 +104,10 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
     current_filter_text = TIME_FILTERS.get(time_filter, "غير محدد")
 
     if stat_category == "usage_overview":
-        total_users = admin_logic.get_total_users()
-        active_users = admin_logic.get_active_users(time_filter=time_filter)
-        total_quizzes = admin_logic.get_total_quizzes_taken(time_filter=time_filter)
-        avg_quizzes_user = admin_logic.get_average_quizzes_per_user(time_filter=time_filter)
+        total_users = DB_MANAGER.get_total_users_count() # MODIFIED
+        active_users = DB_MANAGER.get_active_users_count(time_filter=time_filter) # MODIFIED
+        total_quizzes = DB_MANAGER.get_total_quizzes_taken(time_filter=time_filter) # MODIFIED
+        avg_quizzes_user = DB_MANAGER.get_average_quizzes_per_user(time_filter=time_filter) # MODIFIED
         text_response = (
             f"📊 *نظرة عامة على الاستخدام ({current_filter_text}):*\n"
             f"- إجمالي المستخدمين (الكلي): {total_users}\n"
@@ -116,10 +117,10 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         )
 
     elif stat_category == "quiz_performance":
-        avg_correct = admin_logic.get_average_correct_answer_rate(time_filter=time_filter)
-        popular_units = admin_logic.get_popular_units(time_filter=time_filter, limit=3)
-        difficult_units = admin_logic.get_difficulty_units(time_filter=time_filter, limit=3, easiest=False)
-        easiest_units = admin_logic.get_difficulty_units(time_filter=time_filter, limit=3, easiest=True)
+        avg_correct = DB_MANAGER.get_average_correct_answer_rate(time_filter=time_filter) # MODIFIED
+        popular_units = DB_MANAGER.get_popular_units(time_filter=time_filter, limit=3) # MODIFIED
+        difficult_units = DB_MANAGER.get_difficulty_units(time_filter=time_filter, limit=3, easiest=False) # MODIFIED
+        easiest_units = DB_MANAGER.get_difficulty_units(time_filter=time_filter, limit=3, easiest=True) # MODIFIED
 
         pop_items = []
         for pu in popular_units:
@@ -151,8 +152,8 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         )
 
     elif stat_category == "user_interaction":
-        avg_completion_time = admin_logic.get_average_quiz_completion_time(time_filter=time_filter)
-        completion_rate = admin_logic.get_quiz_completion_rate(time_filter=time_filter)
+        avg_completion_time = DB_MANAGER.get_average_quiz_completion_time(time_filter=time_filter) # MODIFIED
+        completion_rate = DB_MANAGER.get_quiz_completion_rate(time_filter=time_filter) # MODIFIED
         text_response = (
             f"👥 *تفاعل المستخدمين ({current_filter_text}):*\n"
             f"- متوسط وقت إكمال الاختبار: {float(avg_completion_time):.2f} ثانية\n"
@@ -160,8 +161,8 @@ async def send_actual_stats(update: Update, context: CallbackContext, stat_categ
         )
 
     elif stat_category == "question_stats":
-        difficult_questions = admin_logic.get_question_difficulty(time_filter=time_filter, limit=3, easiest=False)
-        easiest_questions = admin_logic.get_question_difficulty(time_filter=time_filter, limit=3, easiest=True)
+        difficult_questions = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter, limit=3, easiest=False) # MODIFIED (assuming get_question_difficulty_stats is the correct replacement)
+        easiest_questions = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter, limit=3, easiest=True) # MODIFIED (assuming get_question_difficulty_stats is the correct replacement)
         
         diff_q_items = []
         for dq in difficult_questions:
