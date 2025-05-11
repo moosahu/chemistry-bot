@@ -58,7 +58,7 @@ class DatabaseManager:
             except Exception as mogrify_error:
                 logger.error(f"[DB Manager] Error formatting query for logging: {mogrify_error}")
                 failed_query = query
-            logger.error(f"[DB Manager] Database query error: {error}\nFailed Query (params might not be expanded): {failed_query}")
+            logger.error(f"[DB Manager] Database query error: {error}\nFailed Query (params might not be expanded): {failed_query}", exc_info=True)
             if conn:
                 conn.rollback()
             return None
@@ -259,7 +259,7 @@ class DatabaseManager:
         LEFT JOIN users u ON r.user_id = u.user_id
         WHERE r.completed_at IS NOT NULL AND r.score_percentage IS NOT NULL
         GROUP BY r.user_id, u.username, u.first_name
-        HAVING COUNT(r.result_id) > 0
+        HAVING COUNT(r.result_id) > 0 
         ORDER BY average_score_percentage DESC, total_quizzes_taken DESC
         LIMIT %s;
         """
@@ -306,6 +306,14 @@ class DatabaseManager:
         result = self._execute_query(query, fetch_one=True)
         return result["total_quizzes"] if result and "total_quizzes" in result else 0
 
+    def get_average_quizzes_per_active_user(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats] Fetching average quizzes per active user for filter: {time_filter}")
+        total_quizzes = self.get_total_quizzes_count(time_filter)
+        active_users = self.get_active_users_count(time_filter)
+        if active_users > 0:
+            return round(total_quizzes / active_users, 2)
+        return 0.0
+
     def get_overall_average_score(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching overall average score for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "completed_at")
@@ -319,71 +327,96 @@ class DatabaseManager:
         query = f"""
         SELECT
             CASE
-                WHEN score_percentage >= 90 THEN 9 -- Bin for 90-100%
-                ELSE FLOOR(score_percentage / 10)
-            END AS score_bin_index, 
-            COUNT(*) AS count
+                WHEN score_percentage >= 0 AND score_percentage < 10 THEN '0-9%'
+                WHEN score_percentage >= 10 AND score_percentage < 20 THEN '10-19%'
+                WHEN score_percentage >= 20 AND score_percentage < 30 THEN '20-29%'
+                WHEN score_percentage >= 30 AND score_percentage < 40 THEN '30-39%'
+                WHEN score_percentage >= 40 AND score_percentage < 50 THEN '40-49%'
+                WHEN score_percentage >= 50 AND score_percentage < 60 THEN '50-59%'
+                WHEN score_percentage >= 60 AND score_percentage < 70 THEN '60-69%'
+                WHEN score_percentage >= 70 AND score_percentage < 80 THEN '70-79%'
+                WHEN score_percentage >= 80 AND score_percentage < 90 THEN '80-89%'
+                WHEN score_percentage >= 90 AND score_percentage <= 100 THEN '90-100%'
+                ELSE 'N/A'
+            END as score_range,
+            COUNT(*) as count
         FROM quiz_results
-        WHERE completed_at IS NOT NULL AND score_percentage >= 0 AND score_percentage <= 100 {time_condition}
-        GROUP BY score_bin_index
-        ORDER BY score_bin_index;
+        WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition}
+        GROUP BY score_range
+        ORDER BY score_range;
         """
-        result = self._execute_query(query, fetch_all=True)
-        return result if result is not None else []
+        rows = self._execute_query(query, fetch_all=True)
+        distribution_dict = {}
+        if rows:
+            for row in rows:
+                distribution_dict[row["score_range"]] = row["count"]
+        logger.debug(f"[DB Admin Stats] Score distribution for {time_filter}: {distribution_dict}")
+        return distribution_dict # Returns a dictionary as expected
 
     def get_quiz_completion_rate_stats(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching quiz completion rate stats for filter: {time_filter}")
-        
         time_condition_started = self._get_time_filter_condition(time_filter, "start_time")
-        query_started = f"SELECT COUNT(result_id) as total_started FROM quiz_results WHERE 1=1 {time_condition_started};"
-        result_started = self._execute_query(query_started, fetch_one=True)
-        total_started = result_started["total_started"] if result_started and "total_started" in result_started else 0
-
         time_condition_completed = self._get_time_filter_condition(time_filter, "completed_at")
-        query_completed = f"SELECT COUNT(result_id) as total_completed FROM quiz_results WHERE completed_at IS NOT NULL {time_condition_completed};"
-        result_completed = self._execute_query(query_completed, fetch_one=True)
-        total_completed = result_completed["total_completed"] if result_completed and "total_completed" in result_completed else 0
+
+        query_started = f"SELECT COUNT(DISTINCT quiz_id_uuid) as started_quizzes FROM quiz_results WHERE 1=1 {time_condition_started};"
+        query_completed = f"SELECT COUNT(DISTINCT quiz_id_uuid) as completed_quizzes FROM quiz_results WHERE completed_at IS NOT NULL {time_condition_completed};"
         
-        logger.info(f"[DB Admin Stats] Completion rate: Started={total_started}, Completed={total_completed} for filter: {time_filter}")
-        return {"total_started": total_started, "total_completed": total_completed}
+        started_result = self._execute_query(query_started, fetch_one=True)
+        completed_result = self._execute_query(query_completed, fetch_one=True)
+        
+        started_count = started_result["started_quizzes"] if started_result else 0
+        completed_count = completed_result["completed_quizzes"] if completed_result else 0
+        
+        completion_rate = (completed_count / started_count * 100) if started_count > 0 else 0.0
+        
+        logger.debug(f"[DB Admin Stats] Completion rate for {time_filter}: Started={started_count}, Completed={completed_count}, Rate={completion_rate:.2f}%")
+        return {
+            "started_quizzes": started_count,
+            "completed_quizzes": completed_count,
+            "completion_rate": round(completion_rate, 2)
+        }
 
     def get_question_difficulty_stats(self, time_filter="all"):
         logger.info(f"[DB Admin Stats] Fetching question difficulty stats for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "qr.completed_at")
         
+        # This query is complex and assumes answers_details is a JSONB array of objects like:
+        # [{"question_id": X, "is_correct": true/false, ...}, ...]
+        # It unnests the array, then groups by question_id to calculate correctness.
+        # This might be slow on very large datasets without proper indexing on JSONB content.
         query = f"""
         WITH question_attempts AS (
-            SELECT
-                (answer_detail ->> 'question_id')::int AS question_id,
-                (answer_detail ->> 'is_correct')::boolean AS is_correct
+            SELECT 
+                (answer_detail ->> 'question_id')::INT as question_id,
+                (answer_detail ->> 'is_correct')::BOOLEAN as is_correct
             FROM quiz_results qr,
-                 jsonb_array_elements(qr.answers_details) AS answer_detail
-            WHERE qr.completed_at IS NOT NULL 
-              AND qr.answers_details IS NOT NULL 
-              AND jsonb_typeof(qr.answers_details) = 'array'
-              AND jsonb_array_length(qr.answers_details) > 0
-              {time_condition}
+            LATERAL jsonb_array_elements(qr.answers_details) as answer_detail
+            WHERE qr.completed_at IS NOT NULL {time_condition}
         )
-        SELECT
-            qa.question_id AS id,
-            q.question_text AS text,
-            SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) AS correct_answers,
-            COUNT(qa.question_id) AS total_attempts,
-            (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) * 100.0 / COUNT(qa.question_id)) AS correct_percentage
+        SELECT 
+            qa.question_id,
+            q.question_text, -- Assuming you have a 'question_text' in 'questions' table
+            SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as correct_answers,
+            COUNT(qa.question_id) as total_attempts,
+            ROUND((SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) * 100.0 / COUNT(qa.question_id)), 2) as correct_percentage
         FROM question_attempts qa
-        JOIN questions q ON qa.question_id = q.question_id
+        JOIN questions q ON qa.question_id = q.question_id -- Join to get question_text
         GROUP BY qa.question_id, q.question_text
-        HAVING COUNT(qa.question_id) > 0
-        ORDER BY total_attempts DESC, correct_percentage ASC;
+        ORDER BY correct_percentage ASC, total_attempts DESC
+        LIMIT 20; -- Limit to top/bottom N for display purposes
         """
+        # Note: The LIMIT 20 is arbitrary. You might want to fetch all and paginate or filter in Python.
+        # Also, if 'question_text' is not in 'questions' table or named differently, adjust the JOIN and SELECT.
         
-        stats = self._execute_query(query, fetch_all=True)
-        if stats:
-            logger.info(f"[DB Admin Stats] Found {len(stats)} questions with difficulty stats for filter: {time_filter}")
-            return stats
-        else:
-            logger.warning(f"[DB Admin Stats] No question difficulty stats found for filter: {time_filter}")
+        difficulty_stats = self._execute_query(query, fetch_all=True)
+        if not difficulty_stats:
+            logger.warning(f"[DB Admin Stats] No question difficulty stats found for {time_filter}.")
             return []
+        
+        logger.debug(f"[DB Admin Stats] Fetched {len(difficulty_stats)} question difficulty stats for {time_filter}.")
+        return difficulty_stats
 
+# Instantiate the manager for other modules to import
 DB_MANAGER = DatabaseManager()
+logger.info("[DB Manager] Instance created and ready for import.")
 
