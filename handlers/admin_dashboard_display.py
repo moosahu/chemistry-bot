@@ -1,6 +1,7 @@
 """Module for generating display content (text and charts) for the Admin Dashboard.
 
-Version 7: Fixes an invalid character error caused by an emoji outside a string.
+Version 8: Further simplifies f-string construction in get_usage_overview_display
+and other functions to prevent "unmatched parenthesis" errors. 
 Ensures ALL user-facing Arabic strings, static or dynamic, in text responses
 and chart elements are passed through process_arabic_text.
 """
@@ -51,7 +52,6 @@ def process_arabic_text(text_to_process):
     text_str = str(text_to_process)
     is_arabic = any("\u0600" <= char_val <= "\u06FF" for char_val in text_str)
     if not is_arabic:
-        # Even if not Arabic, ensure emojis are part of the string and not literals
         return text_str
     try:
         reshaped_text = arabic_reshaper.reshape(text_str)
@@ -77,8 +77,9 @@ def generate_usage_overview_chart(active_users: int, total_quizzes_in_period: in
     colors = ["#1f77b4", "#ff7f0e"]
     bars = ax.bar(categories, counts, color=colors, width=0.5)
     ax.set_ylabel(process_arabic_text("العدد"))
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
-    ax.set_title(process_arabic_text(f"نظرة عامة على الاستخدام ({time_filter_display})"), pad=20)
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    title_chart = process_arabic_text(f"نظرة عامة على الاستخدام ({time_filter_display_val})")
+    ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=12)
     for bar in bars:
@@ -102,7 +103,7 @@ async def get_usage_overview_display(time_filter: str) -> tuple[str, str | None]
     active_users_period = DB_MANAGER.get_active_users_count(time_filter=time_filter)
     total_quizzes_period = DB_MANAGER.get_total_quizzes_count(time_filter=time_filter)
     avg_quizzes_active_user_period = DB_MANAGER.get_average_quizzes_per_active_user(time_filter=time_filter)
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     
     str_title_overview = process_arabic_text("📊 *نظرة عامة على الاستخدام*")
     str_total_users_label = process_arabic_text("- إجمالي المستخدمين (الكلي):")
@@ -110,12 +111,14 @@ async def get_usage_overview_display(time_filter: str) -> tuple[str, str | None]
     str_total_quizzes_label = process_arabic_text("- إجمالي الاختبارات")
     str_avg_quizzes_label = process_arabic_text("- متوسط الاختبارات لكل مستخدم نشط")
 
-    line1 = f"{str_title_overview} ({time_filter_display}):\n"
-    line2 = f"{str_total_users_label} {total_users_overall}\n"
-    line3 = f"{str_active_users_label} ({time_filter_display}): {active_users_period}\n"
-    line4 = f"{str_total_quizzes_label} ({time_filter_display}): {total_quizzes_period}\n"
-    line5 = f"{str_avg_quizzes_label} ({time_filter_display}): {avg_quizzes_active_user_period:.2f}"
-    text_response = line1 + line2 + line3 + line4 + line5
+    # Simplified string construction
+    text_response_parts = []
+    text_response_parts.append(f"{str_title_overview} ({time_filter_display_val}):")
+    text_response_parts.append(f"{str_total_users_label} {total_users_overall}")
+    text_response_parts.append(f"{str_active_users_label} ({time_filter_display_val}): {active_users_period}")
+    text_response_parts.append(f"{str_total_quizzes_label} ({time_filter_display_val}): {total_quizzes_period}")
+    text_response_parts.append(f"{str_avg_quizzes_label} ({time_filter_display_val}): {avg_quizzes_active_user_period:.2f}")
+    text_response = "\n".join(text_response_parts)
 
     chart_path = None
     if active_users_period > 0 or total_quizzes_period > 0:
@@ -132,8 +135,9 @@ def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) 
     bars = ax.bar(labels, values, color="#2ca02c", width=0.6)
     ax.set_ylabel(process_arabic_text("عدد المستخدمين"))
     ax.set_xlabel(process_arabic_text("نطاق الدرجات"))
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
-    ax.set_title(process_arabic_text(f"توزيع درجات الاختبارات ({time_filter_display})"), pad=20)
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    title_chart = process_arabic_text(f"توزيع درجات الاختبارات ({time_filter_display_val})")
+    ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=10, rotation=45, ha="right")
     ax.tick_params(axis="y", labelsize=10)
     for bar in bars:
@@ -153,24 +157,24 @@ def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) 
         return None
 
 async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info(f"[AdminDashboardDisplayV7] get_quiz_performance_display called for {time_filter}")
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    logger.info(f"[AdminDashboardDisplayV8] get_quiz_performance_display called for {time_filter}")
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     avg_correct_percentage = DB_MANAGER.get_overall_average_score(time_filter=time_filter)
     score_distribution_data = DB_MANAGER.get_score_distribution(time_filter=time_filter)
     
-    # Ensure emojis are within strings
     title_str = process_arabic_text("📈 *أداء الاختبارات*")
     dist_title_str = process_arabic_text("📊 *توزيع الدرجات:*")
     no_data_str = process_arabic_text("لا توجد بيانات كافية لعرض توزيع الدرجات.")
     users_str = process_arabic_text("مستخدمين")
     avg_correct_label = process_arabic_text("- متوسط نسبة الإجابات الصحيحة:")
 
-    text_response_parts = [f"{title_str} ({time_filter_display}):"]
+    text_response_parts = [f"{title_str} ({time_filter_display_val}):"]
     text_response_parts.append(f"{avg_correct_label} {float(avg_correct_percentage):.2f}%")
     if score_distribution_data and isinstance(score_distribution_data, dict) and any(score_distribution_data.values()):
         text_response_parts.append(f"\n{dist_title_str}")
         for score_range, count in score_distribution_data.items():
-            text_response_parts.append(f"  - {process_arabic_text(score_range)}: {count} {users_str}")
+            processed_score_range = process_arabic_text(str(score_range)) # Ensure score_range is processed
+            text_response_parts.append(f"  - {processed_score_range}: {count} {users_str}")
     else:
         text_response_parts.append(f"\n{dist_title_str} {no_data_str}")
     text_response = "\n".join(text_response_parts)
@@ -199,8 +203,9 @@ def generate_user_interaction_chart(interaction_data: dict, time_filter: str) ->
     bars = ax.bar(labels, values, color=["#ff7f0e", "#d62728"], width=0.5)
 
     ax.set_ylabel(process_arabic_text("النسبة المئوية (%)"))
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
-    ax.set_title(process_arabic_text(f"معدلات إكمال الاختبارات ({time_filter_display})"), pad=20)
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    title_chart = process_arabic_text(f"معدلات إكمال الاختبارات ({time_filter_display_val})")
+    ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=12)
     ax.tick_params(axis="y", labelsize=10)
     ax.set_ylim(0, 100)
@@ -223,8 +228,8 @@ def generate_user_interaction_chart(interaction_data: dict, time_filter: str) ->
         return None
 
 async def get_user_interaction_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info(f"[AdminDashboardDisplayV7] get_user_interaction_display called for {time_filter}")
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    logger.info(f"[AdminDashboardDisplayV8] get_user_interaction_display called for {time_filter}")
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
 
     avg_completion_time_seconds_data = DB_MANAGER.get_average_quiz_duration(time_filter=time_filter)
     avg_completion_time_seconds = float(avg_completion_time_seconds_data) if avg_completion_time_seconds_data is not None else 0.0
@@ -237,7 +242,6 @@ async def get_user_interaction_display(time_filter: str) -> tuple[str, str | Non
     if total_started > 0:
         drop_off_rate = ((total_started - total_completed) / total_started) * 100
         
-    # Ensure emojis are within strings
     title_str = process_arabic_text("👥 *تفاعل المستخدمين*")
     avg_time_label = process_arabic_text("- متوسط وقت إكمال الاختبار:")
     seconds_str = process_arabic_text("ثانية")
@@ -246,13 +250,12 @@ async def get_user_interaction_display(time_filter: str) -> tuple[str, str | Non
     completion_rate_label = process_arabic_text("- معدل إكمال الاختبارات:")
     drop_off_rate_label = process_arabic_text("- معدل التسرب من الاختبارات:")
 
-    text_response_parts = [f"{title_str} ({time_filter_display}):"]
+    text_response_parts = [f"{title_str} ({time_filter_display_val}):"]
     text_response_parts.append(f"{avg_time_label} {avg_completion_time_seconds:.2f} {seconds_str}")
     text_response_parts.append(f"{total_started_label} {total_started}")
     text_response_parts.append(f"{total_completed_label} {total_completed}")
     text_response_parts.append(f"{completion_rate_label} {float(completion_rate):.2f}%")
     text_response_parts.append(f"{drop_off_rate_label} {float(drop_off_rate):.2f}%")
-    
     text_response = "\n".join(text_response_parts)
 
     chart_data = {}
@@ -285,9 +288,10 @@ def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: 
     bars = ax.bar(labels, values, color=bar_color, width=0.5)
 
     ax.set_ylabel(process_arabic_text("نسبة الإجابة الصحيحة (%)"))
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
-    chart_title_type = process_arabic_text("الأصعب") if chart_type == "hardest" else process_arabic_text("الأسهل")
-    ax.set_title(process_arabic_text(f"الأسئلة الـ{len(questions_to_chart)} {chart_title_type} ({time_filter_display})"), pad=20)
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    chart_title_type_str = process_arabic_text("الأصعب") if chart_type == "hardest" else process_arabic_text("الأسهل")
+    title_chart = process_arabic_text(f"الأسئلة الـ{len(questions_to_chart)} {chart_title_type_str} ({time_filter_display_val})")
+    ax.set_title(title_chart, pad=20)
     ax.tick_params(axis="x", labelsize=9, rotation=35, ha="right")
     ax.tick_params(axis="y", labelsize=10)
     ax.set_ylim(0, 100)
@@ -310,12 +314,11 @@ def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: 
         return None
 
 async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] | None]:
-    logger.info(f"[AdminDashboardDisplayV7] get_question_stats_display called for {time_filter}")
-    time_filter_display = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
+    logger.info(f"[AdminDashboardDisplayV8] get_question_stats_display called for {time_filter}")
+    time_filter_display_val = TIME_FILTERS_DISPLAY.get(time_filter, process_arabic_text(time_filter))
     
     question_difficulty_list = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter) 
 
-    # Ensure emojis are within strings
     title_str = process_arabic_text("❓ *إحصائيات الأسئلة*")
     hardest_title_str = process_arabic_text("📉 *أصعب 5 أسئلة (حسب أقل نسبة إجابات صحيحة):*")
     easiest_title_str = process_arabic_text("📈 *أسهل 5 أسئلة (حسب أعلى نسبة إجابات صحيحة):*")
@@ -325,7 +328,7 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
     attempts_str = process_arabic_text("محاولات:")
     not_available_str = process_arabic_text("غير متوفر")
 
-    text_response_parts = [f"{title_str} ({time_filter_display}):"]
+    text_response_parts = [f"{title_str} ({time_filter_display_val}):"]
 
     hardest_questions = sorted([q for q in question_difficulty_list if q.get("correct_percentage") is not None], key=lambda x: x["correct_percentage"])[:5]
     easiest_questions = sorted([q for q in question_difficulty_list if q.get("correct_percentage") is not None], key=lambda x: x["correct_percentage"], reverse=True)[:5]
@@ -335,7 +338,8 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
         for i, q in enumerate(hardest_questions):
             q_text = q.get("question_text", "N/A")
             attempts_val = q.get("total_attempts", not_available_str)
-            text_response_parts.append(f"  {i+1}. \"{process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
+            processed_q_text = process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))
+            text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
     else:
         text_response_parts.append(f"\n{no_data_hardest_str}")
 
@@ -344,7 +348,8 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
         for i, q in enumerate(easiest_questions):
             q_text = q.get("question_text", "N/A")
             attempts_val = q.get("total_attempts", not_available_str)
-            text_response_parts.append(f"  {i+1}. \"{process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
+            processed_q_text = process_arabic_text(q_text[:40] + ("..." if len(q_text) > 40 else ""))
+            text_response_parts.append(f"  {i+1}. \"{processed_q_text}\" ({correctness_str} {q.get("correct_percentage", 0.0):.2f}%, {attempts_str} {attempts_val})")
     else:
         text_response_parts.append(f"\n{no_data_easiest_str}")
 
@@ -370,5 +375,5 @@ async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] |
 
     return text_response, chart_paths
 
-logger.info("[AdminDashboardDisplayV7] Module loaded, f-string and emoji errors fixed.")
+logger.info("[AdminDashboardDisplayV8] Module loaded, f-string construction simplified.")
 
