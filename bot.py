@@ -196,21 +196,39 @@ def main() -> None:
         logger.info("Telegram Application built.")
 
         # --- Initialize and store DatabaseManager for new admin tools ---
-        if new_admin_tools_loaded:
-            try:
-                db_manager_instance = DatabaseManager(database_url=DATABASE_URL) # MODIFIED: db_path to database_url
-                if db_manager_instance and getattr(db_manager_instance, 'engine', None) is not None: # MODIFIED: Check for 'engine' instead of 'conn'
-                    application.bot_data["DB_MANAGER"] = db_manager_instance
-                    logger.info("DB_MANAGER for new admin tools initialized and stored in bot_data.")
-                else:
-                    logger.error("Failed to initialize DatabaseManager or its connection for new admin tools. Ensure DATABASE_URL is correct, path is writable, and database is accessible.")
-                    new_admin_tools_loaded = False # Crucial: disable tools if DB manager is not usable
-            except Exception as db_init_exc:
-                logger.error(f"Exception during DatabaseManager initialization for new admin tools: {db_init_exc}", exc_info=True)
-                new_admin_tools_loaded = False # Disable tools if DB manager fails
-        # --- End DatabaseManager Initialization ---
+        application.bot_data["DB_MANAGER"] = None # Initialize to None first
+        actual_db_manager_for_bot_data = None
 
-        logger.info("DB_MANAGER will be imported and used directly by handlers, not stored in bot_data.")
+        if new_admin_tools_loaded: # True if imports were successful
+            logger.info("Attempting to initialize DatabaseManager as new admin tool imports were successful.")
+            try:
+                db_manager_instance = DatabaseManager(database_url=DATABASE_URL)
+                logger.info(f"DatabaseManager instance created: {type(db_manager_instance)}")
+                
+                instance_engine = getattr(db_manager_instance, 'engine', None)
+                logger.info(f"Checking db_manager_instance.engine: {type(instance_engine)}")
+
+                if db_manager_instance and instance_engine is not None:
+                    actual_db_manager_for_bot_data = db_manager_instance
+                    logger.info(f"DB_MANAGER instance appears valid (engine exists). Storing in bot_data. Type: {type(actual_db_manager_for_bot_data)}")
+                    # new_admin_tools_loaded remains True, will be reflected by the final log
+                else:
+                    logger.error("DB_MANAGER instance is None or its engine is None. New admin tools will be disabled.")
+                    actual_db_manager_for_bot_data = None
+                    new_admin_tools_loaded = False 
+            except Exception as db_init_exc:
+                logger.error(f"Exception during DatabaseManager instantiation: {db_init_exc}", exc_info=True)
+                actual_db_manager_for_bot_data = None
+                new_admin_tools_loaded = False
+        else:
+            logger.warning("Initial import of new admin tools or DatabaseManager class failed. New admin tools are disabled.")
+            # new_admin_tools_loaded is already False
+            # actual_db_manager_for_bot_data remains None as initialized
+
+        application.bot_data["DB_MANAGER"] = actual_db_manager_for_bot_data
+        logger.info(f"Final DB_MANAGER stored in application.bot_data: {type(application.bot_data.get('DB_MANAGER'))}. new_admin_tools_loaded is now: {new_admin_tools_loaded}")
+        # The confusing log line that was here previously has been removed by this replacement.
+        # --- End DatabaseManager Initialization ---
 
         if job_queue:
             job_queue.set_application(application)
