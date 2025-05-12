@@ -34,7 +34,8 @@ async def check_admin_privileges(update: Update, context: ContextTypes.DEFAULT_T
         return False
     return True
 
-# --- Command Handasync def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# --- Command Handlers ---
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     user_id = user.id
     logger = logging.getLogger(__name__) # Ensure logger is available
