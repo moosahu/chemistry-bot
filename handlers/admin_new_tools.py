@@ -137,7 +137,8 @@ async def admin_edit_specific_message_callback(update: Update, context: ContextT
     await query.answer()
     if not await check_admin_privileges(update, context): return ConversationHandler.END
 
-    message_key = query.data.split('_')[-1] # e.g., 'admin_edit_specific_msg_about_bot_message' -> 'about_bot_message'
+    message_key_parts = query.data.split('_')
+    message_key = "_".join(message_key_parts[4:]) # Correctly extract the full key like 'about_bot_message'
     context.user_data['editing_message_key'] = message_key
     
     current_text = context.bot_data.get("DB_MANAGER").get_system_message(message_key) or "لا يوجد نص حالي."
