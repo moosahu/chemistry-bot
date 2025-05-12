@@ -62,17 +62,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     welcome_text = welcome_text.replace("{user.first_name}", user.first_name or "مستخدمنا العزيز")
 
     keyboard = [
-        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data=
-start_quiz
+        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data='start_quiz'
 )],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data=
-chemical_info
+'chemical_info'
 )],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data=
-my_stats_leaderboard
+'my_stats_leaderboard'
 )],
         [InlineKeyboardButton("ℹ️ حول البوت", callback_data=
-show_about_bot
+'show_about_bot'
 )],
     ]
 
