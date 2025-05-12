@@ -13,9 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 # or db_setup.py should be in the same directory as this manager or in PYTHONPATH.
 # We will assume the import path will be resolved in the deployment environment.
 # The key is that it now imports tables from the user's adapted db_setup.py schema.
-from .db_setup import get_engine, metadata_obj, users_table, system_messages_table
-# quiz_sessions_table and question_interactions_table are in user's db_setup but not directly used by these core admin tools.
-# quiz_results_table (which was in my original manager) is NOT in user's db_setup.
+from .db_setup import get_engine, metadata_obj, users_table, system_messages_table, quiz_sessions_table
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +26,7 @@ class DatabaseManager:
             if not self.engine:
                 raise ConnectionError("Failed to get a valid database engine from db_setup.get_engine().")
             self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-            # Tables (users_table, system_messages_table) are imported from db_setup.py
-            # Ensuring tables exist can be done here or in the main bot script using create_tables from db_setup.py
-            # from .db_setup import create_tables
-            # create_tables(self.engine) # Optional: call if manager should ensure table creation
+            # Tables (users_table, system_messages_table, quiz_sessions_table) are imported from db_setup.py
             self._add_default_system_messages() # Add default messages if not present
             logger.info(f"DatabaseManager initialized successfully with engine: {self.engine.url.drivername}")
         except Exception as e:
@@ -79,7 +74,6 @@ class DatabaseManager:
     def get_system_message(self, message_key):
         if not self.engine: return None
         def operation(session):
-            # system_messages_table is imported from user's adapted db_setup.py
             stmt = select(system_messages_table.c.message_text).where(system_messages_table.c.message_key == message_key)
             result = session.execute(stmt).scalar_one_or_none()
             return result
@@ -89,9 +83,7 @@ class DatabaseManager:
         if not self.engine: return None
         def operation(session):
             current_time = datetime.now()
-            # Using system_messages_table from user's adapted db_setup.py
             if self.engine.url.drivername.startswith("postgres"):
-                # PostgreSQL specific UPSERT for system_messages
                 stmt = sql_text(f"""
                     INSERT INTO {system_messages_table.name} (message_key, message_text, last_modified)
                     VALUES (:key, :text, :now)
@@ -100,7 +92,7 @@ class DatabaseManager:
                     last_modified = :now;
                 """)
                 session.execute(stmt, {"key": message_key, "text": new_text, "now": current_time})
-            else: # SQLite and other general cases for system_messages
+            else:
                 existing_stmt = select(system_messages_table).where(system_messages_table.c.message_key == message_key)
                 existing = session.execute(existing_stmt).first()
                 if existing:
@@ -113,7 +105,7 @@ class DatabaseManager:
                     insert_stmt = insert(system_messages_table).values(
                         message_key=message_key,
                         message_text=new_text,
-                        last_modified=current_time # server_default handles initial, explicit for update logic
+                        last_modified=current_time
                     )
                     session.execute(insert_stmt)
             logger.info(f"System message for key \'{message_key}\' updated/inserted.")
@@ -128,7 +120,6 @@ class DatabaseManager:
     def get_all_active_user_ids(self):
         if not self.engine: return []
         def operation(session):
-            # users_table is imported from user's adapted db_setup.py
             stmt = select(users_table.c.user_id)
             results = session.execute(stmt).fetchall()
             return [row[0] for row in results] if results else []
@@ -136,15 +127,10 @@ class DatabaseManager:
 
     def is_user_admin(self, user_id):
         if not self.engine: return False
-        # This function assumes 'is_admin' column exists in the 'users_table'.
-        # The user's original users table schema in their db_setup.py did not explicitly have 'is_admin'.
-        # If it's missing, this will fail. It needs to be added to users_table in db_setup.py.
-        # For now, proceeding with assumption it might be added or this function might not be used by user's current bot for admin checks.
-        # Let's add a check for the column's existence to be safer.
         logger.info(f"Available columns in users_table at runtime: {list(users_table.c.keys())}")
         if 'is_admin' not in users_table.c:
             logger.warning(f"Column 'is_admin' not found in users_table (columns: {list(users_table.c.keys())}). Cannot check admin status.")
-            return False # Default to not admin if column is missing
+            return False
             
         def operation(session):
             stmt = select(users_table.c.is_admin).where(users_table.c.user_id == user_id)
@@ -152,11 +138,7 @@ class DatabaseManager:
             return result is True 
         return self._execute_query(operation) or False
 
-    # --- Methods from the original manager_definition.py that interact with users_table ---
-    # These should work if users_table from user's db_setup.py has the required columns.
-
     def add_user_if_not_exists(self, user_id, username=None, first_name=None, last_name=None, language_code=None):
-        # Modified to include language_code as in user's users_table schema
         if not self.engine: return None
         def operation(session):
             stmt_select = select(users_table).where(users_table.c.user_id == user_id)
@@ -168,21 +150,15 @@ class DatabaseManager:
                     "first_name": first_name,
                     "last_name": last_name,
                     "language_code": language_code,
-                    # first_seen_timestamp and last_interaction_date have server_default
                 }
-                # Add is_admin if the column exists in the table definition from db_setup.py
                 if 'is_admin' in users_table.c:
-                    insert_values['is_admin'] = False # Default to not admin
+                    insert_values['is_admin'] = False
                 
                 stmt_insert = insert(users_table).values(**insert_values)
                 session.execute(stmt_insert)
                 logger.info(f"User {user_id} added to the database.")
                 return True 
             else:
-                # Optionally update last_interaction_date here if user interacts
-                # The users_table in user's db_setup has onupdate=func.now() for last_interaction_date
-                # So, a separate update might not be needed if an interaction implies an update to the row.
-                # For now, just log existence.
                 logger.debug(f"User {user_id} already exists.")
                 return False 
         return self._execute_query(operation)
@@ -195,47 +171,105 @@ class DatabaseManager:
             return count
         return self._execute_query(operation) or 0
 
-    # --- The following methods depended on 'quiz_results_table' which is not in user's db_setup.py --- 
-    # --- User's db_setup.py has 'quiz_sessions_table' and 'question_interactions_table'.            ---
-    # --- These methods (get_active_users_count, record_quiz_result, get_user_stats, get_leaderboard) ---
-    # --- would need to be rewritten to work with the user's specific quiz table structure.          ---
-    # --- For now, they are commented out to prevent errors, as the core admin tools (message editing, broadcast) ---
-    # --- primarily rely on users_table and system_messages_table.                                   ---
+    def get_active_users_count(self, days=30):
+        if not self.engine: return 0
+        def operation(session):
+            time_threshold = datetime.now() - timedelta(days=days)
+            stmt = select(func.count(users_table.c.user_id)).where(users_table.c.last_active_timestamp >= time_threshold)
+            count = session.execute(stmt).scalar_one()
+            return count
+        return self._execute_query(operation) or 0
 
-    # def get_active_users_count(self, days=30):
-    #     if not self.engine: return 0
-    #     def operation(session):
-    #         time_threshold = datetime.now() - timedelta(days=days)
-    #         # This should query based on users_table.c.last_interaction_date
-    #         stmt = select(func.count(users_table.c.user_id)).where(users_table.c.last_interaction_date >= time_threshold)
-    #         count = session.execute(stmt).scalar_one()
-    #         return count
-    #     return self._execute_query(operation) or 0
+    def get_total_quizzes_count(self, days=30):
+        """Counts total completed quizzes within a specified number of past days."""
+        if not self.engine:
+            logger.error("Database engine not initialized.")
+            return 0
+        def operation(session):
+            time_threshold = datetime.now() - timedelta(days=days)
+            stmt = select(func.count(quiz_sessions_table.c.quiz_session_id)).where(
+                quiz_sessions_table.c.end_timestamp.isnot(None),
+                quiz_sessions_table.c.end_timestamp >= time_threshold
+            )
+            count = session.execute(stmt).scalar_one_or_none()
+            return count if count is not None else 0
+        result = self._execute_query(operation)
+        return result if result is not None else 0
 
-    # def record_quiz_result(self, user_id, quiz_type, score, total_questions, percentage, start_time, end_time, time_taken_seconds, answers_details_json):
-    #     logger.warning("record_quiz_result is not compatible with current quiz table structure (quiz_sessions, question_interactions).")
-    #     return None
+    def get_average_quizzes_per_active_user(self, days=30):
+        """Calculates the average number of completed quizzes per active user within a specified period."""
+        if not self.engine:
+            logger.error("Database engine not initialized for get_average_quizzes_per_active_user.")
+            return 0.0
 
-    # def get_user_stats(self, user_id):
-    #     logger.warning("get_user_stats is not compatible with current quiz table structure.")
-    #     return []
+        def operation(session):
+            time_threshold = datetime.now() - timedelta(days=days)
 
-    # def get_leaderboard(self, limit=10):
-    #     logger.warning("get_leaderboard is not compatible with current quiz table structure.")
-    #     return []
+            # Subquery to get IDs of users active in the last 'days'
+            active_users_sq = (
+                select(users_table.c.user_id.label("user_id"))
+                .where(users_table.c.last_active_timestamp >= time_threshold)
+                .alias("active_users_sq")
+            )
+            
+            # Count the number of unique active users
+            total_active_users_stmt = select(func.count(active_users_sq.c.user_id))
+            total_active_users = session.execute(total_active_users_stmt).scalar_one_or_none()
+
+            if not total_active_users or total_active_users == 0:
+                logger.info(f"No active users found in the last {days} days for average quiz calculation.")
+                return 0.0 # Return float 0.0
+
+            # Subquery for completed quizzes by user within the time_threshold
+            completed_quizzes_sq = (
+                select(
+                    quiz_sessions_table.c.user_id,
+                    func.count(quiz_sessions_table.c.quiz_session_id).label("num_completed_quizzes"),
+                )
+                .where(quiz_sessions_table.c.end_timestamp.isnot(None))
+                .where(quiz_sessions_table.c.end_timestamp >= time_threshold) # Filter quizzes by time
+                .group_by(quiz_sessions_table.c.user_id)
+                .alias("completed_quizzes_sq")
+            )
+
+            # Main query to sum completed quizzes for the identified active users
+            stmt = (
+                select(
+                    func.sum(func.coalesce(completed_quizzes_sq.c.num_completed_quizzes, 0)).label("total_completed_quizzes_by_active_users")
+                )
+                .select_from(active_users_sq) # Start with active users
+                .outerjoin( # Use outerjoin to include active users even if they have no quizzes
+                    completed_quizzes_sq,
+                    active_users_sq.c.user_id == completed_quizzes_sq.c.user_id,
+                )
+            )
+            
+            total_completed_quizzes_for_active_users = session.execute(stmt).scalar_one_or_none()
+
+            if total_completed_quizzes_for_active_users is None:
+                 total_completed_quizzes_for_active_users = 0
+
+            average_quizzes = (
+                float(total_completed_quizzes_for_active_users) / total_active_users
+            )
+            
+            logger.info(f"Total active users (last {days} days): {total_active_users}")
+            logger.info(f"Total completed quizzes by these active users (last {days} days): {total_completed_quizzes_for_active_users}")
+            logger.info(f"Calculated average quizzes per active user (last {days} days): {average_quizzes:.2f}")
+            return average_quizzes
+
+        result = self._execute_query(operation)
+        return result if result is not None else 0.0 # Ensure float return
 
 logger.info("SQLAlchemy DatabaseManager (manager_definition.py adapted for user's schema) loaded.")
 
-# Example usage for direct testing (should be adapted if run)
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger.info("Running manager_definition.py (adapted) directly for testing...")
-
-    # This test block needs the adapted db_setup.py to be in the python path
-    # e.g., by setting PYTHONPATH=. if running from the directory containing 'database' and 'upload' folders
-    # or by restructuring files into a proper package.
     try:
-        from db_setup import create_tables # Assuming db_setup is in same dir for test
+        # This block needs db_setup.py to be in the python path
+        # For simplicity, this test might fail if paths are not set up for direct execution.
+        # from db_setup import create_tables 
         test_db_url_env = os.environ.get("DATABASE_URL", "sqlite:///./test_dbs/test_manager_adapted.db")
         if "sqlite" in test_db_url_env and not os.path.exists("./test_dbs"):
             os.makedirs("./test_dbs")
@@ -243,23 +277,14 @@ if __name__ == "__main__":
         
         test_engine = get_engine(test_db_url_env)
         if test_engine:
-            # create_tables from the adapted db_setup.py
-            # Ensure the import path for create_tables is correct for this test context.
-            # For this example, we assume db_setup.py is in the same directory for testing.
-            # If it's in ../upload/db_setup.py, the import needs adjustment or PYTHONPATH.
-            # For simplicity, this test might fail if paths are not set up for direct execution.
-            # create_tables(test_engine, drop_first=True) 
             logger.info("Test tables would be created here if db_setup.create_tables is callable.")
-
             db_mngr = DatabaseManager(database_url=test_db_url_env)
             if db_mngr.engine:
                 logger.info("DatabaseManager initialized for testing.")
-                # Test methods that use users_table and system_messages_table
-                # Ensure 'is_admin' column is added to users_table in db_setup.py for is_user_admin to work fully.
-                # db_mngr.add_user_if_not_exists(12345, "testuser1", "Test", "UserOne", "en")
-                # logger.info(f"Is 12345 admin? {db_mngr.is_user_admin(12345)}") 
-                # logger.info(f"Welcome message: {db_mngr.get_system_message('welcome_new_user')}")
-                logger.info("Basic testing stubs. Full test requires db_setup.py in path and 'is_admin' column.")
+                # Example test (requires data to be meaningful)
+                # avg_quizzes = db_mngr.get_average_quizzes_per_active_user(days=30)
+                # logger.info(f"Test: Average quizzes per active user (30 days): {avg_quizzes}")
+                logger.info("Basic testing stubs. Full test requires db_setup.py in path and data.")
             else:
                 logger.error("Failed to initialize DatabaseManager for testing.")
         else:
