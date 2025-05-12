@@ -461,3 +461,64 @@ class DatabaseManager:
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager V5] Singleton instance DB_MANAGER created.")
 
+
+
+
+    def get_detailed_question_stats(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats V5] Fetching detailed question stats for filter: {time_filter}")
+        time_condition_quiz_results = self._get_time_filter_condition(time_filter, "qr.completed_at")
+
+        # This query is complex and assumes a certain schema structure for answers and timings.
+        # It tries to get question text, how many times it appeared, correct percentage, and avg time.
+        # It assumes `quiz_answers_details` stores individual question performance within a quiz result.
+        # The structure of `answers_details` in `quiz_results` table is crucial here.
+        # Let's assume `answers_details` is a JSONB array of objects, where each object has:
+        #   `question_id`, `is_correct` (boolean), `time_taken_ms` (milliseconds)
+        # And we have a `questions` table with `question_id` and `text`.
+
+        query = f"""
+        WITH question_performance AS (
+            SELECT
+                jsonb_array_elements(qr.answers_details)->>
+'question_id' AS question_id_text,
+                (jsonb_array_elements(qr.answers_details)->>
+'is_correct')::boolean AS is_correct,
+                (jsonb_array_elements(qr.answers_details)->>
+'time_taken_ms')::numeric / 1000.0 AS time_taken_seconds
+            FROM quiz_results qr
+            WHERE qr.completed_at IS NOT NULL AND qr.answers_details IS NOT NULL
+            {time_condition_quiz_results}
+        )
+        SELECT 
+            q.text AS question_text,
+            q.question_id AS question_id_original, -- Keep original ID for potential future use
+            COUNT(qp.question_id_text) AS appeared_count,
+            COALESCE(SUM(CASE WHEN qp.is_correct THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qp.question_id_text), 0), 0) AS correct_percentage,
+            COALESCE(AVG(qp.time_taken_seconds), 0) AS avg_time_seconds
+        FROM questions q
+        JOIN question_performance qp ON q.question_id::text = qp.question_id_text
+        GROUP BY q.question_id, q.text
+        ORDER BY appeared_count DESC, correct_percentage DESC
+        LIMIT 50; -- Limit to top 50 for performance, charts might take top 10-20
+        """
+        
+        raw_results = self._execute_query(query, fetch_all=True)
+        logger.info(f"[DB Admin Stats V5] Raw results for detailed_question_stats ({time_filter}): {raw_results}")
+        
+        if raw_results:
+            # Ensure all expected keys are present, defaulting if necessary
+            processed_results = []
+            for row in raw_results:
+                processed_results.append({
+                    "question_text": row.get("question_text", "غير متوفر"),
+                    "appeared_count": row.get("appeared_count", 0),
+                    "correct_percentage": float(row.get("correct_percentage", 0.0)),
+                    "avg_time_seconds": float(row.get("avg_time_seconds", 0.0)),
+                    "question_id_original": row.get("question_id_original", None) # Optional
+                })
+            return processed_results
+        return []
+
+DB_MANAGER = DatabaseManager()
+logger.info("[DB Manager V5] Singleton instance DB_MANAGER created.")
+
