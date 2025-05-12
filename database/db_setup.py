@@ -14,7 +14,8 @@ def get_database_url():
     if database_url_env:
         if database_url_env.startswith("postgres://"):
             database_url_env = database_url_env.replace("postgres://", "postgresql://", 1)
-        logger.info(f"Using DATABASE_URL from environment: {database_url_env.split("@")[0]}@...")
+        _url_prefix_for_log = database_url_env.split("@")[0]
+        logger.info(f"Using DATABASE_URL from environment: {_url_prefix_for_log}@...")
         return database_url_env
 
     # Fallback to individual components if DATABASE_URL is not set (as in user's original file)
