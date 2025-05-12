@@ -33,23 +33,16 @@ except ImportError:
 
 # Configure Matplotlib for Arabic text
 try:
-    font_path_amiri = "/usr/share/fonts/truetype/amiri/Amiri-Regular.ttf" 
-    font_path_dejavu = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    
-    if os.path.exists(font_path_amiri):
-        font_manager.fontManager.addfont(font_path_amiri)
-        plt.rcParams["font.family"] = "Amiri"
-        logger.info("Using Amiri font for Matplotlib charts.")
-    elif os.path.exists(font_path_dejavu):
-        font_manager.fontManager.addfont(font_path_dejavu)
-        plt.rcParams["font.family"] = "DejaVu Sans"
-        logger.info("Using DejaVu Sans font for Matplotlib charts.")
-    else:
-        logger.warning("Amiri and DejaVu Sans fonts not found. Using Matplotlib default sans-serif. Arabic text in charts might not render correctly.")
-        plt.rcParams["font.family"] = "sans-serif"
+    # Rely on system's default sans-serif font or ensure a suitable one is available.
+    # Noto Sans Arabic is often a good choice if available.
+    # For now, let's try with the default sans-serif and ensure reshaping/bidi is done.
+    plt.rcParams["font.family"] = "sans-serif"
+    logger.info("Attempting to use Matplotlib default sans-serif font for charts. Ensure system has Arabic support.")
+    # It might be necessary to install fonts like 'fonts-noto-core' or 'fonts-noto-arabicui' on the Render instance
+    # and then potentially clear Matplotlib's font cache.
 except Exception as e:
     logger.warning(f"Font setup issue: {e}. Using Matplotlib default sans-serif. Arabic text in charts might not render correctly.")
-    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.family"] = "sans-serif" # Fallback again
 
 plt.rcParams["axes.unicode_minus"] = False
 
@@ -183,7 +176,7 @@ def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) 
     title_chart = f"{title_chart_base} ({time_filter_display_val_for_chart})"
     ax.set_title(title_chart, pad=20)
     
-    ax.tick_params(axis="x", labelsize=10, rotation=45, ha="right")
+    ax.tick_params(axis="x", labelsize=10, rotation=45)
     ax.tick_params(axis="y", labelsize=10)
     for bar in bars:
         yval = bar.get_height()
