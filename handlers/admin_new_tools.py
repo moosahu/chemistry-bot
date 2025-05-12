@@ -78,7 +78,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         if db_manager.is_user_admin(user_id):
             keyboard.append([InlineKeyboardButton("⚙️ لوحة تحكم الأدمن", callback_data=
-admin_show_tools_menu
+'admin_show_tools_menu'
 )])
     except Exception as e:
         logger.error(f"Error checking admin status for user {user_id}: {e}. Admin button may not be shown.")
