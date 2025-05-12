@@ -142,7 +142,8 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
     db_url_for_test = get_database_url() # This will use env var or fallbacks
-    logger.info(f"Attempting to set up database using SQLAlchemy with URL: {db_url_for_test.split("@")[0]}@...")
+    _db_url_for_test_prefix = db_url_for_test.split("@")[0]
+    logger.info(f"Attempting to set up database using SQLAlchemy with URL: {_db_url_for_test_prefix}@...")
     current_engine_for_test = get_engine(db_url_for_test)
     
     if current_engine_for_test is not None:
