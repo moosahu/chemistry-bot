@@ -266,33 +266,70 @@ async def send_dashboard_stats_v4(update: Update, context: CallbackContext, stat
             except Exception as del_err:
                 logger.warning(f"[AdminInterfaceV12_ArabicFix] Could not delete original message {original_message_id_to_delete}: {del_err}")
 
-        valid_chart_paths = [p for p in chart_paths if p and os.path.exists(p)]
-        if valid_chart_paths:
-            media_group = [InputMediaPhoto(media=open(p, "rb")) for p in valid_chart_paths]
-            if len(media_group) == 1:
-                await context.bot.send_photo(chat_id=chat_id, photo=open(valid_chart_paths[0], "rb"), caption=text_response if text_response else None, reply_markup=current_reply_markup)
-            else:
-                # Send first photo with caption, then rest of media group, then text message with markup
-                await context.bot.send_photo(chat_id=chat_id, photo=open(valid_chart_paths[0], "rb"), caption=text_response if text_response else None)
-                if len(media_group) > 1:
-                    # Send remaining photos without caption
-                    await context.bot.send_media_group(chat_id=chat_id, media=[InputMediaPhoto(media=open(p, "rb")) for p in valid_chart_paths[1:]])
-                # Send the main text response with keyboard separately if there was a text response
-                if text_response: # Or always send it if keyboard is important
-                    await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("اختر فلترًا آخر أو عد للقائمة الرئيسية."), reply_markup=current_reply_markup)
-                elif current_reply_markup: # If no text but markup exists
-                     await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("تم عرض الرسوم البيانية. اختر فلترًا آخر أو عد للقائمة الرئيسية."), reply_markup=current_reply_markup)
+        MAX_CAPTION_LENGTH = 1000  # Max length for a photo caption
+        MAX_MESSAGE_LENGTH = 4000 # Max length for a text message (approx)
 
-            for p in valid_chart_paths: # Clean up charts after sending
+        valid_chart_paths = [p for p in chart_paths if p and os.path.exists(p)]
+        
+        final_caption_for_photo = None
+        send_text_separately = False
+        
+        if text_response:
+            if len(text_response) > MAX_CAPTION_LENGTH:
+                final_caption_for_photo = process_arabic_text("الرسم البياني. التفاصيل في الرسالة التالية.")
+                send_text_separately = True
+            else:
+                final_caption_for_photo = text_response
+        
+        if valid_chart_paths:
+            if len(valid_chart_paths) == 1:
+                await context.bot.send_photo(
+                    chat_id=chat_id, 
+                    photo=open(valid_chart_paths[0], "rb"), 
+                    caption=final_caption_for_photo
+                )
+            else: # Multiple photos
+                media_group_items = []
+                # First photo with caption
+                media_group_items.append(InputMediaPhoto(media=open(valid_chart_paths[0], "rb"), caption=final_caption_for_photo))
+                # Remaining photos without caption
+                for chart_path in valid_chart_paths[1:]:
+                    media_group_items.append(InputMediaPhoto(media=open(chart_path, "rb")))
+                await context.bot.send_media_group(chat_id=chat_id, media=media_group_items)
+
+            if send_text_separately and text_response:
+                for i in range(0, len(text_response), MAX_MESSAGE_LENGTH):
+                    chunk = text_response[i:i + MAX_MESSAGE_LENGTH]
+                    await context.bot.send_message(chat_id=chat_id, text=chunk)
+            
+            # Send reply markup if charts were sent
+            if current_reply_markup:
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text=process_arabic_text("اختر فلترًا آخر أو عد للقائمة الرئيسية."), 
+                    reply_markup=current_reply_markup
+                )
+            
+            for p in valid_chart_paths:
                 try:
                     os.remove(p)
                 except Exception as e_remove:
-                    logger.error(f"[AdminInterfaceV12_ArabicFix] Error removing chart file {p}: {e_remove}")
-        elif text_response:
-            await context.bot.send_message(chat_id=chat_id, text=text_response, reply_markup=current_reply_markup)
-        else: # Should not happen if the no data message is set correctly
-            await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("لا توجد بيانات أو رسوم بيانية لعرضها."), reply_markup=current_reply_markup)
-
+                    logger.error(f"[AdminInterfaceV14_CaptionFix] Error removing chart file {p}: {e_remove}")
+        
+        elif text_response: # No charts, only text response
+            for i in range(0, len(text_response), MAX_MESSAGE_LENGTH):
+                chunk = text_response[i:i + MAX_MESSAGE_LENGTH]
+                # Send the last chunk with reply_markup
+                if i + MAX_MESSAGE_LENGTH >= len(text_response):
+                    await context.bot.send_message(chat_id=chat_id, text=chunk, reply_markup=current_reply_markup)
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text=chunk)
+        
+        else: # No charts, no text (should be caught by \"no data\" message)
+            if current_reply_markup: # Send markup if it exists
+                await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("لا توجد بيانات أو رسوم بيانية لعرضها."), reply_markup=current_reply_markup)
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("لا توجد بيانات أو رسوم بيانية لعرضها."))
     except Exception as e:
         logger.error(f"[AdminInterfaceV12_ArabicFix] Error in send_dashboard_stats_v4 for {stat_category} ({time_filter}): {e}", exc_info=True)
         error_message = process_arabic_text("حدث خطأ أثناء جلب أو عرض الإحصائيات. يرجى المحاولة مرة أخرى أو الاتصال بالدعم.")
