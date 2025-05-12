@@ -471,6 +471,22 @@ class DatabaseManager:
         #   `question_id`, `is_correct` (boolean), `time_taken_ms` (milliseconds)
         # And we have a `questions` table with `question_id` and `text`.
 
+        # Debug: Log a sample of answers_details from quiz_results
+        sample_answers_details_query = f"""
+        SELECT qr.answers_details 
+        FROM quiz_results qr 
+        WHERE qr.completed_at IS NOT NULL 
+        AND qr.answers_details IS NOT NULL 
+        AND qr.answers_details != 'null'::jsonb 
+        AND jsonb_typeof(qr.answers_details) = 'array' 
+        AND jsonb_array_length(qr.answers_details) > 0
+        {time_condition_quiz_results} 
+        LIMIT 5;
+        """
+        logger.info(f"[DB Admin Stats V5 DEBUG] Executing sample_answers_details_query for filter: {time_filter}")
+        sample_details = self._execute_query(sample_answers_details_query, fetch_all=True)
+        logger.info(f"[DB Admin Stats V5 DEBUG] Sample answers_details content ({time_filter}): {sample_details}")
+
         # Debug: Query the CTE directly
         cte_query = f"""
         WITH question_performance AS (
