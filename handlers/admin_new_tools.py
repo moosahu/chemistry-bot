@@ -69,7 +69,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 'my_stats_leaderboard'
 )],
         [InlineKeyboardButton("ℹ️ حول البوت", callback_data=
-'show_about_bot'
+'about_bot'
 )],
     ]
 
@@ -119,7 +119,9 @@ async def admin_back_to_start_callback(update: Update, context: ContextTypes.DEF
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data='start_quiz')],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data='chemical_info')],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data='my_stats_leaderboard')],
-        [InlineKeyboardButton("ℹ️ حول البوت", callback_data='show_about_bot')],
+        [InlineKeyboardButton("ℹ️ حول البوت", callback_data=
+'about_bot'
+)],
     ]
     if context.bot_data.get("DB_MANAGER").is_user_admin(user.id):
         keyboard.append([InlineKeyboardButton("⚙️ لوحة تحكم الأدمن", callback_data='admin_show_tools_menu')])
