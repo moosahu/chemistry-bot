@@ -62,8 +62,36 @@ try:
     except ImportError:
         logger.warning("Could not import info_conv_handler from handlers.info. Please ensure the file exists and is correct.")
         info_conv_handler = None
-        
     from handlers.stats import stats_conv_handler
+
+    # --- Import New Admin Tools (Edit Messages, Broadcast) ---
+    try:
+        from handlers.admin_new_tools import (
+            start_command as admin_start_command, 
+            about_command as admin_about_command,
+            help_command as admin_help_command,
+            admin_show_tools_menu_callback,
+            admin_back_to_start_callback,
+            admin_edit_specific_message_callback,
+            admin_edit_other_messages_menu_callback,
+            received_new_message_text,
+            cancel_edit_command,
+            admin_broadcast_start_callback,
+            received_broadcast_text,
+            admin_broadcast_confirm_callback,
+            admin_broadcast_cancel_callback,
+            cancel_broadcast_command,
+            EDIT_MESSAGE_TEXT, 
+            BROADCAST_MESSAGE_TEXT, 
+            BROADCAST_CONFIRM 
+        )
+        from database.manager_definition import DatabaseManager 
+        logger.info("Successfully imported new admin tools (edit/broadcast) and DatabaseManager.")
+        new_admin_tools_loaded = True
+    except ImportError as ie_new_admin:
+        logger.warning(f"Could not import new admin tools (edit/broadcast) or DatabaseManager: {{ie_new_admin}}. New admin functionalities will be unavailable.")
+        new_admin_tools_loaded = False
+    # --- End Import New Admin Tools ---
 
     # New Admin Interface (v4) Handlers
     try:
@@ -109,6 +137,10 @@ async def error_handler(update: object, context: CallbackContext) -> None:
 
 def main() -> None:
     """Start the bot."""
+    # Initialize flags
+    new_admin_tools_loaded = False
+    admin_interface_v4_loaded = False
+
     logger.info("Starting bot...")
 
     logger.info("Setting up database connection and tables...")
@@ -163,6 +195,17 @@ def main() -> None:
         application = app_builder.build()
         logger.info("Telegram Application built.")
 
+        # --- Initialize and store DatabaseManager for new admin tools ---
+        if new_admin_tools_loaded:
+            try:
+                db_manager = DatabaseManager(db_path=DATABASE_URL) # DATABASE_URL from config.py
+                application.bot_data["DB_MANAGER"] = db_manager
+                logger.info("DB_MANAGER for new admin tools initialized and stored in bot_data.")
+            except Exception as db_init_exc:
+                logger.error(f"Failed to initialize DatabaseManager for new admin tools: {db_init_exc}", exc_info=True)
+                new_admin_tools_loaded = False # Disable tools if DB manager fails
+        # --- End DatabaseManager Initialization ---
+
         logger.info("DB_MANAGER will be imported and used directly by handlers, not stored in bot_data.")
 
         if job_queue:
@@ -175,9 +218,18 @@ def main() -> None:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.", exc_info=True)
         exit(1)
 
-    # print("DEBUG: Adding start_handler...")
-    application.add_handler(start_handler)
-    # print("DEBUG: start_handler added.")
+    if new_admin_tools_loaded:
+        application.add_handler(CommandHandler("start", admin_start_command))
+        application.add_handler(CommandHandler("about", admin_about_command))
+        application.add_handler(CommandHandler("help", admin_help_command))
+        logger.info("New admin tools command handlers (start, about, help) added.")
+    else:
+        # print("DEBUG: Adding common start_handler...")
+        application.add_handler(CommandHandler("start", start_handler)) # start_handler is from handlers.common
+        # Note: /about and /help commands might be missing if new_admin_tools_loaded is False
+        # and they are not handled by other common handlers (e.g. if original bot.py had them).
+        # The current dummy common.py handles 'about_bot' via a callback button, not a direct /about command.
+        logger.info("Common start_handler (from handlers.common) added as CommandHandler.")
 
     if quiz_conv_handler:
         # print("DEBUG: Adding quiz_conv_handler...")
@@ -220,6 +272,62 @@ def main() -> None:
     logger.info("Adding global main_menu_callback handler...")
     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
+
+    # --- Add New Admin Tools Handlers (Edit Messages, Broadcast) ---
+    if new_admin_tools_loaded:
+        logger.info("Adding new admin tools (edit/broadcast) handlers...")
+
+        # Conversation handler for editing messages
+        edit_message_conv_handler = ConversationHandler(
+            entry_points=[
+                CallbackQueryHandler(admin_edit_specific_message_callback, pattern=r"^admin_edit_specific_msg_")
+            ],
+            states={
+                EDIT_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, received_new_message_text)],
+            },
+            fallbacks=[
+                CommandHandler("cancel_edit", cancel_edit_command),
+                CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"),
+                CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$")
+            ],
+            persistent=False, # As per PicklePersistence setup
+            map_to_parent={
+                ConversationHandler.END: ConversationHandler.END
+            }
+        )
+
+        # Conversation handler for broadcasting messages
+        broadcast_conv_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$")],
+            states={
+                BROADCAST_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, received_broadcast_text)],
+                BROADCAST_CONFIRM: [
+                    CallbackQueryHandler(admin_broadcast_confirm_callback, pattern=r"^admin_broadcast_confirm$"),
+                    CallbackQueryHandler(admin_broadcast_cancel_callback, pattern=r"^admin_broadcast_cancel$")
+                ]
+            },
+            fallbacks=[
+                CommandHandler("cancel_broadcast", cancel_broadcast_command),
+                CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"),
+            ],
+            persistent=False, # As per PicklePersistence setup
+            map_to_parent={
+                ConversationHandler.END: ConversationHandler.END
+            }
+        )
+
+        application.add_handler(edit_message_conv_handler)
+        application.add_handler(broadcast_conv_handler)
+
+        # Add callback query handlers for new admin tools navigation
+        application.add_handler(CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"))
+        application.add_handler(CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$"))
+        application.add_handler(CallbackQueryHandler(admin_back_to_start_callback, pattern=r"^admin_back_to_start$"))
+        
+        logger.info("New admin tools (edit/broadcast) ConversationHandlers and CallbackQueryHandlers added.")
+    else:
+        logger.warning("New admin tools (edit/broadcast) were not loaded, skipping their handlers.")
+    # --- End Add New Admin Tools Handlers ---
 
     # print("DEBUG: Adding error_handler...")
     application.add_error_handler(error_handler)
