@@ -39,7 +39,7 @@ try:
         logger, # Logger instance
         MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END # Conversation states
     )
-    from database.db_setup import create_connection, create_tables
+    from database.db_setup import get_engine, create_tables # MODIFIED: create_connection to get_engine
     # print("DEBUG: Importing handlers.common...")
     from handlers.common import start_handler, main_menu_callback
     # print("DEBUG: handlers.common imported.")
@@ -143,22 +143,22 @@ def main() -> None:
 
     logger.info("Starting bot...")
 
-    logger.info("Setting up database connection and tables...")
-    conn_check = None
+    logger.info("Setting up database engine and tables using SQLAlchemy...")
+    engine = None # Initialize engine to None
     try:
-        conn_check = create_connection() 
-        if conn_check:
-            logger.info("Database connection for setup check successful.")
-            create_tables(conn_check, drop_first=False) 
-            logger.info("Database tables checked/created successfully via db_setup.")
+        # DATABASE_URL should be available from config.py, db_setup.py will use it
+        engine = get_engine() # Call get_engine() from db_setup
+        if engine:
+            logger.info(f"SQLAlchemy engine created successfully for: {engine.url}")
+            # create_tables now takes the engine directly
+            create_tables(engine, drop_first=False)
+            logger.info("Database tables checked/created successfully via db_setup using SQLAlchemy.")
         else:
-            logger.error("Failed to create database connection for setup. Bot may not function correctly with database features.")
+            logger.error("Failed to create SQLAlchemy engine. Bot may not function correctly with database features.")
     except Exception as db_exc:
-        logger.error(f"Error during initial database table setup: {db_exc}", exc_info=True)
-    finally:
-        if conn_check:
-            conn_check.close()
-            logger.info("Database connection for setup check closed.")
+        logger.error(f"Error during initial SQLAlchemy database setup (get_engine or create_tables): {db_exc}", exc_info=True)
+    # No explicit engine.close() here, SQLAlchemy manages connections.
+    # The engine object itself is not a single connection to be closed in this manner.
     
     logger.info("DB_MANAGER is expected to be initialized and ready from its module (database.manager). Explicit initialization if needed should be handled there.")
 
