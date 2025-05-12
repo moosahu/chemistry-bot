@@ -458,11 +458,6 @@ class DatabaseManager:
             return float(average_duration)
         return 0.0
 
-DB_MANAGER = DatabaseManager()
-logger.info("[DB Manager V5] Singleton instance DB_MANAGER created.")
-
-
-
 
     def get_detailed_question_stats(self, time_filter="all"):
         logger.info(f"[DB Admin Stats V5] Fetching detailed question stats for filter: {time_filter}")
@@ -479,12 +474,9 @@ logger.info("[DB Manager V5] Singleton instance DB_MANAGER created.")
         query = f"""
         WITH question_performance AS (
             SELECT
-                jsonb_array_elements(qr.answers_details)->>
-'question_id' AS question_id_text,
-                (jsonb_array_elements(qr.answers_details)->>
-'is_correct')::boolean AS is_correct,
-                (jsonb_array_elements(qr.answers_details)->>
-'time_taken_ms')::numeric / 1000.0 AS time_taken_seconds
+                jsonb_array_elements(qr.answers_details)->>'question_id' AS question_id_text,
+                (jsonb_array_elements(qr.answers_details)->>'is_correct')::boolean AS is_correct,
+                (jsonb_array_elements(qr.answers_details)->>'time_taken_ms')::numeric / 1000.0 AS time_taken_seconds
             FROM quiz_results qr
             WHERE qr.completed_at IS NOT NULL AND qr.answers_details IS NOT NULL
             {time_condition_quiz_results}
@@ -501,10 +493,10 @@ logger.info("[DB Manager V5] Singleton instance DB_MANAGER created.")
         ORDER BY appeared_count DESC, correct_percentage DESC
         LIMIT 50; -- Limit to top 50 for performance, charts might take top 10-20
         """
-        
+
         raw_results = self._execute_query(query, fetch_all=True)
         logger.info(f"[DB Admin Stats V5] Raw results for detailed_question_stats ({time_filter}): {raw_results}")
-        
+
         if raw_results:
             # Ensure all expected keys are present, defaulting if necessary
             processed_results = []
