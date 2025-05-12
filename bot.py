@@ -137,9 +137,9 @@ async def error_handler(update: object, context: CallbackContext) -> None:
 
 def main() -> None:
     """Start the bot."""
-    # Initialize flags
-    new_admin_tools_loaded = False
-    admin_interface_v4_loaded = False
+    global new_admin_tools_loaded, admin_interface_v4_loaded # Declare as global
+    # Flags new_admin_tools_loaded and admin_interface_v4_loaded are set globally during imports.
+    # Do not re-initialize them locally here.
 
     logger.info("Starting bot...")
 
