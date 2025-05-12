@@ -31,7 +31,8 @@ def get_database_url():
         return f"sqlite:///{default_sqlite_path}"
         
     constructed_url = f"postgresql://{db_user}:{db_password}@{db_host}/{db_name}"
-    logger.info(f"Constructed PostgreSQL URL from individual env vars: {constructed_url.split("@")[0]}@...")
+    _constructed_url_prefix_for_log = constructed_url.split("@")[0]
+    logger.info(f"Constructed PostgreSQL URL from individual env vars: {_constructed_url_prefix_for_log}@...")
     return constructed_url
 
 # --- SQLAlchemy Setup ---
