@@ -198,8 +198,8 @@ def main() -> None:
         # --- Initialize and store DatabaseManager for new admin tools ---
         if new_admin_tools_loaded:
             try:
-                db_manager_instance = DatabaseManager(db_path=DATABASE_URL)
-                if db_manager_instance and getattr(db_manager_instance, 'conn', None) is not None:
+                db_manager_instance = DatabaseManager(database_url=DATABASE_URL) # MODIFIED: db_path to database_url
+                if db_manager_instance and getattr(db_manager_instance, 'engine', None) is not None: # MODIFIED: Check for 'engine' instead of 'conn'
                     application.bot_data["DB_MANAGER"] = db_manager_instance
                     logger.info("DB_MANAGER for new admin tools initialized and stored in bot_data.")
                 else:
