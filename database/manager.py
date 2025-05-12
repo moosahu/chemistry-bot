@@ -482,14 +482,14 @@ class DatabaseManager:
             {time_condition_quiz_results}
         )
         SELECT 
-            q.text AS question_text,
+            q.question AS question_text,
             q.question_id AS question_id_original, -- Keep original ID for potential future use
             COUNT(qp.question_id_text) AS appeared_count,
             COALESCE(SUM(CASE WHEN qp.is_correct THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qp.question_id_text), 0), 0) AS correct_percentage,
             COALESCE(AVG(qp.time_taken_seconds), 0) AS avg_time_seconds
         FROM questions q
         JOIN question_performance qp ON q.question_id::text = qp.question_id_text
-        GROUP BY q.question_id, q.text
+        GROUP BY q.question_id, q.question
         ORDER BY appeared_count DESC, correct_percentage DESC
         LIMIT 50; -- Limit to top 50 for performance, charts might take top 10-20
         """
