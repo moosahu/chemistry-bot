@@ -34,32 +34,57 @@ async def check_admin_privileges(update: Update, context: ContextTypes.DEFAULT_T
         return False
     return True
 
-# --- Command Handlers ---
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# --- Command Handasync def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     user_id = user.id
-    # In real use: DB_MANAGER.add_user_if_not_exists(user_id, user.username, user.first_name, user.last_name)
-    # For now, let's assume user is added.
+    logger = logging.getLogger(__name__) # Ensure logger is available
+
+    db_manager = context.bot_data.get("DB_MANAGER")
+
+    if db_manager is None:
+        logger.error("DB_MANAGER is None in start_command. Admin tools database component might not be ready.")
+        await update.message.reply_text("عذراً، يبدو أن مكون قاعدة بيانات أدوات الإدارة غير جاهز حالياً. يرجى المحاولة مرة أخرى لاحقاً أو الاتصال بمسؤول البوت إذا استمرت المشكلة.")
+        return
+
+    # In real use: db_manager.add_user_if_not_exists(user_id, user.username, user.first_name, user.last_name)
+    # For now, let's assume user is added or this is handled elsewhere if needed for start_command.
 
     welcome_message_key = "welcome_new_user"
-    # In real use: welcome_text = DB_MANAGER.get_system_message(welcome_message_key) or "مرحباً بك!"
-    welcome_text = context.bot_data.get("DB_MANAGER").get_system_message(welcome_message_key) or "مرحباً بك يا {user.first_name}!"
+    try:
+        welcome_text = db_manager.get_system_message(welcome_message_key) or f"مرحباً بك يا {{user.first_name}}!"
+    except Exception as e:
+        logger.error(f"Error getting system message 
+{welcome_message_key}
+ from DB_MANAGER: {e}")
+        welcome_text = f"مرحباً بك يا {{user.first_name}}! (رسالة ترحيب افتراضية بسبب خطأ في النظام)"
+        
     welcome_text = welcome_text.replace("{user.first_name}", user.first_name or "مستخدمنا العزيز")
 
     keyboard = [
-        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data='start_quiz')],
-        [InlineKeyboardButton("📚 معلومات كيميائية", callback_data='chemical_info')],
-        [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data='my_stats_leaderboard')],
-        [InlineKeyboardButton("ℹ️ حول البوت", callback_data='show_about_bot')],
+        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data=
+start_quiz
+)],
+        [InlineKeyboardButton("📚 معلومات كيميائية", callback_data=
+chemical_info
+)],
+        [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data=
+my_stats_leaderboard
+)],
+        [InlineKeyboardButton("ℹ️ حول البوت", callback_data=
+show_about_bot
+)],
     ]
 
-    # In real use: if DB_MANAGER.is_user_admin(user_id):
-    if context.bot_data.get("DB_MANAGER").is_user_admin(user_id):
-        keyboard.append([InlineKeyboardButton("⚙️ لوحة تحكم الأدمن", callback_data='admin_show_tools_menu')])
+    try:
+        if db_manager.is_user_admin(user_id):
+            keyboard.append([InlineKeyboardButton("⚙️ لوحة تحكم الأدمن", callback_data=
+admin_show_tools_menu
+)])
+    except Exception as e:
+        logger.error(f"Error checking admin status for user {user_id}: {e}. Admin button may not be shown.")
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(welcome_text, reply_markup=reply_markup)
-
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     about_text = context.bot_data.get("DB_MANAGER").get_system_message('about_bot_message') or "انا بوت كيمياء تحصيلي لمساعدتك."
     await update.message.reply_text(about_text)
