@@ -117,17 +117,34 @@ class DatabaseManager:
             {'key': 'help_command_message', 'description': 'رسالة المساعدة (/help)'}
         ]
 
+    # Modified to get_all_user_ids_for_broadcast to align with manager.py and admin_new_tools.py usage
+    def get_all_user_ids_for_broadcast(self):
+        """Fetches all user IDs for broadcasting messages."""
+        logger.info("[DB Broadcast] Fetching all user IDs for broadcast from manager_definition.py.")
+        if not self.engine: 
+            logger.warning("[DB Broadcast] Database engine not initialized. Cannot fetch user IDs.")
+            return []
+        def operation(session):
+            stmt = select(users_table.c.user_id)
+            results = session.execute(stmt).fetchall()
+            user_ids = [row[0] for row in results] if results else []
+            logger.info(f"[DB Broadcast] Found {len(user_ids)} user IDs for broadcast.")
+            return user_ids
+        return self._execute_query(operation) or [] 
+
+    # Kept original get_all_active_user_ids for other potential uses, but broadcast uses the new one.
     def get_all_active_user_ids(self):
         if not self.engine: return []
         def operation(session):
-            stmt = select(users_table.c.user_id)
+            stmt = select(users_table.c.user_id) # This was the original logic, kept for now.
+                                                # If it was meant to be truly 'active', it would need a time filter.
             results = session.execute(stmt).fetchall()
             return [row[0] for row in results] if results else []
         return self._execute_query(operation) or [] 
 
     def is_user_admin(self, user_id):
         if not self.engine: return False
-        logger.info(f"Available columns in users_table at runtime: {list(users_table.c.keys())}")
+        # logger.info(f"Available columns in users_table at runtime: {list(users_table.c.keys())}") # Redundant logging, can be removed
         if 'is_admin' not in users_table.c:
             logger.warning(f"Column 'is_admin' not found in users_table (columns: {list(users_table.c.keys())}). Cannot check admin status.")
             return False
@@ -151,6 +168,13 @@ class DatabaseManager:
                     "last_name": last_name,
                     "language_code": language_code,
                 }
+                # Ensure all columns defined in db_setup.users_table are handled or have defaults
+                if 'first_seen_timestamp' in users_table.c:
+                    insert_values['first_seen_timestamp'] = datetime.now()
+                if 'last_active_timestamp' in users_table.c:
+                    insert_values['last_active_timestamp'] = datetime.now()
+                if 'last_interaction_date' in users_table.c:
+                    insert_values['last_interaction_date'] = datetime.now()
                 if 'is_admin' in users_table.c:
                     insert_values['is_admin'] = False
                 
@@ -159,7 +183,14 @@ class DatabaseManager:
                 logger.info(f"User {user_id} added to the database.")
                 return True 
             else:
-                logger.debug(f"User {user_id} already exists.")
+                # Optionally update last_active_timestamp or last_interaction_date here if user exists
+                update_values = {'last_interaction_date': datetime.now()}
+                if 'last_active_timestamp' in users_table.c:
+                    update_values['last_active_timestamp'] = datetime.now()
+                
+                stmt_update = update(users_table).where(users_table.c.user_id == user_id).values(**update_values)
+                session.execute(stmt_update)
+                logger.debug(f"User {user_id} already exists. Updated interaction/activity timestamps.")
                 return False 
         return self._execute_query(operation)
 
@@ -173,6 +204,9 @@ class DatabaseManager:
 
     def get_active_users_count(self, days=30):
         if not self.engine: return 0
+        if 'last_active_timestamp' not in users_table.c:
+            logger.warning("Column 'last_active_timestamp' not found in users_table. Cannot get active users count. Returning total users instead.")
+            return self.get_total_users_count()
         def operation(session):
             time_threshold = datetime.now() - timedelta(days=days)
             stmt = select(func.count(users_table.c.user_id)).where(users_table.c.last_active_timestamp >= time_threshold)
@@ -184,6 +218,9 @@ class DatabaseManager:
         """Counts total completed quizzes within a specified number of past days."""
         if not self.engine:
             logger.error("Database engine not initialized.")
+            return 0
+        if quiz_sessions_table is None or 'end_timestamp' not in quiz_sessions_table.c:
+            logger.error("quiz_sessions_table or end_timestamp column not available.")
             return 0
         def operation(session):
             time_threshold = datetime.now() - timedelta(days=days)
@@ -201,44 +238,43 @@ class DatabaseManager:
         if not self.engine:
             logger.error("Database engine not initialized for get_average_quizzes_per_active_user.")
             return 0.0
+        if 'last_active_timestamp' not in users_table.c or quiz_sessions_table is None or 'end_timestamp' not in quiz_sessions_table.c:
+            logger.error("Required columns/tables not available for get_average_quizzes_per_active_user.")
+            return 0.0
 
         def operation(session):
             time_threshold = datetime.now() - timedelta(days=days)
 
-            # Subquery to get IDs of users active in the last 'days'
             active_users_sq = (
                 select(users_table.c.user_id.label("user_id"))
                 .where(users_table.c.last_active_timestamp >= time_threshold)
                 .alias("active_users_sq")
             )
             
-            # Count the number of unique active users
             total_active_users_stmt = select(func.count(active_users_sq.c.user_id))
             total_active_users = session.execute(total_active_users_stmt).scalar_one_or_none()
 
             if not total_active_users or total_active_users == 0:
                 logger.info(f"No active users found in the last {days} days for average quiz calculation.")
-                return 0.0 # Return float 0.0
+                return 0.0
 
-            # Subquery for completed quizzes by user within the time_threshold
             completed_quizzes_sq = (
                 select(
                     quiz_sessions_table.c.user_id,
                     func.count(quiz_sessions_table.c.quiz_session_id).label("num_completed_quizzes"),
                 )
                 .where(quiz_sessions_table.c.end_timestamp.isnot(None))
-                .where(quiz_sessions_table.c.end_timestamp >= time_threshold) # Filter quizzes by time
+                .where(quiz_sessions_table.c.end_timestamp >= time_threshold) 
                 .group_by(quiz_sessions_table.c.user_id)
                 .alias("completed_quizzes_sq")
             )
 
-            # Main query to sum completed quizzes for the identified active users
             stmt = (
                 select(
                     func.sum(func.coalesce(completed_quizzes_sq.c.num_completed_quizzes, 0)).label("total_completed_quizzes_by_active_users")
                 )
-                .select_from(active_users_sq) # Start with active users
-                .outerjoin( # Use outerjoin to include active users even if they have no quizzes
+                .select_from(active_users_sq) 
+                .outerjoin( 
                     completed_quizzes_sq,
                     active_users_sq.c.user_id == completed_quizzes_sq.c.user_id,
                 )
@@ -259,7 +295,7 @@ class DatabaseManager:
             return average_quizzes
 
         result = self._execute_query(operation)
-        return result if result is not None else 0.0 # Ensure float return
+        return result if result is not None else 0.0
 
 logger.info("SQLAlchemy DatabaseManager (manager_definition.py adapted for user's schema) loaded.")
 
@@ -267,9 +303,6 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger.info("Running manager_definition.py (adapted) directly for testing...")
     try:
-        # This block needs db_setup.py to be in the python path
-        # For simplicity, this test might fail if paths are not set up for direct execution.
-        # from db_setup import create_tables 
         test_db_url_env = os.environ.get("DATABASE_URL", "sqlite:///./test_dbs/test_manager_adapted.db")
         if "sqlite" in test_db_url_env and not os.path.exists("./test_dbs"):
             os.makedirs("./test_dbs")
@@ -281,9 +314,11 @@ if __name__ == "__main__":
             db_mngr = DatabaseManager(database_url=test_db_url_env)
             if db_mngr.engine:
                 logger.info("DatabaseManager initialized for testing.")
-                # Example test (requires data to be meaningful)
-                # avg_quizzes = db_mngr.get_average_quizzes_per_active_user(days=30)
-                # logger.info(f"Test: Average quizzes per active user (30 days): {avg_quizzes}")
+                # Example: Add a few users for testing broadcast list
+                # db_mngr.add_user_if_not_exists(111, "user111")
+                # db_mngr.add_user_if_not_exists(222, "user222")
+                # broadcast_ids = db_mngr.get_all_user_ids_for_broadcast()
+                # logger.info(f"Test: User IDs for broadcast: {broadcast_ids}")
                 logger.info("Basic testing stubs. Full test requires db_setup.py in path and data.")
             else:
                 logger.error("Failed to initialize DatabaseManager for testing.")

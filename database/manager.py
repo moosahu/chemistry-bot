@@ -411,17 +411,17 @@ class DatabaseManager:
         WHERE completed_at IS NOT NULL {time_condition}
         GROUP BY score_range
         ORDER BY 
-            CASE score_range
-                WHEN '0-10%' THEN 1
-                WHEN '11-20%' THEN 2
-                WHEN '21-30%' THEN 3
-                WHEN '31-40%' THEN 4
-                WHEN '41-50%' THEN 5
-                WHEN '51-60%' THEN 6
-                WHEN '61-70%' THEN 7
-                WHEN '71-80%' THEN 8
-                WHEN '81-90%' THEN 9
-                WHEN '91-100%' THEN 10
+            CASE 
+                WHEN score_percentage >= 0 AND score_percentage <= 10 THEN 1
+                WHEN score_percentage > 10 AND score_percentage <= 20 THEN 2
+                WHEN score_percentage > 20 AND score_percentage <= 30 THEN 3
+                WHEN score_percentage > 30 AND score_percentage <= 40 THEN 4
+                WHEN score_percentage > 40 AND score_percentage <= 50 THEN 5
+                WHEN score_percentage > 50 AND score_percentage <= 60 THEN 6
+                WHEN score_percentage > 60 AND score_percentage <= 70 THEN 7
+                WHEN score_percentage > 70 AND score_percentage <= 80 THEN 8
+                WHEN score_percentage > 80 AND score_percentage <= 90 THEN 9
+                WHEN score_percentage > 90 AND score_percentage <= 100 THEN 10
                 ELSE 11
             END;
         """
@@ -506,7 +506,5 @@ if __name__ == "__main__":
 
     logger.info("Standalone test finished.")
 
-
-
-
 DB_MANAGER = DatabaseManager()
+
