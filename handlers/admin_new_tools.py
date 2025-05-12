@@ -54,9 +54,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         welcome_text = db_manager.get_system_message(welcome_message_key) or f"مرحباً بك يا {{user.first_name}}!"
     except Exception as e:
-        logger.error(f"Error getting system message 
-{welcome_message_key}
- from DB_MANAGER: {e}")
+        logger.error(f"Error getting system message {welcome_message_key} from DB_MANAGER: {e}")
         welcome_text = f"مرحباً بك يا {{user.first_name}}! (رسالة ترحيب افتراضية بسبب خطأ في النظام)"
         
     welcome_text = welcome_text.replace("{user.first_name}", user.first_name or "مستخدمنا العزيز")
