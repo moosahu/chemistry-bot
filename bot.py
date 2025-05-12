@@ -198,11 +198,15 @@ def main() -> None:
         # --- Initialize and store DatabaseManager for new admin tools ---
         if new_admin_tools_loaded:
             try:
-                db_manager = DatabaseManager(db_path=DATABASE_URL) # DATABASE_URL from config.py
-                application.bot_data["DB_MANAGER"] = db_manager
-                logger.info("DB_MANAGER for new admin tools initialized and stored in bot_data.")
+                db_manager_instance = DatabaseManager(db_path=DATABASE_URL)
+                if db_manager_instance and getattr(db_manager_instance, 'conn', None) is not None:
+                    application.bot_data["DB_MANAGER"] = db_manager_instance
+                    logger.info("DB_MANAGER for new admin tools initialized and stored in bot_data.")
+                else:
+                    logger.error("Failed to initialize DatabaseManager or its connection for new admin tools. Ensure DATABASE_URL is correct, path is writable, and database is accessible.")
+                    new_admin_tools_loaded = False # Crucial: disable tools if DB manager is not usable
             except Exception as db_init_exc:
-                logger.error(f"Failed to initialize DatabaseManager for new admin tools: {db_init_exc}", exc_info=True)
+                logger.error(f"Exception during DatabaseManager initialization for new admin tools: {db_init_exc}", exc_info=True)
                 new_admin_tools_loaded = False # Disable tools if DB manager fails
         # --- End DatabaseManager Initialization ---
 
