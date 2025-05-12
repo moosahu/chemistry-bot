@@ -1,5 +1,9 @@
 """Module for generating display content (text and charts) for the Admin Dashboard.
 
+Version 15: Fixes Arabic text processing by only using arabic_reshaper.reshape.
+It was observed that using bidi.algorithm.get_display was causing text to reverse.
+This version assumes the display environment (Telegram) handles BIDI correctly once shaped.
+
 Version 14: Centralizes Arabic text processing to occur only once, primarily within this module
 just before text is used for display or in charts. TIME_FILTERS_DISPLAY now holds raw Arabic.
 Ensures Matplotlib keyword error is corrected by using 'ha' and 'va'.
@@ -45,7 +49,7 @@ except Exception as e:
 plt.rcParams["axes.unicode_minus"] = False
 
 import arabic_reshaper
-from bidi.algorithm import get_display
+# from bidi.algorithm import get_display # Removed as it was causing issues
 
 from database.manager import DB_MANAGER
 
@@ -61,11 +65,13 @@ def process_arabic_text(text_to_process):
     if not is_arabic:
         return text_str # Return original if no Arabic characters
     try:
+        # Only reshape, assuming Telegram handles BIDI rendering correctly for reshaped text.
+        # The bidi.algorithm.get_display was causing reversal.
         reshaped_text = arabic_reshaper.reshape(text_str)
-        bidi_text = get_display(reshaped_text)
-        return bidi_text
+        # bidi_text = get_display(reshaped_text) # This line was causing the reversal problem
+        return reshaped_text
     except Exception as ex_arabic:
-        logger.error(f"Error processing Arabic text with reshaper/bidi: {ex_arabic}. Text was: {text_to_process}")
+        logger.error(f"Error processing Arabic text with reshaper: {ex_arabic}. Text was: {text_to_process}")
         return text_str # Return original on error
 
 # TIME_FILTERS_DISPLAY now holds RAW Arabic strings.
@@ -179,7 +185,7 @@ def generate_quiz_performance_chart(score_distribution: dict, time_filter: str) 
         return None
 
 async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info(f"[AdminDashboardDisplayV14] get_quiz_performance_display called for {time_filter}")
+    logger.info(f"[AdminDashboardDisplayV15] get_quiz_performance_display called for {time_filter}")
     time_filter_display_val = get_processed_time_filter_display(time_filter)
     avg_correct_percentage = DB_MANAGER.get_overall_average_score(time_filter=time_filter)
     score_distribution_data = DB_MANAGER.get_score_distribution(time_filter=time_filter)
@@ -198,8 +204,6 @@ async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | Non
     if score_distribution_data and isinstance(score_distribution_data, dict) and any(score_distribution_data.values()):
         text_response_parts.append(f"\n{dist_title_str}")
         for score_range, count in score_distribution_data.items():
-            # score_range is already processed if it comes from keys of score_ranges in manager.py and those are Arabic
-            # Assuming score_range from DB_MANAGER.get_score_distribution is raw, needs processing if Arabic
             processed_score_range = process_arabic_text(str(score_range)) 
             count_display = process_arabic_text(str(count))
             text_response_parts.append(f"  - {processed_score_range}: {count_display} {users_str}")
@@ -215,11 +219,10 @@ async def get_quiz_performance_display(time_filter: str) -> tuple[str, str | Non
     return text_response, chart_path
 
 def generate_user_interaction_chart(interaction_data: dict, time_filter: str) -> str | None:
-    if not interaction_data or not any(str(val) for val in interaction_data.values()): # Check if any value is non-empty string after str conversion
+    if not interaction_data or not any(str(val) for val in interaction_data.values()):
         logger.info(f"No user interaction data to generate chart for time_filter {time_filter}.")
         return None
 
-    # Keys of interaction_data are expected to be raw Arabic needing processing
     labels = [process_arabic_text(label) for label in interaction_data.keys()]
     values = []
     for value in interaction_data.values():
@@ -260,7 +263,7 @@ def generate_user_interaction_chart(interaction_data: dict, time_filter: str) ->
         return None
 
 async def get_user_interaction_display(time_filter: str) -> tuple[str, str | None]:
-    logger.info(f"[AdminDashboardDisplayV14] get_user_interaction_display called for {time_filter}")
+    logger.info(f"[AdminDashboardDisplayV15] get_user_interaction_display called for {time_filter}")
     time_filter_display_val = get_processed_time_filter_display(time_filter)
     avg_completion_time_seconds_data = DB_MANAGER.get_average_quiz_duration(time_filter=time_filter)
     avg_completion_time_seconds = float(avg_completion_time_seconds_data) if avg_completion_time_seconds_data is not None else 0.0
@@ -294,7 +297,6 @@ async def get_user_interaction_display(time_filter: str) -> tuple[str, str | Non
     text_response = "\n".join(text_response_parts)
     chart_data = {}
     if total_started > 0: 
-        # Keys for chart_data should be raw Arabic, they will be processed in generate_user_interaction_chart
         chart_data = {
             "معدل الإكمال": completion_rate,
             "معدل التسرب": drop_off_rate
@@ -302,116 +304,149 @@ async def get_user_interaction_display(time_filter: str) -> tuple[str, str | Non
         
     chart_path = None
     if chart_data:
-        # Values are already float, no need for chart_data_float conversion here
         chart_path = generate_user_interaction_chart(chart_data, time_filter)
-    else:
-        logger.info("Skipping user interaction chart generation due to no interaction data or total_started is zero.")
     return text_response, chart_path
 
-def generate_question_difficulty_chart(difficulty_data_list: list, time_filter: str, chart_type: str) -> str | None:
-    if not difficulty_data_list:
-        logger.info(f"No {chart_type} question data to generate chart for time_filter {time_filter}.")
-        return None
-        
-    questions_to_chart = difficulty_data_list[:5]
-    # q.get("question_text") is raw, needs processing for labels
-    labels = [process_arabic_text(q.get("question_text", "N/A")[:30] + ("..." if len(q.get("question_text", "N/A")) > 30 else "")) for q in questions_to_chart]
-    values = [q.get("correct_percentage", 0.0) for q in questions_to_chart]
-    fig, ax = plt.subplots(figsize=(12, 8))
-    bar_color = "#9467bd" if chart_type == "hardest" else "#8c564b"
-    bars = ax.bar(labels, values, color=bar_color, width=0.5)
-    ax.set_ylabel(process_arabic_text("نسبة الإجابة الصحيحة (%)"))
+def generate_question_stats_charts(question_stats: list, time_filter: str) -> list[str]:
+    if not question_stats:
+        return []
     
-    time_filter_display_val = get_processed_time_filter_display(time_filter)
-    chart_title_type_str_raw = "الأصعب" if chart_type == "hardest" else "الأسهل"
-    chart_title_type_str = process_arabic_text(chart_title_type_str_raw)
-    title_chart_base = process_arabic_text("الأسئلة الـ")
-    title_chart = f"{title_chart_base}{process_arabic_text(str(len(questions_to_chart)))} {chart_title_type_str} ({time_filter_display_val})"
-    ax.set_title(title_chart, pad=20)
-    
-    ax.tick_params(axis="x", labelsize=9, rotation=35, ha="right")
-    ax.tick_params(axis="y", labelsize=10)
-    ax.set_ylim(0, 100)
-    for bar in bars:
-        yval = bar.get_height()
-        text_val = "{:.1f}%".format(yval)
-        ax.text(bar.get_x() + bar.get_width()/2.0, yval + 1.5, process_arabic_text(text_val), 
-                ha="center", va="bottom", fontsize=9)
-    chart_filename = f"question_difficulty_{chart_type}_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.png"
-    chart_path = os.path.join(CHARTS_DIR, chart_filename)
-    try:
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close(fig)
-        logger.info(f"Generated question difficulty ({chart_type}) chart: {chart_path}")
-        return chart_path
-    except Exception as e:
-        logger.error(f"Error generating question difficulty ({chart_type}) chart for time_filter {time_filter}: {e}", exc_info=True)
-        plt.close(fig)
-        return None
+    chart_paths = []
+    # Chart 1: Correctness (Correct vs Incorrect)
+    total_correct = sum(q.get("correct_answers", 0) for q in question_stats)
+    total_incorrect = sum(q.get("incorrect_answers", 0) for q in question_stats)
+    if total_correct > 0 or total_incorrect > 0:
+        fig1, ax1 = plt.subplots(figsize=(8,6))
+        labels1 = [process_arabic_text("إجابات صحيحة"), process_arabic_text("إجابات خاطئة")]
+        sizes1 = [total_correct, total_incorrect]
+        colors1 = ["#4CAF50", "#F44336"]
+        explode1 = (0.1, 0) if total_correct > total_incorrect else (0, 0.1)
+        ax1.pie(sizes1, explode=explode1, labels=labels1, colors=colors1, autopct=lambda p: process_arabic_text("{:.1f}%".format(p)), 
+                shadow=True, startangle=90, textprops={"fontsize": 12})
+        ax1.axis("equal")
+        time_filter_display_val = get_processed_time_filter_display(time_filter)
+        title_chart_base1 = process_arabic_text("نسبة الإجابات الصحيحة للخاطئة (لكل الأسئلة)")
+        ax1.set_title(f"{title_chart_base1} ({time_filter_display_val})", pad=20)
+        chart_filename1 = f"question_correctness_pie_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.png"
+        chart_path1 = os.path.join(CHARTS_DIR, chart_filename1)
+        try:
+            plt.tight_layout()
+            plt.savefig(chart_path1)
+            chart_paths.append(chart_path1)
+            logger.info(f"Generated question correctness pie chart: {chart_path1}")
+        except Exception as e:
+            logger.error(f"Error generating question correctness pie chart: {e}", exc_info=True)
+        finally:
+            plt.close(fig1)
 
-async def get_question_stats_display(time_filter: str) -> tuple[str, list[str] | None]:
-    logger.info(f"[AdminDashboardDisplayV14] get_question_stats_display called for {time_filter}")
+    # Chart 2: Top N most/least correctly answered questions (Bar chart)
+    # Sort questions by correctness percentage (correct / (correct + incorrect))
+    questions_with_perf = []
+    for q_stat in question_stats:
+        c = q_stat.get("correct_answers", 0)
+        i = q_stat.get("incorrect_answers", 0)
+        total_ans = c + i
+        if total_ans > 0:
+            perf = (c / total_ans) * 100
+            questions_with_perf.append({"id": q_stat.get("question_id", "N/A"), "text": q_stat.get("question_text", "?"), "perf": perf, "total_ans": total_ans})
+    
+    if questions_with_perf:
+        # Top 3 most correct (if more than 3 questions)
+        sorted_by_perf_desc = sorted(questions_with_perf, key=lambda x: x["perf"], reverse=True)
+        top_n = 3
+        top_correct_questions = sorted_by_perf_desc[:top_n]
+
+        if top_correct_questions:
+            fig2, ax2 = plt.subplots(figsize=(12, 7))
+            q_labels_top = [process_arabic_text(f"س{q['id']}: {q['text'][:30]}...") for q in top_correct_questions]
+            q_perf_top = [q["perf"] for q in top_correct_questions]
+            bars_top = ax2.barh(q_labels_top, q_perf_top, color="#8BC34A")
+            ax2.set_xlabel(process_arabic_text("نسبة الإجابة الصحيحة (%)"))
+            time_filter_display_val = get_processed_time_filter_display(time_filter)
+            title_chart_base2 = process_arabic_text(f"أعلى {len(top_correct_questions)} أسئلة من حيث نسبة الإجابة الصحيحة")
+            ax2.set_title(f"{title_chart_base2} ({time_filter_display_val})", pad=20)
+            ax2.set_xlim(0, 100)
+            for bar in bars_top:
+                width = bar.get_width()
+                ax2.text(width + 1, bar.get_y() + bar.get_height()/2. , process_arabic_text("{:.1f}%".format(width)), 
+                         va="center", ha="left", fontsize=9)
+            chart_filename2 = f"question_top_correct_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.png"
+            chart_path2 = os.path.join(CHARTS_DIR, chart_filename2)
+            try:
+                plt.tight_layout()
+                plt.savefig(chart_path2)
+                chart_paths.append(chart_path2)
+                logger.info(f"Generated top correct questions chart: {chart_path2}")
+            except Exception as e:
+                logger.error(f"Error generating top correct questions chart: {e}", exc_info=True)
+            finally:
+                plt.close(fig2)
+
+        # Top 3 least correct (if more than 3 questions and some are not 100% correct)
+        sorted_by_perf_asc = sorted(questions_with_perf, key=lambda x: x["perf"]) 
+        least_correct_questions = [q for q in sorted_by_perf_asc if q["perf"] < 100][:top_n]
+        if least_correct_questions:
+            fig3, ax3 = plt.subplots(figsize=(12, 7))
+            q_labels_least = [process_arabic_text(f"س{q['id']}: {q['text'][:30]}...") for q in least_correct_questions]
+            q_perf_least = [q["perf"] for q in least_correct_questions]
+            bars_least = ax3.barh(q_labels_least, q_perf_least, color="#FF9800")
+            ax3.set_xlabel(process_arabic_text("نسبة الإجابة الصحيحة (%)"))
+            time_filter_display_val = get_processed_time_filter_display(time_filter)
+            title_chart_base3 = process_arabic_text(f"أقل {len(least_correct_questions)} أسئلة من حيث نسبة الإجابة الصحيحة")
+            ax3.set_title(f"{title_chart_base3} ({time_filter_display_val})", pad=20)
+            ax3.set_xlim(0, 100)
+            for bar in bars_least:
+                width = bar.get_width()
+                ax3.text(width + 1, bar.get_y() + bar.get_height()/2. , process_arabic_text("{:.1f}%".format(width)), 
+                         va="center", ha="left", fontsize=9)
+            chart_filename3 = f"question_least_correct_{time_filter}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.png"
+            chart_path3 = os.path.join(CHARTS_DIR, chart_filename3)
+            try:
+                plt.tight_layout()
+                plt.savefig(chart_path3)
+                chart_paths.append(chart_path3)
+                logger.info(f"Generated least correct questions chart: {chart_path3}")
+            except Exception as e:
+                logger.error(f"Error generating least correct questions chart: {e}", exc_info=True)
+            finally:
+                plt.close(fig3)
+    return chart_paths
+
+async def get_question_stats_display(time_filter: str) -> tuple[str, list[str]]:
+    logger.info(f"[AdminDashboardDisplayV15] get_question_stats_display called for {time_filter}")
     time_filter_display_val = get_processed_time_filter_display(time_filter)
-    question_difficulty_list = DB_MANAGER.get_question_difficulty_stats(time_filter=time_filter)
+    question_stats_data = DB_MANAGER.get_all_question_statistics(time_filter=time_filter)
     
     title_str = process_arabic_text("❓ *إحصائيات الأسئلة*")
-    hardest_title_str = process_arabic_text("📉 *أصعب 5 أسئلة (حسب أقل نسبة إجابات صحيحة):*")
-    easiest_title_str = process_arabic_text("📈 *أسهل 5 أسئلة (حسب أعلى نسبة إجابات صحيحة):*")
-    no_data_hardest_str = process_arabic_text("📉 *أصعب الأسئلة:* لا توجد بيانات كافية.")
-    no_data_easiest_str = process_arabic_text("📈 *أسهل الأسئلة:* لا توجد بيانات كافية.")
-    correctness_str = process_arabic_text("صحة:")
-    attempts_str = process_arabic_text("محاولات:")
-    not_available_str = process_arabic_text("غير متوفر") # This is already processed if it's displayed directly
+    no_data_str = process_arabic_text("لا توجد بيانات كافية لعرض إحصائيات الأسئلة.")
+    correct_str = process_arabic_text("صحيحة")
+    incorrect_str = process_arabic_text("خاطئة")
+    avg_time_str = process_arabic_text("متوسط زمن الإجابة (ث)")
     
-    text_response_parts = [f"{title_str} ({time_filter_display_val}):"]
-    hardest_questions = [q for q in question_difficulty_list if q.get("correct_percentage") is not None][:5]
-    easiest_questions = sorted([q for q in question_difficulty_list if q.get("correct_percentage") is not None], key=lambda x: x["correct_percentage"], reverse=True)[:5]
+    text_response_parts = []
+    text_response_parts.append(f"{title_str} ({time_filter_display_val}):")
     
-    if hardest_questions:
-        text_response_parts.append(f"\n{hardest_title_str}")
-        for i, q in enumerate(hardest_questions):
-            q_text_original = q.get("question_text", "N/A") # Raw text
-            attempts_val = q.get("total_attempts", not_available_str) # attempts_val could be a number or processed "غير متوفر"
+    if question_stats_data:
+        for stat in question_stats_data:
+            q_id = process_arabic_text(str(stat.get("question_id", "N/A")))
+            q_text = process_arabic_text(stat.get("question_text", ""))
+            correct_count = process_arabic_text(str(stat.get("correct_answers", 0)))
+            incorrect_count = process_arabic_text(str(stat.get("incorrect_answers", 0)))
+            avg_time_val = "{:.2f}".format(stat.get("average_time_seconds", 0.0) if stat.get("average_time_seconds") is not None else 0.0)
+            avg_time_display = process_arabic_text(avg_time_val)
             
-            processed_q_text = process_arabic_text(q_text_original[:40] + ("..." if len(q_text_original) > 40 else ""))
-            correct_perc_display = "{:.2f}%".format(q.get("correct_percentage", 0.0))
-            
-            # Process numbers if they are part of Arabic string, or ensure they are displayed correctly as is.
-            # Here, they are concatenated, so process Arabic parts and numbers separately if needed.
-            text_response_parts.append(f"  {process_arabic_text(str(i+1))}. \"{processed_q_text}\" ({correctness_str} {process_arabic_text(correct_perc_display)}, {attempts_str} {process_arabic_text(str(attempts_val))})")
+            text_response_parts.append(f"\n*   {process_arabic_text('سؤال')} {q_id}:* {q_text[:50]}{'...' if len(q_text) > 50 else ''}")
+            text_response_parts.append(f"    - {correct_str}: {correct_count}, {incorrect_str}: {incorrect_count}")
+            text_response_parts.append(f"    - {avg_time_str}: {avg_time_display}")
     else:
-        text_response_parts.append(f"\n{no_data_hardest_str}")
-        
-    if easiest_questions:
-        text_response_parts.append(f"\n{easiest_title_str}")
-        for i, q in enumerate(easiest_questions):
-            q_text_original = q.get("question_text", "N/A")
-            attempts_val = q.get("total_attempts", not_available_str)
-            processed_q_text = process_arabic_text(q_text_original[:40] + ("..." if len(q_text_original) > 40 else ""))
-            correct_perc_display = "{:.2f}%".format(q.get("correct_percentage", 0.0))
-            text_response_parts.append(f"  {process_arabic_text(str(i+1))}. \"{processed_q_text}\" ({correctness_str} {process_arabic_text(correct_perc_display)}, {attempts_str} {process_arabic_text(str(attempts_val))})")
-    else:
-        text_response_parts.append(f"\n{no_data_easiest_str}")
+        text_response_parts.append(no_data_str)
         
     text_response = "\n".join(text_response_parts)
     chart_paths = []
-    hardest_chart_path = None
-    easiest_chart_path = None
-    if hardest_questions:
-        hardest_chart_path = generate_question_difficulty_chart(hardest_questions, time_filter, "hardest")
-        if hardest_chart_path:
-            chart_paths.append(hardest_chart_path)
-    if easiest_questions:
-        easiest_chart_path = generate_question_difficulty_chart(easiest_questions, time_filter, "easiest")
-        if easiest_chart_path:
-            chart_paths.append(easiest_chart_path)
-            
-    if not chart_paths:
-        logger.info("Skipping question stats chart generation due to no sufficient data.")
-        return text_response, None
-        
+    if question_stats_data:
+        chart_paths = generate_question_stats_charts(question_stats_data, time_filter)
+    
     return text_response, chart_paths
 
-logger.info("[AdminDashboardDisplayV14] Module loaded, Arabic text processing centralized.")
+logger.info("[AdminDashboardDisplayV15] Module loaded and Arabic processing function updated.")
 

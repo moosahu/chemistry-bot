@@ -1,8 +1,9 @@
 """
-admin_interface.py (v11 - Diagnostic: Test Arabic processing on command)
+admin_interface.py (v12 - Arabic Fix: Relies on corrected process_arabic_text from admin_dashboard_display)
 
-Handles the admin statistics dashboard interface. This version adds a diagnostic
-message to the /adminstats_v4 command handler to test Arabic text processing.
+Handles the admin statistics dashboard interface. This version removes the diagnostic
+message from v11, assuming the Arabic text processing issue is resolved in the
+imported process_arabic_text function from the admin_dashboard_display module.
 """
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto
 from telegram.ext import CommandHandler, CallbackQueryHandler, CallbackContext
@@ -13,6 +14,7 @@ from utils.admin_auth import is_admin as is_admin_original # Renamed to avoid co
 from database.manager import DB_MANAGER
 from config import logger
 
+# This import will now pull the corrected process_arabic_text from the updated admin_dashboard_display module
 from .admin_dashboard_display import (
     get_usage_overview_display,
     get_quiz_performance_display,
@@ -26,12 +28,12 @@ from .admin_dashboard_display import (
 STATS_PREFIX_MAIN_MENU = "stats_menu_v4_"
 STATS_PREFIX_FETCH = "stats_fetch_v4_"
 
-logger.info("[AdminInterfaceV11_Diagnostic] Module loaded.")
+logger.info("[AdminInterfaceV12_ArabicFix] Module loaded.")
 
 async def is_admin(update: Update, context: CallbackContext) -> bool:
     user = update.effective_user
     if not user:
-        logger.warning("[AdminInterfaceV11_Diagnostic] is_admin: No effective_user found.")
+        logger.warning("[AdminInterfaceV12_ArabicFix] is_admin: No effective_user found.")
         return False
     user_id = user.id
     if hasattr(DB_MANAGER, 'is_user_admin'):
@@ -39,15 +41,16 @@ async def is_admin(update: Update, context: CallbackContext) -> bool:
             admin_status = DB_MANAGER.is_user_admin(user_id)
             return admin_status
         except Exception as e:
-            logger.error(f"[AdminInterfaceV11_Diagnostic] is_admin: DB_MANAGER error for {user_id}: {e}", exc_info=True)
+            logger.error(f"[AdminInterfaceV12_ArabicFix] is_admin: DB_MANAGER error for {user_id}: {e}", exc_info=True)
             return False
-    logger.warning(f"[AdminInterfaceV11_Diagnostic] is_admin: DB_MANAGER.is_user_admin not found. Defaulting to False for {user_id}.")
+    logger.warning(f"[AdminInterfaceV12_ArabicFix] is_admin: DB_MANAGER.is_user_admin not found. Defaulting to False for {user_id}.")
     return False
 
 def get_time_filter_buttons_v4(stat_category_base_callback: str):
     keyboard = []
     row = []
     for key, raw_text in TIME_FILTERS_DISPLAY_RAW.items():
+        # Uses the (now corrected) imported process_arabic_text
         row.append(InlineKeyboardButton(process_arabic_text(raw_text), callback_data=f"{stat_category_base_callback}_{key}"))
         if len(row) == 2:
             keyboard.append(row)
@@ -59,29 +62,17 @@ def get_time_filter_buttons_v4(stat_category_base_callback: str):
 
 async def stats_admin_panel_command_handler_v4(update: Update, context: CallbackContext):
     user_id = update.effective_user.id if update.effective_user else "UnknownUser"
-    logger.info(f"[AdminInterfaceV11_Diagnostic] /adminstats_v4 from user: {user_id}")
+    logger.info(f"[AdminInterfaceV12_ArabicFix] /adminstats_v4 from user: {user_id}")
     if not await is_admin(update, context):
-        logger.warning(f"[AdminInterfaceV11_Diagnostic] User {user_id} is NOT admin for /adminstats_v4.")
+        logger.warning(f"[AdminInterfaceV12_ArabicFix] User {user_id} is NOT admin for /adminstats_v4.")
         if update.message:
             await update.message.reply_text(process_arabic_text("عذراً، هذا الأمر مخصص للأدمن فقط."))
         return
-    logger.info(f"[AdminInterfaceV11_Diagnostic] User {user_id} IS admin.")
+    logger.info(f"[AdminInterfaceV12_ArabicFix] User {user_id} IS admin.")
 
-    # ***** DIAGNOSTIC MESSAGE *****
-    raw_test_string = "مرحباً بالعالم"
-    processed_test_string = process_arabic_text(raw_test_string)
-    diagnostic_message = (
-        f"رسالة اختبار تشخيصية لمعالجة النصوص العربية (v11):\n"
-        f"النص الخام: {raw_test_string}\n"
-        f"النص المعالج: {processed_test_string}\n\n"
-        f"إذا كان النص المعالج أعلاه مشوهاً، فهذا يعني أن المشكلة في دالة process_arabic_text أو المكتبات الداعمة لها."
-    )
-    if update.message:
-        await update.message.reply_text(diagnostic_message) # Send diagnostic message first
-    # ***** END DIAGNOSTIC MESSAGE *****
-
-    logger.info(f"[AdminInterfaceV11_Diagnostic] Showing main menu for user {user_id}.")
-    await show_main_stats_menu_v4(update, context) # Then show the menu
+    # Diagnostic message from v11 has been removed.
+    logger.info(f"[AdminInterfaceV12_ArabicFix] Showing main menu for user {user_id}.")
+    await show_main_stats_menu_v4(update, context) 
 
 async def show_main_stats_menu_v4(update: Update, context: CallbackContext, query=None):
     user_id = update.effective_user.id if update.effective_user else "UnknownUser"
@@ -92,7 +83,7 @@ async def show_main_stats_menu_v4(update: Update, context: CallbackContext, quer
         [InlineKeyboardButton(process_arabic_text("❓ إحصائيات الأسئلة"), callback_data=f"{STATS_PREFIX_MAIN_MENU}question_stats")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    message_text = process_arabic_text("لوحة تحكم إحصائيات الأدمن (v11): اختر فئة لعرضها") 
+    message_text = process_arabic_text("لوحة تحكم إحصائيات الأدمن (v12): اختر فئة لعرضها") 
     effective_chat_id = None
     if query and query.message:
         effective_chat_id = query.message.chat_id
@@ -106,47 +97,44 @@ async def show_main_stats_menu_v4(update: Update, context: CallbackContext, quer
                     await query.edit_message_text(text=message_text, reply_markup=reply_markup)
                 except telegram.error.BadRequest as e:
                     if "There is no text in the message to edit" in str(e):
-                        logger.warning(f"[AdminInterfaceV11_Diagnostic] Cannot edit_message_text (photo?). Deleting and sending new. Msg ID: {query.message.message_id}")
+                        logger.warning(f"[AdminInterfaceV12_ArabicFix] Cannot edit_message_text (photo?). Deleting and sending new. Msg ID: {query.message.message_id}")
                         try:
                             await query.message.delete()
                         except Exception as del_e:
-                            logger.error(f"[AdminInterfaceV11_Diagnostic] Failed to delete photo message {query.message.message_id}: {del_e}")
+                            logger.error(f"[AdminInterfaceV12_ArabicFix] Failed to delete photo message {query.message.message_id}: {del_e}")
                         if effective_chat_id:
                             await context.bot.send_message(chat_id=effective_chat_id, text=message_text, reply_markup=reply_markup)
                     else:
-                        logger.error(f"[AdminInterfaceV11_Diagnostic] BadRequest editing query message: {e}. Sending new.", exc_info=True)
+                        logger.error(f"[AdminInterfaceV12_ArabicFix] BadRequest editing query message: {e}. Sending new.", exc_info=True)
                         if effective_chat_id:
                             await context.bot.send_message(chat_id=effective_chat_id, text=message_text, reply_markup=reply_markup)
             else:
-                logger.warning("[AdminInterfaceV11_Diagnostic] Query object but query.message is None. Sending new.")
+                logger.warning("[AdminInterfaceV12_ArabicFix] Query object but query.message is None. Sending new.")
                 if effective_chat_id:
                     await context.bot.send_message(chat_id=effective_chat_id, text=message_text, reply_markup=reply_markup)
         elif update.message:
-            # This part is tricky now because we sent a diagnostic message already.
-            # We should send the menu as a new message if it's not a query.
-            if not query: # Only send as new if it's the initial command, not a callback editing a message
+            if not query: 
                 await context.bot.send_message(chat_id=effective_chat_id, text=message_text, reply_markup=reply_markup)
-            # If it was a query, it would have been handled by query.edit_message_text
         elif effective_chat_id: 
-             logger.info("[AdminInterfaceV11_Diagnostic] No query/message, sending new to effective_chat_id.")
+             logger.info("[AdminInterfaceV12_ArabicFix] No query/message, sending new to effective_chat_id.")
              await context.bot.send_message(chat_id=effective_chat_id, text=message_text, reply_markup=reply_markup)
         else:
-            logger.error("[AdminInterfaceV11_Diagnostic] Cannot determine chat_id for main menu.")
+            logger.error("[AdminInterfaceV12_ArabicFix] Cannot determine chat_id for main menu.")
 
     except Exception as e:
-        logger.error(f"[AdminInterfaceV11_Diagnostic] General error in show_main_stats_menu_v4: {e}", exc_info=True)
+        logger.error(f"[AdminInterfaceV12_ArabicFix] General error in show_main_stats_menu_v4: {e}", exc_info=True)
         if effective_chat_id:
             try:
                 await context.bot.send_message(chat_id=effective_chat_id, text=process_arabic_text("حدث خطأ أثناء عرض القائمة. يرجى المحاولة بـ /adminstats_v4."), reply_markup=None)
             except Exception as final_e:
-                logger.critical(f"[AdminInterfaceV11_Diagnostic] CRITICAL: Failed to send error message in show_main_stats_menu_v4: {final_e}")
+                logger.critical(f"[AdminInterfaceV12_ArabicFix] CRITICAL: Failed to send error message in show_main_stats_menu_v4: {final_e}")
 
 async def stats_menu_callback_handler_v4(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = update.effective_user.id if update.effective_user else "UnknownUser"
     await query.answer() 
     if not await is_admin(update, context):
-        logger.warning(f"[AdminInterfaceV11_Diagnostic] User {user_id} NOT admin for callback: {query.data}")
+        logger.warning(f"[AdminInterfaceV12_ArabicFix] User {user_id} NOT admin for callback: {query.data}")
         if query.message: 
             try:
                 await query.edit_message_text(text=process_arabic_text("عذراً، الوصول لهذه الإحصائيات مخصص للأدمن فقط."))
@@ -154,7 +142,7 @@ async def stats_menu_callback_handler_v4(update: Update, context: CallbackContex
                  if "There is no text in the message to edit" in str(e) and query.message: 
                     await query.edit_message_caption(caption=process_arabic_text("عذراً، الوصول لهذه الإحصائيات مخصص للأدمن فقط."), reply_markup=None)
                  else:
-                    logger.error(f"[AdminInterfaceV11_Diagnostic] Error editing auth fail message: {e}")
+                    logger.error(f"[AdminInterfaceV12_ArabicFix] Error editing auth fail message: {e}")
         return
 
     callback_data = query.data
@@ -178,15 +166,15 @@ async def stats_menu_callback_handler_v4(update: Update, context: CallbackContex
         if query.message:
             await query.edit_message_text(text=message_text_for_edit, reply_markup=reply_markup)
     except Exception as e:
-        logger.error(f"[AdminInterfaceV11_Diagnostic] Error editing time filter prompt: {e}", exc_info=True)
+        logger.error(f"[AdminInterfaceV12_ArabicFix] Error editing time filter prompt: {e}", exc_info=True)
 
 async def stats_fetch_callback_handler_v4(update: Update, context: CallbackContext):
     query = update.callback_query
     user_id = update.effective_user.id if update.effective_user else "UnknownUser"
-    logger.info(f"[AdminInterfaceV11_Diagnostic] stats_fetch_callback from user: {user_id}, data: {query.data}")
+    logger.info(f"[AdminInterfaceV12_ArabicFix] stats_fetch_callback from user: {user_id}, data: {query.data}")
     await query.answer()
     if not await is_admin(update, context):
-        logger.warning(f"[AdminInterfaceV11_Diagnostic] User {user_id} NOT admin for fetch: {query.data}")
+        logger.warning(f"[AdminInterfaceV12_ArabicFix] User {user_id} NOT admin for fetch: {query.data}")
         return
 
     raw_data_part = query.data.replace(STATS_PREFIX_FETCH, "")
@@ -201,15 +189,15 @@ async def stats_fetch_callback_handler_v4(update: Update, context: CallbackConte
             break
     
     if not stat_category_str or not time_filter_key:
-        logger.error(f"[AdminInterfaceV11_Diagnostic] Could not parse category/filter from: {query.data}")
+        logger.error(f"[AdminInterfaceV12_ArabicFix] Could not parse category/filter from: {query.data}")
         if query.message:
             try: 
                 await query.edit_message_text(text=process_arabic_text("خطأ في تحليل طلب الإحصائيات. حاول مرة أخرى."), reply_markup=None)
             except Exception as e:
-                logger.error(f"[AdminInterfaceV11_Diagnostic] Error sending parse error: {e}")
+                logger.error(f"[AdminInterfaceV12_ArabicFix] Error sending parse error: {e}")
         return
 
-    logger.info(f"[AdminInterfaceV11_Diagnostic] Parsed category: {stat_category_str}, time_filter: {time_filter_key}")
+    logger.info(f"[AdminInterfaceV12_ArabicFix] Parsed category: {stat_category_str}, time_filter: {time_filter_key}")
     time_filter_text_processed = get_processed_time_filter_display(time_filter_key)
     stat_category_display_title_map = {
         "usage_overview": "نظرة عامة على الاستخدام",
@@ -226,13 +214,13 @@ async def stats_fetch_callback_handler_v4(update: Update, context: CallbackConte
             await query.edit_message_text(text=loading_message_text, reply_markup=None) 
     except telegram.error.BadRequest as e:
         if "message is not modified" in str(e).lower():
-            logger.info("[AdminInterfaceV11_Diagnostic] Loading message identical, no edit.")
+            logger.info("[AdminInterfaceV12_ArabicFix] Loading message identical, no edit.")
         elif "There is no text in the message to edit" in str(e) and original_message_id:
-             logger.info(f"[AdminInterfaceV11_Diagnostic] Cannot edit loading message (photo?) for {original_message_id}.")
+             logger.info(f"[AdminInterfaceV12_ArabicFix] Cannot edit loading message (photo?) for {original_message_id}.")
         else:
-            logger.error(f"[AdminInterfaceV11_Diagnostic] Error editing loading message: {e}", exc_info=True)
+            logger.error(f"[AdminInterfaceV12_ArabicFix] Error editing loading message: {e}", exc_info=True)
     except Exception as e:
-        logger.error(f"[AdminInterfaceV11_Diagnostic] General error editing loading message: {e}", exc_info=True)
+        logger.error(f"[AdminInterfaceV12_ArabicFix] General error editing loading message: {e}", exc_info=True)
 
     await send_dashboard_stats_v4(update, context, stat_category_str, time_filter_key, processed_stat_category_display_title, original_message_id)
 
@@ -245,7 +233,7 @@ async def send_dashboard_stats_v4(update: Update, context: CallbackContext, stat
     current_reply_markup = None 
 
     if not chat_id:
-        logger.error("[AdminInterfaceV11_Diagnostic] Cannot determine chat_id in send_dashboard_stats_v4.")
+        logger.error("[AdminInterfaceV12_ArabicFix] Cannot determine chat_id in send_dashboard_stats_v4.")
         return
 
     try:
@@ -265,7 +253,7 @@ async def send_dashboard_stats_v4(update: Update, context: CallbackContext, stat
             text_response, chart_paths_list = await get_question_stats_display(time_filter)
             if chart_paths_list: chart_paths.extend(chart_paths_list)
         else:
-            logger.warning(f"[AdminInterfaceV11_Diagnostic] Unknown stat_category: {stat_category}")
+            logger.warning(f"[AdminInterfaceV12_ArabicFix] Unknown stat_category: {stat_category}")
             text_response = f"{process_arabic_text('فئة الإحصائيات غير معروفة:')} {processed_stat_category_display_title}"
 
         if not text_response and not (chart_paths and any(os.path.exists(p) for p in chart_paths if p)):
@@ -276,51 +264,52 @@ async def send_dashboard_stats_v4(update: Update, context: CallbackContext, stat
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=original_message_id_to_delete)
             except Exception as del_err:
-                logger.warning(f"[AdminInterfaceV11_Diagnostic] Could not delete original message {original_message_id_to_delete}: {del_err}")
+                logger.warning(f"[AdminInterfaceV12_ArabicFix] Could not delete original message {original_message_id_to_delete}: {del_err}")
 
         valid_chart_paths = [p for p in chart_paths if p and os.path.exists(p)]
-
         if valid_chart_paths:
-            caption_text = f"{text_response}\n\n{process_arabic_text('🖼️')} {processed_stat_category_display_title} ({get_processed_time_filter_display(time_filter)})"
-            if len(valid_chart_paths) == 1:
-                with open(valid_chart_paths[0], "rb") as photo_file:
-                    await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption=caption_text, reply_markup=current_reply_markup)
+            media_group = [InputMediaPhoto(media=open(p, "rb")) for p in valid_chart_paths]
+            if len(media_group) == 1:
+                await context.bot.send_photo(chat_id=chat_id, photo=open(valid_chart_paths[0], "rb"), caption=text_response if text_response else None, reply_markup=current_reply_markup)
             else:
-                media_group = []
-                for i, chart_p in enumerate(valid_chart_paths):
-                    media_group.append(InputMediaPhoto(media=open(chart_p, "rb"), caption=caption_text if i == 0 else None))
-                if media_group:
-                    await context.bot.send_media_group(chat_id=chat_id, media=media_group)
-                    if len(valid_chart_paths) > 1:
-                         await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("اختر فلتر آخر أو عد للقائمة الرئيسية:"), reply_markup=current_reply_markup)
-        else:
-            await context.bot.send_message(chat_id=chat_id, text=text_response, reply_markup=current_reply_markup)
+                # Send first photo with caption, then rest of media group, then text message with markup
+                await context.bot.send_photo(chat_id=chat_id, photo=open(valid_chart_paths[0], "rb"), caption=text_response if text_response else None)
+                if len(media_group) > 1:
+                    # Send remaining photos without caption
+                    await context.bot.send_media_group(chat_id=chat_id, media=[InputMediaPhoto(media=open(p, "rb")) for p in valid_chart_paths[1:]])
+                # Send the main text response with keyboard separately if there was a text response
+                if text_response: # Or always send it if keyboard is important
+                    await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("اختر فلترًا آخر أو عد للقائمة الرئيسية."), reply_markup=current_reply_markup)
+                elif current_reply_markup: # If no text but markup exists
+                     await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("تم عرض الرسوم البيانية. اختر فلترًا آخر أو عد للقائمة الرئيسية."), reply_markup=current_reply_markup)
 
-    except telegram.error.BadRequest as e:
-        if "message to be replied not found" in str(e).lower() or "reply message not found" in str(e).lower():
-            logger.warning(f"[AdminInterfaceV11_Diagnostic] Original message for reply not found. Sending new. Error: {e}")
-            final_text_to_send = text_response if text_response else process_arabic_text("حدث خطأ أثناء عرض الإحصائيات. حاول مرة أخرى.")
-            await context.bot.send_message(chat_id=chat_id, text=final_text_to_send, reply_markup=current_reply_markup)
-        else:
-            logger.error(f"[AdminInterfaceV11_Diagnostic] Telegram BadRequest in send_dashboard_stats_v4: {e}", exc_info=True)
-            await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("حدث خطأ أثناء عرض الإحصائيات. يرجى المحاولة مرة أخرى."), reply_markup=get_time_filter_buttons_v4(f"{STATS_PREFIX_FETCH}{stat_category}"))
-    except Exception as e:
-        logger.error(f"[AdminInterfaceV11_Diagnostic] General error in send_dashboard_stats_v4: {e}", exc_info=True)
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("عفواً، حدث خطأ غير متوقع أثناء جلب الإحصائيات."), reply_markup=get_time_filter_buttons_v4(f"{STATS_PREFIX_FETCH}{stat_category}"))
-        except Exception as final_err:
-            logger.critical(f"[AdminInterfaceV11_Diagnostic] CRITICAL: Failed to send error message: {final_err}")
-    finally:
-        for chart_p in chart_paths:
-            if chart_p and os.path.exists(chart_p):
+            for p in valid_chart_paths: # Clean up charts after sending
                 try:
-                    os.remove(chart_p)
-                except Exception as e_clean:
-                    logger.error(f"[AdminInterfaceV11_Diagnostic] Error cleaning up chart file {chart_p}: {e_clean}")
+                    os.remove(p)
+                except Exception as e_remove:
+                    logger.error(f"[AdminInterfaceV12_ArabicFix] Error removing chart file {p}: {e_remove}")
+        elif text_response:
+            await context.bot.send_message(chat_id=chat_id, text=text_response, reply_markup=current_reply_markup)
+        else: # Should not happen if the no data message is set correctly
+            await context.bot.send_message(chat_id=chat_id, text=process_arabic_text("لا توجد بيانات أو رسوم بيانية لعرضها."), reply_markup=current_reply_markup)
 
-stats_admin_panel_command_handler_v11 = CommandHandler("adminstats_v4", stats_admin_panel_command_handler_v4)
-stats_menu_callback_handler_v11 = CallbackQueryHandler(stats_menu_callback_handler_v4, pattern=f"^{STATS_PREFIX_MAIN_MENU}")
-stats_fetch_callback_handler_v11 = CallbackQueryHandler(stats_fetch_callback_handler_v4, pattern=f"^{STATS_PREFIX_FETCH}")
+    except Exception as e:
+        logger.error(f"[AdminInterfaceV12_ArabicFix] Error in send_dashboard_stats_v4 for {stat_category} ({time_filter}): {e}", exc_info=True)
+        error_message = process_arabic_text("حدث خطأ أثناء جلب أو عرض الإحصائيات. يرجى المحاولة مرة أخرى أو الاتصال بالدعم.")
+        try:
+            if original_message_id_to_delete and chat_id:
+                 try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=original_message_id_to_delete)
+                 except Exception: pass # Ignore if deletion fails, main thing is to send error
+            if chat_id:
+                await context.bot.send_message(chat_id=chat_id, text=error_message, reply_markup=get_time_filter_buttons_v4(f"{STATS_PREFIX_FETCH}{stat_category}") if stat_category else None)
+        except Exception as final_err:
+            logger.critical(f"[AdminInterfaceV12_ArabicFix] CRITICAL: Failed to send error message in send_dashboard_stats_v4: {final_err}")
 
-logger.info("[AdminInterfaceV11_Diagnostic] All function definitions complete.")
+# Handlers
+STATS_COMMAND_HANDLER_V4 = CommandHandler("adminstats_v4", stats_admin_panel_command_handler_v4)
+STATS_MENU_CALLBACK_HANDLER_V4 = CallbackQueryHandler(stats_menu_callback_handler_v4, pattern=f"^{STATS_PREFIX_MAIN_MENU}")
+STATS_FETCH_CALLBACK_HANDLER_V4 = CallbackQueryHandler(stats_fetch_callback_handler_v4, pattern=f"^{STATS_PREFIX_FETCH}")
+
+logger.info("[AdminInterfaceV12_ArabicFix] Admin interface handlers (v4) prepared.")
 
