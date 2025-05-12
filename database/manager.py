@@ -471,6 +471,23 @@ class DatabaseManager:
         #   `question_id`, `is_correct` (boolean), `time_taken_ms` (milliseconds)
         # And we have a `questions` table with `question_id` and `text`.
 
+        # Debug: Query the CTE directly
+        cte_query = f"""
+        WITH question_performance AS (
+            SELECT
+                jsonb_array_elements(qr.answers_details)->>'question_id' AS question_id_text,
+                (jsonb_array_elements(qr.answers_details)->>'is_correct')::boolean AS is_correct,
+                (jsonb_array_elements(qr.answers_details)->>'time_taken_ms')::numeric / 1000.0 AS time_taken_seconds
+            FROM quiz_results qr
+            WHERE qr.completed_at IS NOT NULL AND qr.answers_details IS NOT NULL AND qr.answers_details != 'null'::jsonb AND jsonb_typeof(qr.answers_details) = 'array' AND jsonb_array_length(qr.answers_details) > 0
+            {time_condition_quiz_results}
+        )
+        SELECT * FROM question_performance LIMIT 100;
+        """
+        logger.info(f"[DB Admin Stats V5 DEBUG] Executing CTE query for filter: {time_filter}")
+        cte_results = self._execute_query(cte_query, fetch_all=True)
+        logger.info(f"[DB Admin Stats V5 DEBUG] Raw results from question_performance CTE ({time_filter}): {cte_results}")
+
         query = f"""
         WITH question_performance AS (
             SELECT
