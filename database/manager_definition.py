@@ -141,8 +141,9 @@ class DatabaseManager:
         # If it's missing, this will fail. It needs to be added to users_table in db_setup.py.
         # For now, proceeding with assumption it might be added or this function might not be used by user's current bot for admin checks.
         # Let's add a check for the column's existence to be safer.
+        logger.info(f"Available columns in users_table at runtime: {list(users_table.c.keys())}")
         if 'is_admin' not in users_table.c:
-            logger.warning("Column 'is_admin' not found in users_table. Cannot check admin status.")
+            logger.warning(f"Column 'is_admin' not found in users_table (columns: {list(users_table.c.keys())}). Cannot check admin status.")
             return False # Default to not admin if column is missing
             
         def operation(session):
