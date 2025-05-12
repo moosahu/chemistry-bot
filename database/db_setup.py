@@ -39,8 +39,7 @@ def get_database_url():
 # Use a consistent metadata object name, e.g., 'metadata_obj' as used in the manager
 metadata_obj = MetaData()
 
-# User Data Table - MODIFIED TO INCLUDE first_name, last_name, language_code, and last_interaction_date
-# (as per user's original psycopg2 version)
+# User Data Table - MODIFIED to match DBeaver screenshot (added is_admin and last_active_timestamp)
 users_table = Table(
     "users", metadata_obj,
     Column("user_id", BigInteger, primary_key=True, autoincrement=False),
@@ -49,7 +48,9 @@ users_table = Table(
     Column("last_name", Text, nullable=True),
     Column("language_code", Text, nullable=True),
     Column("first_seen_timestamp", TIMESTAMP(timezone=True), server_default=func.now()),
-    Column("last_interaction_date", TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    Column("last_active_timestamp", TIMESTAMP(timezone=True), nullable=True), # Added based on DBeaver screenshot
+    Column("last_interaction_date", TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now()),
+    Column("is_admin", Boolean, default=False, nullable=False) # Added based on DBeaver screenshot
 )
 
 # Quiz Session Data Table (as per user's original psycopg2 version)
