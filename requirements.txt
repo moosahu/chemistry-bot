@@ -6,3 +6,4 @@ requests
 matplotlib
 arabic_reshaper
 python-bidi
+SQLAlchemy
