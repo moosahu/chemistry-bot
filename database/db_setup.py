@@ -156,7 +156,8 @@ if __name__ == '__main__':
         create_tables(current_engine_for_test, drop_first=False) # Set to True with caution for schema changes
         logger.info(f"Database setup process finished for {current_engine_for_test.url.database}.")
     else:
-        logger.error(f"Error! Cannot create the database engine. Setup aborted for URL: {db_url_for_test.split("@")[0]}@...")
+        _db_url_for_test_prefix_error = db_url_for_test.split("@")[0]
+        logger.error(f"Error! Cannot create the database engine. Setup aborted for URL: {_db_url_for_test_prefix_error}@...")
 
 logger.info("db_setup.py (SQLAlchemy version, adapted from user's structure) loaded.")
 
