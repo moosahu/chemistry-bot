@@ -459,53 +459,8 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: 5_Plus_QuestionStatsAPI_v30_diag_full_hardcode_quote_fix
-        logger.info(f"STAT_DEBUG: get_detailed_question_stats called with time_filter: {time_filter}")
-        
-        try:
-            from upload.api_client import fetch_from_api, transform_api_question
-            logger.info("STAT_DEBUG: Successfully imported fetch_from_api and transform_api_question from upload.api_client")
-        except ImportError as e_import:
-            logger.error(f"STAT_DEBUG: Failed to import from upload.api_client. Error: {e_import}. Make sure 'upload' package is in PYTHONPATH and contains api_client.py.
-    ")
-            return []
-    
-        time_filter_sql_fragment = self._get_time_filter_condition(time_filter, 'qr.completed_at')
-    
-        # DIAGNOSTIC: Both sql_part1 and sql_part2 are HARDCODED simple placeholder string literals
-        sql_part1 = 'SELECT 0; /* SQL1_HARDCODED_DIAG */'
-        sql_part2 = 'SELECT 1; /* SQL2_HARDCODED_DIAG */'
-        
-        if time_filter_sql_fragment and time_filter_sql_fragment.strip():
-            # This logic might not make sense with placeholders but kept for structural integrity
-            query_stats = sql_part1 + time_filter_sql_fragment + sql_part2 
-        else:
-            query_stats = sql_part1 + sql_part2
-    
-        log_query_snippet = query_stats[:250].replace('
-    ', ' ').replace('
-    ', ' ')
-        logger.info(f"STAT_DEBUG: Executing SQL query for question stats (snippet): {repr(log_query_snippet)}")
-        logger.info(f"STAT_DEBUG: Parameters for query: None")
-        
-        db_stats_results = self._execute_query(query_stats, None, fetch_all=True)
-        
-        if db_stats_results is None:
-            logger.error("STAT_DEBUG: Failed to fetch aggregated stats from DB or no stats found (with diagnostic SQL).")
-            return []
-    
-        detailed_stats = []
-        logger.warning("STAT_DEBUG: Running with fully hardcoded diagnostic sql_part1 and sql_part2. Full processing skipped.")
-        for row_idx, row in enumerate(db_stats_results):
-            logger.info(f"STAT_DEBUG: Diagnostic row {row_idx}: {row}")
-        return [{"diagnostic_full_hardcode_active": True, "results_count": len(db_stats_results)}]
-    
-        # Original processing logic is effectively bypassed by the return above
-        # but kept here commented out for structural reference if needed later.
-        # for row in db_stats_results:
-        #     question_id = row.get('question_id')
-        #     # ... (rest of the original processing logic)
-        #     detailed_stats.append(stat_entry)
-    
-        # logger.info(f"STAT_DEBUG: Finished processing get_detailed_question_stats. Found {len(detailed_stats)} questions.")
-        # return detailed_stats
+        # Version: 5_Plus_QuestionStatsAPI_v31_minimal_template
+        # This is a minimal diagnostic function.
+        # Using print for direct output during this diagnostic phase.
+        print(f"STAT_DEBUG: Minimal get_detailed_question_stats_v31 called with time_filter: {time_filter}")
+        return [{"minimal_diagnostic_active": True, "message": "Minimal function executed successfully."}]
