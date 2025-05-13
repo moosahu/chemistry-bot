@@ -459,7 +459,7 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: 5_Plus_QuestionStatsAPI_v25_repr_sql_embed
+        # Version: 5_Plus_QuestionStatsAPI_v26_diag_sql2
         logger.info(f"STAT_DEBUG: get_detailed_question_stats called with time_filter: {time_filter}")
         
         try:
@@ -471,10 +471,11 @@ class DatabaseManager:
     
         time_filter_sql_fragment = self._get_time_filter_condition(time_filter, 'qr.completed_at')
     
-        # SQL parts are defined using repr() to ensure they are valid Python string literals
+        # SQL part 1 is defined using repr() to ensure it's a valid Python string literal
         sql_part1 = "WITH UnnestedAnswers AS (\n    SELECT\n        qr.quiz_session_id,\n        (answer_detail ->> 'question_id') AS question_id,\n        (answer_detail ->> 'is_correct')::boolean AS is_correct,\n        (answer_detail ->> 'time_taken_seconds')::numeric AS time_taken_seconds\n    FROM\n        quiz_results qr,\n        jsonb_array_elements(qr.answers_details) AS answer_detail\n    WHERE\n        qr.status = 'completed'"
     
-        sql_part2 = " ),\nQuestionAggregatedStats AS (\n    SELECT\n        ua.question_id,\n        COUNT(*) AS times_answered,\n        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,\n        SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,\n        AVG(ua.time_taken_seconds) AS avg_time_taken_seconds\n    FROM\n        UnnestedAnswers ua\n    WHERE\n        ua.question_id IS NOT NULL AND ua.question_id <> ''\n    GROUP BY\n        ua.question_id\n)\nSELECT\n    qas.question_id,\n    qas.times_answered,\n    qas.correct_answers,\n    qas.incorrect_answers,\n    qas.avg_time_taken_seconds\nFROM\n    QuestionAggregatedStats qas\nORDER BY\n    qas.times_answered DESC;"
+        # DIAGNOSTIC: sql_part2 is a simple placeholder string
+        sql_part2 = 'SELECT 1; -- Diagnostic placeholder for sql_part2'
         
         if time_filter_sql_fragment and time_filter_sql_fragment.strip():
             query_stats = sql_part1 + time_filter_sql_fragment + sql_part2
@@ -494,6 +495,13 @@ class DatabaseManager:
             return []
     
         detailed_stats = []
+        # Minimal processing if using diagnostic sql_part2, as results won't match expected structure
+        if sql_part2 == 'SELECT 1; -- Diagnostic placeholder for sql_part2':
+            logger.warning("STAT_DEBUG: Running with diagnostic placeholder for sql_part2. Full processing skipped.")
+            for row in db_stats_results:
+                logger.info(f"STAT_DEBUG: Diagnostic row: {row}")
+            return [{"diagnostic_placeholder_active": True, "results_count": len(db_stats_results)}]
+    
         for row in db_stats_results:
             question_id = row.get('question_id')
             if not question_id:
