@@ -1,5 +1,9 @@
 """Manages all database interactions for the Chemistry Telegram Bot.
 
+import json
+from sqlalchemy.sql import text
+from utils.api_client import fetch_from_api
+
 Version 5_Plus_QuestionStatsV16_v12_CastLogFix: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
 to help debug why data might appear as zero or empty.
 """
@@ -464,3 +468,142 @@ class DatabaseManager:
         # Using print for direct output during this diagnostic phase.
         print(f"STAT_DEBUG: Minimal get_detailed_question_stats_v31 called with time_filter: {time_filter}")
         return [{"minimal_diagnostic_active": True, "message": "Minimal function executed successfully."}]
+
+    def get_detailed_question_stats(self, time_filter="all"):
+        # Version: DETAILED_STATS_V36_INSERTED_SQL_FUNC
+        logger.info(f"[STATS_ADMIN] Attempting to get detailed question stats with time_filter: {time_filter!r}")
+        stats = []
+        
+        time_filter_sql_fragment = self._get_time_filter_condition(time_filter, "qr.completed_at")
+        query_stats = (
+            f"WITH UnnestedAnswers AS (
+    "
+            f"    SELECT
+    "
+            f"        qr.id as result_id,
+    "
+            f"        (elem ->> 'question_id') AS question_id,
+    "
+            f"        (elem ->> 'question_text') AS question_text_from_log,
+    "
+            f"        (elem ->> 'is_correct')::BOOLEAN AS is_correct,
+    "
+            f"        (elem ->> 'time_taken')::FLOAT AS time_taken
+    "
+            f"    FROM
+    "
+            f"        quiz_results qr,
+    "
+            f"        jsonb_array_elements(qr.answers_details) AS elem
+    "
+            f"    WHERE
+    "
+            f"        qr.completed_at IS NOT NULL "
+            f"        {time_filter_sql_fragment}
+    "
+            f"),
+    "
+            f"AggregatedStats AS (
+    "
+            f"    SELECT
+    "
+            f"        ua.question_id,
+    "
+            f"        COALESCE(ua.question_text_from_log, 'N/A_FROM_LOG') as question_text_from_log,
+    "
+            f"        COUNT(*) AS times_answered,
+    "
+            f"        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,
+    "
+            f"        SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,
+    "
+            f"        SUM(ua.time_taken) AS total_time_taken_for_question_id
+    "
+            f"    FROM
+    "
+            f"        UnnestedAnswers ua
+    "
+            f"    WHERE
+    "
+            f"        ua.question_id IS NOT NULL AND ua.question_id <> ''
+    "
+            f"    GROUP BY
+    "
+            f"        ua.question_id, ua.question_text_from_log
+    "
+            f"),
+    "
+            f"FinalSelection AS (
+    "
+            f"    SELECT
+    "
+            f"        ags.question_id,
+    "
+            f"        ags.question_text_from_log,
+    "
+            f"        ags.times_answered,
+    "
+            f"        ags.correct_answers,
+    "
+            f"        ags.incorrect_answers,
+    "
+            f"        ags.total_time_taken_for_question_id,
+    "
+            f"        (CASE
+    "
+            f"            WHEN ags.times_answered > 0 THEN (ags.correct_answers::FLOAT / ags.times_answered) * 100
+    "
+            f"            ELSE 0
+    "
+            f"        END) AS percentage_correct,
+    "
+            f"        (CASE
+    "
+            f"            WHEN ags.times_answered > 0 THEN ags.total_time_taken_for_question_id / ags.times_answered
+    "
+            f"            ELSE 0
+    "
+            f"        END) AS avg_time_taken_seconds
+    "
+            f"    FROM
+    "
+            f"        AggregatedStats ags
+    "
+            f")
+    "
+            f"SELECT * FROM FinalSelection ORDER BY times_answered DESC;
+    "
+        )
+        logger.debug(f"[STATS_ADMIN] Executing detailed question stats query: {query_stats}")
+        
+        try:
+            raw_stats = self._execute_query(query_stats, fetch_all=True)
+            
+            if raw_stats is None:
+                logger.warning(f"[STATS_ADMIN] Query for detailed question stats returned None (possible DB error). Time filter: {time_filter!r}")
+                return []
+    
+            if not raw_stats:
+                logger.info(f"[STATS_ADMIN] No detailed question stats found for time_filter: {time_filter!r}")
+                return []
+    
+            logger.info(f"[STATS_ADMIN] Successfully fetched {len(raw_stats)} raw aggregated stats for questions.")
+            
+            for row_index, row in enumerate(raw_stats):
+                stats.append({
+                    "question_id": str(row["question_id"]),
+                    "question_text_from_log": row["question_text_from_log"],
+                    "times_answered": row["times_answered"],
+                    "correct_answers": row["correct_answers"],
+                    "incorrect_answers": row["incorrect_answers"],
+                    "percentage_correct": round(float(row["percentage_correct"]), 2) if row["percentage_correct"] is not None else 0.0,
+                    "avg_time_taken_seconds": round(float(row["avg_time_taken_seconds"]), 2) if row["avg_time_taken_seconds"] is not None else 0.0
+                })
+            
+            logger.info(f"[STATS_ADMIN] Processed {len(stats)} question stats entries (SQL part only). Full processing pending API calls.")
+    
+        except Exception as e:
+            logger.exception(f"[STATS_ADMIN] Error fetching or processing detailed question stats (SQL part): {e}")
+            return []
+    
+        return stats
