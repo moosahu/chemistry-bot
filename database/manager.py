@@ -1,6 +1,6 @@
 """Manages all database interactions for the Chemistry Telegram Bot.
 
-Version 5_Plus_QuestionStatsV16_v11_FinalFix: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
+Version 5_Plus_QuestionStatsV16_v12_CastLogFix: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
 to help debug why data might appear as zero or empty.
 """
 
@@ -29,7 +29,7 @@ class DatabaseManager:
 
     def __init__(self):
         """Initializes the DatabaseManager."""
-        logger.info("[DB Manager Version 5_Plus_QuestionStatsV16_v11_FinalFix] Initialized.")
+        logger.info("[DB Manager Version 5_Plus_QuestionStatsV16_v12_CastLogFix] Initialized.")
 
     def _execute_query(self, query, params=None, fetch_one=False, fetch_all=False, commit=False):
         """Helper function to execute database queries with connection handling."""
@@ -459,7 +459,7 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V16_Logic_v11_FinalFix] Fetching detailed question stats for filter: {time_filter}")
+        logger.info(f"[DB Admin Stats V16_Logic_v12_CastLogFix] Fetching detailed question stats for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "qi.interaction_time") # Assuming qi is the alias for question_interactions
     
         # SQL query as a raw f-string. The newlines and indentation within the SQL query itself are preserved.
@@ -473,7 +473,7 @@ class DatabaseManager:
             SUM(CASE WHEN NOT qi.is_correct THEN 1 ELSE 0 END) AS times_incorrect,
             AVG(qi.time_taken_seconds) AS avg_time_taken
         FROM questions q
-        LEFT JOIN question_interactions qi ON q.question_id = qi.question_id
+        LEFT JOIN question_interactions qi ON q.question_id::text = qi.question_id
         WHERE 1=1 {time_condition}
         GROUP BY q.question_id, q.text
     )
