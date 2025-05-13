@@ -5,13 +5,13 @@ to help debug why data might appear as zero or empty.
 """
 
 import psycopg2
-import psycopg2.extras
-from utils.api_client import fetch_from_api # For DictCursor
+import psycopg2.extras # For DictCursor
 import logging
 import random
 import json # For storing details in JSONB
 from datetime import datetime, timedelta # Added timedelta
 import uuid # Added for generating UUIDs
+from utils.api_client import fetch_from_api
 
 # Import config, connection, and schema setup
 try:
@@ -488,7 +488,7 @@ class DatabaseManager:
                       'avg_time_taken_seconds': 15.5
                   }]
         """
-        self.logger.info(f"Fetching detailed question stats with time filter: {time_filter}")
+        logger.info(f"Fetching detailed question stats with time filter: {time_filter}")
         stats = []
         time_filter_sql_fragment = ""
 
@@ -499,7 +499,6 @@ class DatabaseManager:
         elif time_filter == "last_month":
             time_filter_sql_fragment = "AND qr.timestamp >= date('now', 'start of month', '-1 month') AND qr.timestamp < date('now', 'start of month')"
 
-        # This query_template reflects the version after the file_str_replace at 13:31:39
         query_template = """
     # SQL QUERY STARTS BELOW
             SELECT
@@ -520,24 +519,23 @@ class DatabaseManager:
         """
 
         final_query = query_template.format(time_filter_sql=time_filter_sql_fragment)
-        self.logger.debug(f"Executing SQL query for question stats: {final_query}")
+        logger.debug(f"Executing SQL query for question stats: {final_query}")
 
-        conn = None # Initialize conn
+        conn = None
         try:
-            conn = connect_db() # Use connect_db() directly
+            conn = connect_db()
             if not conn:
-                self.logger.error("Failed to get database connection for detailed stats.")
+                logger.error("Failed to get database connection for detailed stats.")
                 return []
 
-            # Use 'with conn:' to handle transactions (commit/rollback)
             with conn:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
                 cur.execute(final_query)
                 raw_stats = cur.fetchall()
-                self.logger.info(f"Fetched {len(raw_stats)} raw stats from DB for detailed question stats.")
+                logger.info(f"Fetched {len(raw_stats)} raw stats from DB for detailed question stats.")
 
                 for row_data in raw_stats:
-                    row = dict(row_data) # Ensure it's a dict
+                    row = dict(row_data)
                     question_id = row.get('question_id')
                     times_answered = row.get('times_answered', 0)
                     times_correct = row.get('times_correct', 0)
@@ -547,15 +545,14 @@ class DatabaseManager:
                     percentage_correct = (times_correct / times_answered * 100) if times_answered > 0 else 0
                     avg_time_taken_seconds = avg_time_taken_seconds if avg_time_taken_seconds is not None else 0
 
-                    self.logger.info(f"Fetching details for question_id: {question_id} from API.")
-                    question_details = {} # Default
+                    logger.info(f"Fetching details for question_id: {question_id} from API.")
+                    question_details = {}
                     try:
-                        # Assumes fetch_from_api is imported and available directly in the module scope.
                         question_details = fetch_from_api(question_id=question_id)
                     except NameError as ne:
-                        self.logger.error(f"NameError calling fetch_from_api: {ne}. Ensure it is imported and available.")
+                        logger.error(f"NameError calling fetch_from_api: {ne}. Ensure it is imported and available.")
                     except Exception as api_exc:
-                        self.logger.error(f"Error calling fetch_from_api for question_id {question_id}: {api_exc}", exc_info=True)
+                        logger.error(f"Error calling fetch_from_api for question_id {question_id}: {api_exc}", exc_info=True)
 
                     text_content = "غير معروف"
                     image_url = None
@@ -575,15 +572,15 @@ class DatabaseManager:
                                     options_display.append(opt_text)
                                 else:
                                     options_display.append("خيار غير معروف")
-                            else: # Legacy or simple list of strings
+                            else:
                                 options_display.append(str(opt))
 
-                        if not text_content and image_url: # If primary content is an image
+                        if not text_content and image_url:
                              text_content = f"[سؤال بصيغة صورة: {image_url}]"
                         elif not text_content and not image_url:
                             text_content = "محتوى السؤال غير متوفر"
                     else:
-                        self.logger.warning(f"Could not fetch valid details for question_id: {question_id} from API or details not a dict. Received: {type(question_details)}")
+                        logger.warning(f"Could not fetch valid details for question_id: {question_id} from API or details not a dict. Received: {type(question_details)}")
 
                     stats.append({
                         'question_id': question_id,
@@ -595,23 +592,21 @@ class DatabaseManager:
                         'percentage_correct': round(percentage_correct, 2),
                         'avg_time_taken_seconds': round(avg_time_taken_seconds, 2)
                     })
-                self.logger.info(f"Successfully processed {len(stats)} questions with details for detailed question stats.")
-        except psycopg2.Error as db_err: # Catch specific DB errors if using psycopg2
-            self.logger.error(f"Database error fetching detailed question stats: {db_err}", exc_info=True)
-            # Rollback is handled by 'with conn:' context manager for psycopg2
-            return [] # Return empty on DB error
+                logger.info(f"Successfully processed {len(stats)} questions with details for detailed question stats.")
+        except psycopg2.Error as db_err:
+            logger.error(f"Database error fetching detailed question stats: {db_err}", exc_info=True)
+            return []
         except Exception as e:
-            self.logger.error(f"Generic error fetching or processing detailed question stats: {e}", exc_info=True)
-            # Rollback is handled by 'with conn:' context manager for psycopg2
-            return [] # Return empty on other errors
+            logger.error(f"Generic error fetching or processing detailed question stats: {e}", exc_info=True)
+            return []
         finally:
-            if conn is not None: # Check if conn was successfully assigned
+            if conn is not None:
                 if hasattr(conn, 'closed') and not conn.closed:
                     conn.close()
-                    self.logger.debug("Database connection (psycopg2) closed after detailed stats query.")
-                elif not hasattr(conn, 'closed'): # For sqlite3 or other DBAPI
+                    logger.debug("Database connection (psycopg2) closed after detailed stats query.")
+                elif not hasattr(conn, 'closed'):
                     conn.close()
-                    self.logger.debug("Database connection (non-psycopg2) closed after detailed stats query.")
+                    logger.debug("Database connection (non-psycopg2) closed after detailed stats query.")
         return stats
 
 DB_MANAGER = DatabaseManager()
