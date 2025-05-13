@@ -493,11 +493,16 @@ class DatabaseManager:
         time_filter_sql_fragment = ""
 
         if time_filter == "today":
-            time_filter_sql_fragment = "AND qr.completed_at >= date('now', 'start of day') AND qr.completed_at < date('now', 'start of day', '+1 day')"
+            time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
         elif time_filter == "last_week":
-            time_filter_sql_fragment = "AND qr.completed_at >= date('now', 'weekday 0', '-7 days') AND qr.completed_at < date('now', 'weekday 0')"
+            # Assuming Sunday is the first day of the week for date_trunc('week', ...)
+            # PostgreSQL's week starts on Monday by default in some configurations.
+            # For a week ending now and starting 7 days ago (like last 7 days):
+            # time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE - INTERVAL '6 days' AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
+            # For the calendar week before the current one (e.g. if today is Wed, then previous Mon-Sun):
+            time_filter_sql_fragment = "AND qr.completed_at >= date_trunc('week', CURRENT_DATE) - INTERVAL '1 week' AND qr.completed_at < date_trunc('week', CURRENT_DATE)"
         elif time_filter == "last_month":
-            time_filter_sql_fragment = "AND qr.completed_at >= date('now', 'start of month', '-1 month') AND qr.completed_at < date('now', 'start of month')"
+            time_filter_sql_fragment = "AND qr.completed_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month' AND qr.completed_at < date_trunc('month', CURRENT_DATE)"
 
         query_template = """
             SELECT
