@@ -459,21 +459,21 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: 5_Plus_QuestionStatsAPI_v28_diag_hardcode_sql2
+        # Version: 5_Plus_QuestionStatsAPI_v30_diag_full_hardcode_quote_fix
         logger.info(f"STAT_DEBUG: get_detailed_question_stats called with time_filter: {time_filter}")
         
         try:
             from upload.api_client import fetch_from_api, transform_api_question
             logger.info("STAT_DEBUG: Successfully imported fetch_from_api and transform_api_question from upload.api_client")
         except ImportError as e_import:
-            logger.error(f"STAT_DEBUG: Failed to import from upload.api_client. Error: {e_import}. Make sure 'upload' package is in PYTHONPATH and contains api_client.py.")
+            logger.error(f"STAT_DEBUG: Failed to import from upload.api_client. Error: {e_import}. Make sure 'upload' package is in PYTHONPATH and contains api_client.py.
+    ")
             return []
     
         time_filter_sql_fragment = self._get_time_filter_condition(time_filter, 'qr.completed_at')
     
-        # DIAGNOSTIC: sql_part1 is a simple placeholder string via repr()
-        sql_part1 = 'SELECT 0; -- Diagnostic placeholder for sql_part1'
-        # DIAGNOSTIC: sql_part2 is a HARDCODED simple placeholder string literal
+        # DIAGNOSTIC: Both sql_part1 and sql_part2 are HARDCODED simple placeholder string literals
+        sql_part1 = 'SELECT 0; /* SQL1_HARDCODED_DIAG */'
         sql_part2 = 'SELECT 1; /* SQL2_HARDCODED_DIAG */'
         
         if time_filter_sql_fragment and time_filter_sql_fragment.strip():
@@ -495,10 +495,10 @@ class DatabaseManager:
             return []
     
         detailed_stats = []
-        logger.warning("STAT_DEBUG: Running with diagnostic placeholders for sql_part1 and hardcoded sql_part2. Full processing skipped.")
+        logger.warning("STAT_DEBUG: Running with fully hardcoded diagnostic sql_part1 and sql_part2. Full processing skipped.")
         for row_idx, row in enumerate(db_stats_results):
             logger.info(f"STAT_DEBUG: Diagnostic row {row_idx}: {row}")
-        return [{"diagnostic_sql1_placeholder_sql2_hardcoded": True, "results_count": len(db_stats_results)}]
+        return [{"diagnostic_full_hardcode_active": True, "results_count": len(db_stats_results)}]
     
         # Original processing logic is effectively bypassed by the return above
         # but kept here commented out for structural reference if needed later.
