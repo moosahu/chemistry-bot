@@ -485,7 +485,7 @@ class DatabaseManager:
                       'times_answered': 10,
                       'times_correct': 5,
                       'percentage_correct': 50.0,
-                      'avg_time_taken_seconds': 15.5
+                      'avg_time_taken_seconds': 0 # Defaulted as time_taken is removed from query
                   }]
         """
         logger.info(f"Fetching detailed question stats with time filter: {time_filter}")
@@ -503,12 +503,12 @@ class DatabaseManager:
             SELECT
                 qa.question_id,
                 COUNT(qr.result_id) as times_answered,
-                SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as times_correct,
-                AVG(qa.time_taken) as avg_time_taken_seconds
+                SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as times_correct
+                -- AVG(qa.time_taken) as avg_time_taken_seconds -- Removed as time_taken not in question_interactions
             FROM
-                user_answers qa
+                question_interactions qa
             JOIN
-                quiz_results qr ON qa.result_id = qr.result_id
+                quiz_results qr ON qa.quiz_session_id = qr.result_id -- Assuming quiz_results.result_id is the session/attempt identifier
             WHERE
                 qa.question_id IS NOT NULL {time_filter_sql}
             GROUP BY
@@ -538,11 +538,11 @@ class DatabaseManager:
                     question_id = row.get('question_id')
                     times_answered = row.get('times_answered', 0)
                     times_correct = row.get('times_correct', 0)
-                    avg_time_taken_seconds = row.get('avg_time_taken_seconds', 0)
+                    # avg_time_taken_seconds is no longer fetched from DB, default to 0 or handle as needed
+                    avg_time_taken_seconds = 0 
 
                     times_correct = times_correct if times_correct is not None else 0
                     percentage_correct = (times_correct / times_answered * 100) if times_answered > 0 else 0
-                    avg_time_taken_seconds = avg_time_taken_seconds if avg_time_taken_seconds is not None else 0
 
                     logger.info(f"Fetching details for question_id: {question_id} from API.")
                     question_details = {}
@@ -589,7 +589,7 @@ class DatabaseManager:
                         'times_answered': times_answered,
                         'times_correct': times_correct,
                         'percentage_correct': round(percentage_correct, 2),
-                        'avg_time_taken_seconds': round(avg_time_taken_seconds, 2)
+                        'avg_time_taken_seconds': round(float(avg_time_taken_seconds), 2) # Ensure it's float before rounding
                     })
                 logger.info(f"Successfully processed {len(stats)} questions with details for detailed question stats.")
         except psycopg2.Error as db_err:
@@ -603,7 +603,7 @@ class DatabaseManager:
                 if hasattr(conn, 'closed') and not conn.closed:
                     conn.close()
                     logger.debug("Database connection (psycopg2) closed after detailed stats query.")
-                elif not hasattr(conn, 'closed'):
+                elif not hasattr(conn, 'closed'): # For other connection types if any
                     conn.close()
                     logger.debug("Database connection (non-psycopg2) closed after detailed stats query.")
         return stats
