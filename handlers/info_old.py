@@ -215,7 +215,7 @@ info_conv_handler = ConversationHandler(
         CallbackQueryHandler(info_menu, pattern=".*") # Default to info_menu if no other match
     ],
     map_to_parent={
-        MAIN_MENU: ConversationHandler.END,
+        MAIN_MENU: MAIN_MENU,
     },
     persistent=True,
     name="info_conversation"
