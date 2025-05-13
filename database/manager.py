@@ -1,6 +1,6 @@
 """Manages all database interactions for the Chemistry Telegram Bot.
 
-Version 5_Plus_QuestionStatsV16_v4: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
+Version 5_Plus_QuestionStatsV16_v5_SQLFix: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
 to help debug why data might appear as zero or empty.
 """
 
@@ -29,7 +29,7 @@ class DatabaseManager:
 
     def __init__(self):
         """Initializes the DatabaseManager."""
-        logger.info("[DB Manager V5_Plus_QuestionStatsV16_v4] Initialized.")
+        logger.info("[DB Manager Version 5_Plus_QuestionStatsV16_v5_SQLFix] Initialized.")
 
     def _execute_query(self, query, params=None, fetch_one=False, fetch_all=False, commit=False):
         """Helper function to execute database queries with connection handling."""
