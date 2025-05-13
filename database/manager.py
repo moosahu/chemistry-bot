@@ -1,6 +1,6 @@
 """Manages all database interactions for the Chemistry Telegram Bot.
 
-Version 5: Adds detailed logging for raw results from admin statistics queries
+Version 5_Plus_QuestionStatsV16_v4: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
 to help debug why data might appear as zero or empty.
 """
 
@@ -29,7 +29,7 @@ class DatabaseManager:
 
     def __init__(self):
         """Initializes the DatabaseManager."""
-        logger.info("[DB Manager V5_V16_Merged_V1] Initialized.")
+        logger.info("[DB Manager V5_Plus_QuestionStatsV16_v4] Initialized.")
 
     def _execute_query(self, query, params=None, fetch_one=False, fetch_all=False, commit=False):
         """Helper function to execute database queries with connection handling."""
@@ -346,52 +346,39 @@ class DatabaseManager:
         return 0.0
 
     def get_score_distribution(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V20M] Fetching score distribution for filter: {time_filter}")
+        logger.info(f"[DB Admin Stats V5] Fetching score distribution for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "completed_at")
-        
         query = f"""
         SELECT 
             CASE 
-                WHEN score_percentage = 100 THEN '100%'
-                WHEN score_percentage >= 90 THEN '90-99%'
-                WHEN score_percentage >= 80 THEN '80-89%'
-                WHEN score_percentage >= 70 THEN '70-79%'
-                WHEN score_percentage >= 60 THEN '60-69%'
-                WHEN score_percentage >= 50 THEN '50-59%'
-                ELSE '0-49%'
-            END as score_range,
-            COUNT(result_id) as count
-        FROM quiz_results
-        WHERE completed_at IS NOT NULL {time_condition}
-        GROUP BY score_range
-        ORDER BY 
-            CASE score_range
-                WHEN '100%' THEN 1
-                WHEN '90-99%' THEN 2
-                WHEN '80-89%' THEN 3
-                WHEN '70-79%' THEN 4
-                WHEN '60-69%' THEN 5
-                WHEN '50-59%' THEN 6
-                ELSE 7
-            END;
+                WHEN score_percentage >= 90 THEN '90-100%' 
+                WHEN score_percentage >= 80 THEN '80-89%' 
+                WHEN score_percentage >= 70 THEN '70-79%' 
+                WHEN score_percentage >= 60 THEN '60-69%' 
+                WHEN score_percentage >= 50 THEN '50-59%' 
+                ELSE '0-49%' 
+            END as score_range, 
+            COUNT(result_id) as user_count 
+        FROM quiz_results 
+        WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition}
+        GROUP BY score_range 
+        ORDER BY score_range DESC;
         """
-        raw_result = self._execute_query(query, fetch_all=True)
-        logger.info(f"[DB Admin Stats V20M] Raw results for score_distribution ({time_filter}): {raw_result}")
-
-        score_ranges_ordered = {
-            "100%": 0, "90-99%": 0, "80-89%": 0, "70-79%": 0,
-            "60-69%": 0, "50-59%": 0, "0-49%": 0
+        raw_results = self._execute_query(query, fetch_all=True)
+        logger.info(f"[DB Admin Stats V5] Raw results for score_distribution ({time_filter}): {raw_results}")
+        score_ranges = {
+            '90-100%': 0, '80-89%': 0, '70-79%': 0,
+            '60-69%': 0, '50-59%': 0, '0-49%': 0
         }
-        
-        if raw_result:
-            for row in raw_result:
-                if row["score_range"] in score_ranges_ordered:
-                    score_ranges_ordered[row["score_range"]] = row["count"]
+        if raw_results:
+            for row in raw_results:
+                if row["score_range"] in score_ranges: # Ensure key exists
+                    score_ranges[row["score_range"]] = row["user_count"]
+            logger.info(f"[DB Admin Stats V5] Processed score distribution ({time_filter}): {score_ranges}")
+            return score_ranges
         else:
-            logger.warning(f"[DB Admin Stats V20M] No score distribution data from DB for filter: {time_filter}. Returning initialized ranges.")
-
-        logger.info(f"[DB Admin Stats V20M] Processed score_distribution ({time_filter}): {score_ranges_ordered}")
-        return score_ranges_ordered
+            logger.warning(f"[DB Admin Stats V5] No score distribution data from DB for filter: {time_filter}. Returning initialized ranges.")
+            return score_ranges
 
     def get_quiz_completion_rate_stats(self, time_filter="all"):
         logger.info(f"[DB Admin Stats V5] Fetching quiz completion rate stats for filter: {time_filter}")
@@ -471,111 +458,56 @@ class DatabaseManager:
             return float(average_duration)
         return 0.0
 
-    def get_average_quizzes_per_active_user(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V17M] Calculating average quizzes per active user for filter: {time_filter}")
-        total_quizzes = self.get_total_quizzes_count(time_filter)
-        active_users = self.get_active_users_count(time_filter)
-        if active_users > 0:
-            avg = total_quizzes / active_users
-            logger.info(f"[DB Admin Stats V17M] Avg quizzes per active user ({time_filter}): {avg:.2f} (Total Quizzes: {total_quizzes}, Active Users: {active_users})")
-            return round(avg, 2)
-        else:
-            logger.info(f"[DB Admin Stats V17M] Avg quizzes per active user ({time_filter}): 0.0 (Active Users: 0)")
-            return 0.0
-
-    def get_overall_average_score(self, time_filter="all"): # Alias
-        logger.info(f"[DB Admin Stats V17M] Fetching overall average score (alias for get_average_score_percentage) for filter: {time_filter}")
-        return self.get_average_score_percentage(time_filter)
-
-    def get_quiz_completion_rate_stats(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V17M] Fetching quiz completion rate stats for filter: {time_filter}")
-        time_condition_completed = self._get_time_filter_condition(time_filter, "completed_at")
-        time_condition_started = self._get_time_filter_condition(time_filter, "start_time")
-
-        query_completed = f"SELECT COUNT(result_id) as completed_quizzes FROM quiz_results WHERE completed_at IS NOT NULL {time_condition_completed};"
-        query_started = f"SELECT COUNT(result_id) as started_quizzes FROM quiz_results WHERE 1=1 {time_condition_started};" # WHERE 1=1 to allow easy AND
-
-        completed_result = self._execute_query(query_completed, fetch_one=True)
-        started_result = self._execute_query(query_started, fetch_one=True)
-
-        completed_quizzes = completed_result["completed_quizzes"] if completed_result and "completed_quizzes" in completed_result else 0
-        started_quizzes = started_result["started_quizzes"] if started_result and "started_quizzes" in started_result else 0
-        
-        logger.info(f"[DB Admin Stats V17M] Raw completed_quizzes ({time_filter}): {completed_quizzes}")
-        logger.info(f"[DB Admin Stats V17M] Raw started_quizzes ({time_filter}): {started_quizzes}")
-
-        completion_rate = (completed_quizzes / started_quizzes * 100) if started_quizzes > 0 else 0.0
-        
-        stats = {
-            "completed_quizzes": completed_quizzes,
-            "started_quizzes": started_quizzes,
-            "completion_rate_percentage": round(completion_rate, 2)
-        }
-        logger.info(f"[DB Admin Stats V17M] Quiz completion rate stats ({time_filter}): {stats}")
-        return stats
-
-    def get_average_quiz_duration(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V22M] Fetching average quiz duration for filter: {time_filter}")
-        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
-        
-        query = f"""
-        SELECT AVG(time_taken_seconds) as avg_duration
-        FROM quiz_results
-        WHERE completed_at IS NOT NULL 
-          AND time_taken_seconds IS NOT NULL 
-          AND time_taken_seconds > 0
-          {time_condition};
-        """
-        raw_result = self._execute_query(query, fetch_one=True)
-        logger.info(f"[DB Admin Stats V22M] Raw result for avg_duration ({time_filter}): {raw_result}")
-
-        if raw_result and raw_result["avg_duration"] is not None:
-            avg_duration = float(raw_result["avg_duration"])
-            logger.info(f"[DB Admin Stats V22M] Average quiz duration ({time_filter}): {avg_duration:.2f} seconds")
-            return round(avg_duration, 2)
-        else:
-            logger.info(f"[DB Admin Stats V22M] No average quiz duration data or 0 for filter: {time_filter}. Returning 0.0.")
-            return 0.0
-
-    def get_score_distribution(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V5_Original] Fetching score distribution for filter: {time_filter}")
-        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
-        
-        query = f'''
-        SELECT 
-            CASE 
-                WHEN score_percentage = 100 THEN '100%'
-                WHEN score_percentage >= 90 THEN '90-99%'
-                WHEN score_percentage >= 80 THEN '80-89%'
-                WHEN score_percentage >= 70 THEN '70-79%'
-                WHEN score_percentage >= 60 THEN '60-69%'
-                WHEN score_percentage >= 50 THEN '50-59%'
-                ELSE '0-49%'
-            END as score_range,
-            COUNT(result_id) as count
-        FROM quiz_results
-        WHERE completed_at IS NOT NULL {time_condition}
-        GROUP BY score_range 
-        ORDER BY score_range DESC; 
-        '''
+    def get_detailed_question_stats(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats V16_Logic] Fetching detailed question stats for filter: {time_filter}")
+        time_condition = self._get_time_filter_condition(time_filter, "qi.interaction_time") # Assuming qi is the alias for question_interactions
+    
+        # SQL query as a raw f-string. The newlines and indentation within the SQL query itself are preserved.
+        # The {time_condition} placeholder will be filled by the f-string evaluation.
+        query = f'''WITH QuestionStats AS (
+        SELECT
+            q.question_id,
+            q.text AS question_text,
+            COUNT(qi.interaction_id) AS times_answered,
+            SUM(CASE WHEN qi.is_correct THEN 1 ELSE 0 END) AS times_correct,
+            SUM(CASE WHEN NOT qi.is_correct THEN 1 ELSE 0 END) AS times_incorrect,
+            AVG(qi.time_taken_seconds) AS avg_time_taken
+        FROM questions q
+        LEFT JOIN question_interactions qi ON q.question_id = qi.question_id
+        WHERE 1=1 {time_condition}
+        GROUP BY q.question_id, q.text
+    ),
+    SELECT
+        qs.question_text,
+        qs.times_answered,
+        qs.times_correct,
+        qs.times_incorrect,
+        ROUND(COALESCE(qs.avg_time_taken, 0), 2) AS avg_time_taken_seconds,
+        ROUND(CASE
+            WHEN qs.times_answered > 0 THEN (qs.times_correct::DECIMAL / qs.times_answered) * 100
+            ELSE 0
+        END, 2) AS correct_percentage
+    FROM QuestionStats qs
+    ORDER BY qs.times_answered DESC, correct_percentage ASC;'''
     
         raw_result = self._execute_query(query, fetch_all=True)
-        logger.info(f"[DB Admin Stats V5_Original] Raw results for score_distribution ({time_filter}): {raw_result}")
+        logger.info(f"[DB Admin Stats V16_Logic] Raw results for detailed_question_stats ({time_filter}): {raw_result}")
     
-        score_ranges_ordered = {
-            "100%": 0, "90-99%": 0, "80-89%": 0, "70-79%": 0,
-            "60-69%": 0, "50-59%": 0, "0-49%": 0
-        }
-        
-        if raw_result: 
+        if raw_result:
+            detailed_stats = []
             for row in raw_result:
-                if row["score_range"] in score_ranges_ordered:
-                    score_ranges_ordered[row["score_range"]] = row["count"]
+                detailed_stats.append({
+                    "question_text": row.get("question_text", "N/A"),
+                    "times_answered": row.get("times_answered", 0),
+                    "times_correct": row.get("times_correct", 0),
+                    "times_incorrect": row.get("times_incorrect", 0),
+                    "avg_time_taken_seconds": row.get("avg_time_taken_seconds", 0.0),
+                    "correct_percentage": row.get("correct_percentage", 0.0)
+                })
+            return detailed_stats
         else:
-            logger.warning(f"[DB Admin Stats V5_Original] No score distribution data from DB for filter: {time_filter}. Returning initialized ranges.")
-    
-        logger.info(f"[DB Admin Stats V5_Original] Processed score_distribution ({time_filter}): {score_ranges_ordered}")
-        return score_ranges_ordered
+            logger.warning(f"[DB Admin Stats V16_Logic] No detailed question stats data from DB for filter: {time_filter}. Returning empty list.")
+            return []
 
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager V5] Singleton instance DB_MANAGER created.")
