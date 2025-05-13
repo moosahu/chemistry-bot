@@ -1,15 +1,12 @@
 """Manages all database interactions for the Chemistry Telegram Bot.
 
-import json
-from sqlalchemy.sql import text
-from utils.api_client import fetch_from_api
-
 Version 5_Plus_QuestionStatsV16_v12_CastLogFix: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
 to help debug why data might appear as zero or empty.
 """
 
 import psycopg2
-import psycopg2.extras # For DictCursor
+import psycopg2.extras
+from utils.api_client import fetch_from_api # For DictCursor
 import logging
 import random
 import json # For storing details in JSONB
@@ -463,132 +460,158 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: DETAILED_STATS_V39_API_INTEGRATION
-        logger.info(f"[STATS_ADMIN] Attempting to get detailed question stats with time_filter: {time_filter!r}")
-        
-        time_filter_sql_fragment = self._get_time_filter_condition(time_filter, "qr.completed_at")
-    
-        # Define the SQL query template as a string literal within the function
-        query_template_str = "WITH UnnestedAnswers AS (\n    SELECT\n        qr.result_id as result_id,\n        (elem ->> 'question_id') AS question_id,\n        (elem ->> 'question_text') AS question_text_from_log,\n        (elem ->> 'is_correct')::BOOLEAN AS is_correct,\n        (elem ->> 'time_taken')::FLOAT AS time_taken\n    FROM\n        quiz_results qr,\n        jsonb_array_elements(qr.answers_details) AS elem\n    WHERE\n        qr.completed_at IS NOT NULL \n        {time_filter_sql_fragment}\n),\nAggregatedStats AS (\n    SELECT\n        ua.question_id,\n        COALESCE(ua.question_text_from_log, 'N/A_FROM_LOG') as question_text_from_log,\n        COUNT(*) AS times_answered,\n        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,\n        SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,\n        SUM(ua.time_taken) AS total_time_taken_for_question_id\n    FROM\n        UnnestedAnswers ua\n    WHERE\n        ua.question_id IS NOT NULL AND ua.question_id <> ''\n    GROUP BY\n        ua.question_id, ua.question_text_from_log\n),\nFinalSelection AS (\n    SELECT\n        ags.question_id,\n        ags.question_text_from_log,\n        ags.times_answered,\n        ags.correct_answers,\n        ags.incorrect_answers,\n        ags.total_time_taken_for_question_id,\n        (CASE\n            WHEN ags.times_answered > 0 THEN (ags.correct_answers::FLOAT / ags.times_answered) * 100\n            ELSE 0\n        END) AS percentage_correct,\n        (CASE\n            WHEN ags.times_answered > 0 THEN ags.total_time_taken_for_question_id / ags.times_answered\n            ELSE 0\n        END) AS avg_time_taken_seconds\n    FROM\n        AggregatedStats ags\n)\nSELECT * FROM FinalSelection ORDER BY times_answered DESC;"
-        query_stats = query_template_str.format(time_filter_sql_fragment=time_filter_sql_fragment)
-    
-        logger.debug(f"[STATS_ADMIN] Executing detailed question stats query: {query_stats}")
-        
-        raw_stats_from_db = []
-        try:
-            # Execute the DB query
-            db_results = self._execute_query(query_stats, fetch_all=True)
-            
-            if db_results is None:
-                logger.warning(f"[STATS_ADMIN] Query for detailed question stats returned None (possible DB error). Time filter: {time_filter!r}")
-                return []
-    
-            if not db_results:
-                logger.info(f"[STATS_ADMIN] No detailed question stats found from DB for time_filter: {time_filter!r}")
-                return []
-            
-            raw_stats_from_db = db_results
-            logger.info(f"[STATS_ADMIN] Successfully fetched {len(raw_stats_from_db)} raw aggregated stats from DB.")
-    
-        except Exception as e:
-            logger.exception(f"[STATS_ADMIN] Error fetching detailed question stats from DB: {e}")
-            return [] # Return empty list on DB error
-    
-        # --- API Integration Part ---
-        final_stats = []
-        if not raw_stats_from_db:
-            logger.info(f"[STATS_ADMIN] No raw stats from DB to process for API integration.")
-            return []
-    
-        logger.info(f"[STATS_ADMIN] Starting API calls to fetch question texts for {len(raw_stats_from_db)} items.")
-        for row_index, row in enumerate(raw_stats_from_db):
-            question_id = str(row.get("question_id", ""))
-            question_text_from_api = "النص غير متوفر من الـ API" # Default text
-    
-            if question_id:
-                try:
-                    # Assuming fetch_from_api is imported from utils.api_client
-                    # The endpoint for a single question might be like "questions/{question_id}"
-                    api_data = fetch_from_api(f"questions/{question_id}")
-                    
-                    if api_data and isinstance(api_data, dict) and "question_text" in api_data:
-                        question_text_from_api = api_data["question_text"]
-                        logger.debug(f"[STATS_ADMIN] API success for q_id {question_id}.")
-                    elif api_data:
-                        logger.warning(f"[STATS_ADMIN] API response for question_id {question_id} missing 'question_text' or not a dict. Response: {api_data!r}")
-                    else:
-                        logger.warning(f"[STATS_ADMIN] No data returned from API for question_id {question_id}.")
-                except Exception as api_exc:
-                    logger.exception(f"[STATS_ADMIN] Error fetching question_text from API for question_id {question_id}: {api_exc}")
-            else:
-                logger.warning(f"[STATS_ADMIN] Missing question_id in row {row_index} ({row!r}). Cannot fetch from API.")
-    
-            final_stats.append({
-                "question_id": question_id,
-                "question_text": question_text_from_api,
-                "question_text_from_log": row.get("question_text_from_log", "N/A"),
-                "times_answered": row.get("times_answered", 0),
-                "correct_answers": row.get("correct_answers", 0),
-                "incorrect_answers": row.get("incorrect_answers", 0),
-                "percentage_correct": round(float(row.get("percentage_correct", 0.0)), 2),
-                "avg_time_taken_seconds": round(float(row.get("avg_time_taken_seconds", 0.0)), 2)
-            })
-        
-        logger.info(f"[STATS_ADMIN] Processed {len(final_stats)} question stats entries with API data integration.")
-        return final_stats
+        # Version: 5_Plus_QuestionStatsAPI_v31_minimal_template
         # This is a minimal diagnostic function.
         # Using print for direct output during this diagnostic phase.
         print(f"STAT_DEBUG: Minimal get_detailed_question_stats_v31 called with time_filter: {time_filter}")
         return [{"minimal_diagnostic_active": True, "message": "Minimal function executed successfully."}]
 
-    def get_detailed_question_stats(self, time_filter="all"):
-        # Version: DETAILED_STATS_V38_REPR_SQL_TEMPLATE
-        logger.info(f"[STATS_ADMIN] Attempting to get detailed question stats with time_filter: {time_filter!r}")
+
+    def get_detailed_question_stats(self, time_filter="all_time"):
+        """Fetches detailed statistics for questions, including text from API.
+
+        Args:
+            time_filter (str): Filter for the time range (
+                'today', 'last_week', 'last_month', 'all_time'
+            ).
+
+        Returns:
+            list: A list of dictionaries, where each dictionary contains stats for a question.
+                  Example: [{
+                      'question_id': 'uuid',
+                      'text_content': 'What is ...?',
+                      'image_url': None,
+                      'options': ['Option 1', '[Image Option]'],
+                      'times_answered': 10,
+                      'times_correct': 5,
+                      'percentage_correct': 50.0,
+                      'avg_time_taken_seconds': 15.5
+                  }]
+        """
+        self.logger.info(f"Fetching detailed question stats with time filter: {time_filter}")
         stats = []
-        
-        time_filter_sql_fragment = self._get_time_filter_condition(time_filter, "qr.completed_at")
-    
-        # Define the SQL query template as a string literal within the function
-        # repr() ensures that sql_query_template_for_format (from the script's global scope)
-        # is correctly represented as a string literal in the generated code.
-        query_template_str = "WITH UnnestedAnswers AS (\n    SELECT\n        qr.result_id as result_id,\n        (elem ->> 'question_id') AS question_id,\n        (elem ->> 'question_text') AS question_text_from_log,\n        (elem ->> 'is_correct')::BOOLEAN AS is_correct,\n        (elem ->> 'time_taken')::FLOAT AS time_taken\n    FROM\n        quiz_results qr,\n        jsonb_array_elements(qr.answers_details) AS elem\n    WHERE\n        qr.completed_at IS NOT NULL \n        {time_filter_sql_fragment}\n),\nAggregatedStats AS (\n    SELECT\n        ua.question_id,\n        COALESCE(ua.question_text_from_log, 'N/A_FROM_LOG') as question_text_from_log,\n        COUNT(*) AS times_answered,\n        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,\n        SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,\n        SUM(ua.time_taken) AS total_time_taken_for_question_id\n    FROM\n        UnnestedAnswers ua\n    WHERE\n        ua.question_id IS NOT NULL AND ua.question_id <> ''\n    GROUP BY\n        ua.question_id, ua.question_text_from_log\n),\nFinalSelection AS (\n    SELECT\n        ags.question_id,\n        ags.question_text_from_log,\n        ags.times_answered,\n        ags.correct_answers,\n        ags.incorrect_answers,\n        ags.total_time_taken_for_question_id,\n        (CASE\n            WHEN ags.times_answered > 0 THEN (ags.correct_answers::FLOAT / ags.times_answered) * 100\n            ELSE 0\n        END) AS percentage_correct,\n        (CASE\n            WHEN ags.times_answered > 0 THEN ags.total_time_taken_for_question_id / ags.times_answered\n            ELSE 0\n        END) AS avg_time_taken_seconds\n    FROM\n        AggregatedStats ags\n)\nSELECT * FROM FinalSelection ORDER BY times_answered DESC;"
-        
-        # Now, format this string literal with the dynamic time_filter_sql_fragment
-        query_stats = query_template_str.format(time_filter_sql_fragment=time_filter_sql_fragment)
-    
-        logger.debug(f"[STATS_ADMIN] Executing detailed question stats query: {query_stats}")
-        
+        time_filter_sql_fragment = ""
+
+        if time_filter == "today":
+            time_filter_sql_fragment = "AND qr.timestamp >= date('now', 'start of day') AND qr.timestamp < date('now', 'start of day', '+1 day')"
+        elif time_filter == "last_week":
+            time_filter_sql_fragment = "AND qr.timestamp >= date('now', 'weekday 0', '-7 days') AND qr.timestamp < date('now', 'weekday 0')"
+        elif time_filter == "last_month":
+            time_filter_sql_fragment = "AND qr.timestamp >= date('now', 'start of month', '-1 month') AND qr.timestamp < date('now', 'start of month')"
+
+        # This query_template reflects the version after the file_str_replace at 13:31:39
+        query_template = """
+    # SQL QUERY STARTS BELOW
+            SELECT
+                qa.question_id,
+                COUNT(qr.result_id) as times_answered,
+                SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as times_correct,
+                AVG(qa.time_taken) as avg_time_taken_seconds
+            FROM
+                quiz_answers qa
+            JOIN
+                quiz_results qr ON qa.result_id = qr.result_id
+            WHERE
+                qa.question_id IS NOT NULL {time_filter_sql}
+            GROUP BY
+                qa.question_id
+            ORDER BY
+                times_answered DESC;
+        """
+
+        final_query = query_template.format(time_filter_sql=time_filter_sql_fragment)
+        self.logger.debug(f"Executing SQL query for question stats: {final_query}")
+
+        conn = None # Initialize conn
         try:
-            raw_stats = self._execute_query(query_stats, fetch_all=True)
-            
-            if raw_stats is None:
-                logger.warning(f"[STATS_ADMIN] Query for detailed question stats returned None (possible DB error). Time filter: {time_filter!r}")
+            conn = connect_db() # Use connect_db() directly
+            if not conn:
+                self.logger.error("Failed to get database connection for detailed stats.")
                 return []
-    
-            if not raw_stats:
-                logger.info(f"[STATS_ADMIN] No detailed question stats found for time_filter: {time_filter!r}")
-                return []
-    
-            logger.info(f"[STATS_ADMIN] Successfully fetched {len(raw_stats)} raw aggregated stats for questions.")
-            
-            for row_index, row in enumerate(raw_stats):
-                stats.append({
-                    "question_id": str(row["question_id"]),
-                    "question_text_from_log": row["question_text_from_log"],
-                    "times_answered": row["times_answered"],
-                    "correct_answers": row["correct_answers"],
-                    "incorrect_answers": row["incorrect_answers"],
-                    "percentage_correct": round(float(row["percentage_correct"]), 2) if row["percentage_correct"] is not None else 0.0,
-                    "avg_time_taken_seconds": round(float(row["avg_time_taken_seconds"]), 2) if row["avg_time_taken_seconds"] is not None else 0.0
-                })
-            
-            logger.info(f"[STATS_ADMIN] Processed {len(stats)} question stats entries (SQL part only). Full processing pending API calls.")
-    
+
+            # Use 'with conn:' to handle transactions (commit/rollback)
+            with conn:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+                cur.execute(final_query)
+                raw_stats = cur.fetchall()
+                self.logger.info(f"Fetched {len(raw_stats)} raw stats from DB for detailed question stats.")
+
+                for row_data in raw_stats:
+                    row = dict(row_data) # Ensure it's a dict
+                    question_id = row.get('question_id')
+                    times_answered = row.get('times_answered', 0)
+                    times_correct = row.get('times_correct', 0)
+                    avg_time_taken_seconds = row.get('avg_time_taken_seconds', 0)
+
+                    times_correct = times_correct if times_correct is not None else 0
+                    percentage_correct = (times_correct / times_answered * 100) if times_answered > 0 else 0
+                    avg_time_taken_seconds = avg_time_taken_seconds if avg_time_taken_seconds is not None else 0
+
+                    self.logger.info(f"Fetching details for question_id: {question_id} from API.")
+                    question_details = {} # Default
+                    try:
+                        # Assumes fetch_from_api is imported and available directly in the module scope.
+                        question_details = fetch_from_api(question_id=question_id)
+                    except NameError as ne:
+                        self.logger.error(f"NameError calling fetch_from_api: {ne}. Ensure it is imported and available.")
+                    except Exception as api_exc:
+                        self.logger.error(f"Error calling fetch_from_api for question_id {question_id}: {api_exc}", exc_info=True)
+
+                    text_content = "غير معروف"
+                    image_url = None
+                    options_display = []
+
+                    if question_details and isinstance(question_details, dict):
+                        text_content = question_details.get('text_content', "غير معروف")
+                        image_url = question_details.get('image_url')
+                        raw_options = question_details.get('options', [])
+                        for opt in raw_options:
+                            if isinstance(opt, dict):
+                                opt_text = opt.get('text_content')
+                                opt_image = opt.get('image_url')
+                                if opt_image:
+                                    options_display.append(f"[صورة خيار: {opt_image}]")
+                                elif opt_text:
+                                    options_display.append(opt_text)
+                                else:
+                                    options_display.append("خيار غير معروف")
+                            else: # Legacy or simple list of strings
+                                options_display.append(str(opt))
+
+                        if not text_content and image_url: # If primary content is an image
+                             text_content = f"[سؤال بصيغة صورة: {image_url}]"
+                        elif not text_content and not image_url:
+                            text_content = "محتوى السؤال غير متوفر"
+                    else:
+                        self.logger.warning(f"Could not fetch valid details for question_id: {question_id} from API or details not a dict. Received: {type(question_details)}")
+
+                    stats.append({
+                        'question_id': question_id,
+                        'text_content': text_content,
+                        'image_url': image_url,
+                        'options': options_display,
+                        'times_answered': times_answered,
+                        'times_correct': times_correct,
+                        'percentage_correct': round(percentage_correct, 2),
+                        'avg_time_taken_seconds': round(avg_time_taken_seconds, 2)
+                    })
+                self.logger.info(f"Successfully processed {len(stats)} questions with details for detailed question stats.")
+        except psycopg2.Error as db_err: # Catch specific DB errors if using psycopg2
+            self.logger.error(f"Database error fetching detailed question stats: {db_err}", exc_info=True)
+            # Rollback is handled by 'with conn:' context manager for psycopg2
+            return [] # Return empty on DB error
         except Exception as e:
-            logger.exception(f"[STATS_ADMIN] Error fetching or processing detailed question stats (SQL part): {e}")
-            return []
-    
+            self.logger.error(f"Generic error fetching or processing detailed question stats: {e}", exc_info=True)
+            # Rollback is handled by 'with conn:' context manager for psycopg2
+            return [] # Return empty on other errors
+        finally:
+            if conn is not None: # Check if conn was successfully assigned
+                if hasattr(conn, 'closed') and not conn.closed:
+                    conn.close()
+                    self.logger.debug("Database connection (psycopg2) closed after detailed stats query.")
+                elif not hasattr(conn, 'closed'): # For sqlite3 or other DBAPI
+                    conn.close()
+                    self.logger.debug("Database connection (non-psycopg2) closed after detailed stats query.")
         return stats
 
-# Initialize the DatabaseManager instance for global use
 DB_MANAGER = DatabaseManager()
