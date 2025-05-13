@@ -459,7 +459,7 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: 5_Plus_QuestionStatsAPI_v27_diag_sql1_sql2
+        # Version: 5_Plus_QuestionStatsAPI_v28_diag_hardcode_sql2
         logger.info(f"STAT_DEBUG: get_detailed_question_stats called with time_filter: {time_filter}")
         
         try:
@@ -471,9 +471,10 @@ class DatabaseManager:
     
         time_filter_sql_fragment = self._get_time_filter_condition(time_filter, 'qr.completed_at')
     
-        # DIAGNOSTIC: Both sql_part1 and sql_part2 are simple placeholder strings
+        # DIAGNOSTIC: sql_part1 is a simple placeholder string via repr()
         sql_part1 = 'SELECT 0; -- Diagnostic placeholder for sql_part1'
-        sql_part2 = 'SELECT 1; -- Diagnostic placeholder for sql_part2'
+        # DIAGNOSTIC: sql_part2 is a HARDCODED simple placeholder string literal
+        sql_part2 = 'SELECT 1; /* SQL2_HARDCODED_DIAG */'
         
         if time_filter_sql_fragment and time_filter_sql_fragment.strip():
             # This logic might not make sense with placeholders but kept for structural integrity
@@ -494,10 +495,10 @@ class DatabaseManager:
             return []
     
         detailed_stats = []
-        logger.warning("STAT_DEBUG: Running with diagnostic placeholders for sql_part1 and sql_part2. Full processing skipped.")
+        logger.warning("STAT_DEBUG: Running with diagnostic placeholders for sql_part1 and hardcoded sql_part2. Full processing skipped.")
         for row_idx, row in enumerate(db_stats_results):
             logger.info(f"STAT_DEBUG: Diagnostic row {row_idx}: {row}")
-        return [{"diagnostic_sql1_sql2_active": True, "results_count": len(db_stats_results)}]
+        return [{"diagnostic_sql1_placeholder_sql2_hardcoded": True, "results_count": len(db_stats_results)}]
     
         # Original processing logic is effectively bypassed by the return above
         # but kept here commented out for structural reference if needed later.
