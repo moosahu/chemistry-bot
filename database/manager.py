@@ -50,9 +50,11 @@ class DatabaseManager:
                 result = True
             elif fetch_one:
                 result = cur.fetchone()
-                if result: result = dict(result) 
+                # logger.debug(f"[DB Manager V5] fetch_one raw result: {result}") # Potentially too verbose
+                if result: result = dict(result) # Ensure it's a dict
             elif fetch_all:
                 result_list = cur.fetchall()
+                # logger.debug(f"[DB Manager V5] fetch_all raw result list: {result_list}") # Potentially too verbose
                 result = [dict(row) for row in result_list] if result_list else []
             
             return result
@@ -281,11 +283,15 @@ class DatabaseManager:
     # --- Admin Statistics Functions ---
     def _get_time_filter_condition(self, time_filter="all", date_column="created_at"):
         """Helper to create WHERE clause for time filtering."""
+        # Ensure date_column is not something that can cause SQL injection if it were user-provided.
+        # Here it's internally controlled, so it should be safe.
         if time_filter == "today":
             return f" AND DATE({date_column}) = CURRENT_DATE "
         elif time_filter == "last_7_days":
+            # Correctly includes today and the 6 previous days.
             return f" AND {date_column} >= (CURRENT_DATE - INTERVAL '6 days') AND {date_column} < (CURRENT_DATE + INTERVAL '1 day') "
         elif time_filter == "last_30_days":
+            # Correctly includes today and the 29 previous days.
             return f" AND {date_column} >= (CURRENT_DATE - INTERVAL '29 days') AND {date_column} < (CURRENT_DATE + INTERVAL '1 day') "
         elif time_filter == "all_time" or time_filter == "all":
             return " " 
@@ -309,21 +315,137 @@ class DatabaseManager:
         return raw_result["active_users"] if raw_result and "active_users" in raw_result else 0
         
     def get_total_quizzes_count(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V5] Fetching total quizzes taken for filter: {time_filter}")
+        logger.info(f"[DB Admin Stats V5] Fetching total quizzes completed count for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "completed_at")
         query = f"SELECT COUNT(result_id) as total_quizzes FROM quiz_results WHERE completed_at IS NOT NULL {time_condition};"
         raw_result = self._execute_query(query, fetch_one=True)
         logger.info(f"[DB Admin Stats V5] Raw result for total_quizzes_count ({time_filter}): {raw_result}")
         return raw_result["total_quizzes"] if raw_result and "total_quizzes" in raw_result else 0
 
-    def get_average_score_percentage(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V5] Fetching average score percentage for filter: {time_filter}")
+    def get_average_quizzes_per_active_user(self, time_filter="all"):
+        # This function relies on the two above, which now have logging.
+        logger.info(f"[DB Admin Stats V5] Calculating average quizzes per active user for filter: {time_filter}")
+        total_quizzes = self.get_total_quizzes_count(time_filter)
+        active_users = self.get_active_users_count(time_filter)
+        if active_users > 0:
+            avg = round(total_quizzes / active_users, 2)
+            logger.info(f"[DB Admin Stats V5] Avg quizzes per active user ({time_filter}): {avg} (Total Quizzes: {total_quizzes}, Active Users: {active_users})")
+            return avg
+        logger.info(f"[DB Admin Stats V5] Avg quizzes per active user ({time_filter}): 0.0 (Active Users: {active_users})")
+        return 0.0
+
+    def get_overall_average_score(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats V5] Fetching overall average score for filter: {time_filter}")
         time_condition = self._get_time_filter_condition(time_filter, "completed_at")
-        query = f"SELECT COALESCE(AVG(score_percentage), 0.0) as average_score FROM quiz_results WHERE completed_at IS NOT NULL {time_condition};"
+        query = f"SELECT COALESCE(AVG(score_percentage), 0.0) as average_score FROM quiz_results WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition};"
         raw_result = self._execute_query(query, fetch_one=True)
-        logger.info(f"[DB Admin Stats V5] Raw result for average_score_percentage ({time_filter}): {raw_result}")
-        avg_score = raw_result["average_score"] if raw_result and "average_score" in raw_result else 0.0
-        return float(avg_score) if avg_score is not None else 0.0
+        logger.info(f"[DB Admin Stats V5] Raw result for overall_average_score ({time_filter}): {raw_result}")
+        average_score = raw_result["average_score"] if raw_result and "average_score" in raw_result else 0.0
+        if average_score is not None:
+            return float(average_score)
+        return 0.0
+
+    def get_score_distribution(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats V5] Fetching score distribution for filter: {time_filter}")
+        time_condition = self._get_time_filter_condition(time_filter, "completed_at")
+        query = f"""
+        SELECT 
+            CASE 
+                WHEN score_percentage >= 90 THEN '90-100%' 
+                WHEN score_percentage >= 80 THEN '80-89%' 
+                WHEN score_percentage >= 70 THEN '70-79%' 
+                WHEN score_percentage >= 60 THEN '60-69%' 
+                WHEN score_percentage >= 50 THEN '50-59%' 
+                ELSE '0-49%' 
+            END as score_range, 
+            COUNT(result_id) as user_count 
+        FROM quiz_results 
+        WHERE completed_at IS NOT NULL AND score_percentage IS NOT NULL {time_condition}
+        GROUP BY score_range 
+        ORDER BY score_range DESC;
+        """
+        raw_results = self._execute_query(query, fetch_all=True)
+        logger.info(f"[DB Admin Stats V5] Raw results for score_distribution ({time_filter}): {raw_results}")
+        score_ranges = {
+            '90-100%': 0, '80-89%': 0, '70-79%': 0,
+            '60-69%': 0, '50-59%': 0, '0-49%': 0
+        }
+        if raw_results:
+            for row in raw_results:
+                if row["score_range"] in score_ranges: # Ensure key exists
+                    score_ranges[row["score_range"]] = row["user_count"]
+            logger.info(f"[DB Admin Stats V5] Processed score distribution ({time_filter}): {score_ranges}")
+            return score_ranges
+        else:
+            logger.warning(f"[DB Admin Stats V5] No score distribution data from DB for filter: {time_filter}. Returning initialized ranges.")
+            return score_ranges
+
+    def get_quiz_completion_rate_stats(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats V5] Fetching quiz completion rate stats for filter: {time_filter}")
+        time_condition_started = self._get_time_filter_condition(time_filter, "start_time")
+        time_condition_completed = self._get_time_filter_condition(time_filter, "completed_at")
+
+        query_started = f"SELECT COUNT(result_id) as started_quizzes FROM quiz_results WHERE 1=1 {time_condition_started};"
+        query_completed = f"SELECT COUNT(result_id) as completed_quizzes FROM quiz_results WHERE completed_at IS NOT NULL {time_condition_completed};"
+
+        started_result_raw = self._execute_query(query_started, fetch_one=True)
+        completed_result_raw = self._execute_query(query_completed, fetch_one=True)
+        logger.info(f"[DB Admin Stats V5] Raw started_quizzes ({time_filter}): {started_result_raw}")
+        logger.info(f"[DB Admin Stats V5] Raw completed_quizzes ({time_filter}): {completed_result_raw}")
+
+        started_quizzes = started_result_raw["started_quizzes"] if started_result_raw and "started_quizzes" in started_result_raw else 0
+        completed_quizzes = completed_result_raw["completed_quizzes"] if completed_result_raw and "completed_quizzes" in completed_result_raw else 0
+
+        completion_rate = 0.0
+        if started_quizzes > 0:
+            completion_rate = (completed_quizzes / started_quizzes) * 100
+        
+        stats = {
+            "started_quizzes": started_quizzes,
+            "completed_quizzes": completed_quizzes,
+            "completion_rate": round(completion_rate, 2)
+        }
+        logger.info(f"[DB Admin Stats V5] Processed quiz completion stats ({time_filter}): {stats}")
+        return stats
+
+    def get_question_difficulty_stats(self, time_filter="all"):
+        logger.info(f"[DB Admin Stats V5] Fetching question difficulty stats for filter: {time_filter}")
+        time_condition = self._get_time_filter_condition(time_filter, "qr.completed_at")
+        query = f"""
+        WITH question_attempts AS (
+            SELECT 
+                (ans_detail ->> 'question_id')::int as question_id,
+                (ans_detail ->> 'question_text') as question_text,
+                (ans_detail ->> 'is_correct')::boolean as is_correct
+            FROM quiz_results qr, jsonb_array_elements(qr.answers_details) as ans_detail
+            WHERE qr.completed_at IS NOT NULL {time_condition} AND qr.answers_details IS NOT NULL
+        )
+        SELECT 
+            qa.question_id,
+            COALESCE(MAX(qa.question_text), 'Question text not available') as question_text,
+            COUNT(qa.question_id) as total_attempts,
+            SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as correct_answers,
+            COALESCE(AVG(CASE WHEN qa.is_correct THEN 100.0 ELSE 0.0 END), 0.0) as correct_percentage
+        FROM question_attempts qa
+        WHERE qa.question_id IS NOT NULL
+        GROUP BY qa.question_id
+        ORDER BY correct_percentage ASC, total_attempts DESC; -- Added secondary sort for stability
+        """
+        raw_results = self._execute_query(query, fetch_all=True)
+        logger.info(f"[DB Admin Stats V5] Raw results for question_difficulty_stats ({time_filter}): {raw_results}")
+        if raw_results:
+            # Ensure correct_percentage is float and other numbers are appropriate types
+            processed_results = []
+            for row in raw_results:
+                row['correct_percentage'] = float(row['correct_percentage'])
+                row['total_attempts'] = int(row['total_attempts'])
+                row['correct_answers'] = int(row['correct_answers'])
+                processed_results.append(row)
+            logger.info(f"[DB Admin Stats V5] Fetched and processed {len(processed_results)} question difficulty stats for {time_filter}.")
+            return processed_results
+        else:
+            logger.warning(f"[DB Admin Stats V5] No question difficulty data from DB for filter: {time_filter}. Returning empty list.")
+            return []
 
     def get_average_quiz_duration(self, time_filter="all"):
         logger.info(f"[DB Admin Stats V5] Fetching average quiz duration for filter: {time_filter}")
@@ -336,58 +458,6 @@ class DatabaseManager:
             return float(average_duration)
         return 0.0
 
-
-
-    def get_detailed_question_stats(self, time_filter="all"):
-        logger.info(f"[DB Admin Stats V5 Final Fix] Fetching detailed question stats for filter: {time_filter}")
-        time_condition_quiz_results = self._get_time_filter_condition(time_filter, "qr.completed_at")
-
-        query = f"""
-        WITH question_performance AS (
-            SELECT
-                jsonb_array_elements(qr.answers_details)->>'question_id' AS question_id_from_detail,
-                jsonb_array_elements(qr.answers_details)->>'question_text' AS question_text_from_detail,
-                (jsonb_array_elements(qr.answers_details)->>'is_correct')::boolean AS is_correct,
-                (jsonb_array_elements(qr.answers_details)->>'time_taken')::numeric AS time_taken_seconds
-            FROM quiz_results qr
-            WHERE qr.completed_at IS NOT NULL 
-              AND qr.answers_details IS NOT NULL 
-              AND qr.answers_details != 'null'::jsonb 
-              AND jsonb_typeof(qr.answers_details) = 'array' 
-              AND jsonb_array_length(qr.answers_details) > 0
-              {time_condition_quiz_results}
-        )
-        SELECT 
-            qp.question_text_from_detail AS question_text,
-            qp.question_id_from_detail AS question_id_original,
-            COUNT(qp.question_id_from_detail) AS appeared_count,
-            COALESCE(SUM(CASE WHEN qp.is_correct THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qp.question_id_from_detail), 0), 0) AS correct_percentage,
-            COALESCE(AVG(qp.time_taken_seconds), 0) AS avg_time_seconds
-        FROM question_performance qp
-        WHERE qp.question_text_from_detail IS NOT NULL AND qp.question_text_from_detail != ''
-        GROUP BY qp.question_id_from_detail, qp.question_text_from_detail
-        ORDER BY appeared_count DESC, correct_percentage DESC
-        LIMIT 50;
-        """
-
-        raw_results = self._execute_query(query, fetch_all=True)
-        logger.info(f"[DB Admin Stats V5 Final Fix] Raw results for detailed_question_stats ({time_filter}): {raw_results}")
-
-        if raw_results:
-            processed_results = []
-            for row in raw_results:
-                processed_results.append({
-                    "question_text": row.get("question_text", "سؤال بدون نص"),
-                    "appeared_count": row.get("appeared_count", 0),
-                    "correct_percentage": float(row.get("correct_percentage", 0.0)),
-                    "avg_time_seconds": float(row.get("avg_time_seconds", 0.0)),
-                    "question_id_original": row.get("question_id_original", "N/A")
-                })
-            logger.info(f"[DB Admin Stats V5 Final Fix] Processed {len(processed_results)} question stats for filter: {time_filter}")
-            return processed_results
-        else:
-            logger.warning(f"[DB Admin Stats V5 Final Fix] No detailed question stats found for filter: {time_filter}. Returning empty list.")
-            return []
-
 DB_MANAGER = DatabaseManager()
+logger.info("[DB Manager V5] Singleton instance DB_MANAGER created.")
 
