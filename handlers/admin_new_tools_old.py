@@ -3,21 +3,9 @@
 # and implement the admin-specific UI and command handlers.
 
 import logging
-import psycopg2 # Added for direct DB access
-import psycopg2.extras # Added for DictCursor
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler)
 
-# Import connect_db for direct database access
-try:
-    from database.connection import connect_db
-except ImportError:
-    # Fallback or error logging if connect_db cannot be imported
-    # This is critical for the direct DB call to work.
-    def connect_db():
-        logging.error("CRITICAL: connect_db could not be imported into admin_new_tools.py")
-        return None
-    logging.error("Failed to import connect_db from database.connection in admin_new_tools.py")
 # Assuming DB_MANAGER is instantiated and available, similar to admin_interface_v14_caption_fix.py
 # from manager_v17_admin_tools import DB_MANAGER # This would be how it's imported in a real setup
 
@@ -254,66 +242,8 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
 
     await query.edit_message_text("جاري إرسال الإشعار... قد يستغرق هذا بعض الوقت.")
     
-    # Fetching user_ids directly from the database
-    user_ids = []
-    conn = None
-    logger = logging.getLogger(__name__) # Ensure logger is defined
-
-    try:
-        conn = connect_db()
-        if conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("SELECT user_id FROM users;")
-                rows = cur.fetchall()
-                if rows:
-                    user_ids = [row['user_id'] for row in rows]
-                logger.info(f"Direct DB query for broadcast: Found {len(user_ids)} user IDs: {user_ids}")
-        else:
-            logger.error("Failed to connect to database for broadcast.")
-            await query.edit_message_text("فشل الاتصال بقاعدة البيانات لجلب المستخدمين. لا يمكن إرسال الإشعار.")
-            if "broadcast_text" in context.user_data: del context.user_data["broadcast_text"]
-            keyboard_admin_menu = [
-                [InlineKeyboardButton("✏️ تعديل رسالة حول البوت", callback_data="admin_edit_specific_msg_about_bot_message")],
-                [InlineKeyboardButton("📝 تعديل رسائل أخرى للبوت", callback_data="admin_edit_other_messages_menu")],
-                [InlineKeyboardButton("📣 إرسال إشعار عام للمستخدمين", callback_data="admin_broadcast_start")],
-                [InlineKeyboardButton("📊 عرض لوحة الإحصائيات", callback_data="stats_admin_panel_v4")], 
-                [InlineKeyboardButton("⬅️ عودة إلى القائمة الرئيسية", callback_data="admin_back_to_start")]
-            ]
-            reply_markup_admin_menu = InlineKeyboardMarkup(keyboard_admin_menu)
-            await query.message.reply_text(text="🛠️ أدوات إدارة البوت:", reply_markup=reply_markup_admin_menu)
-            return ConversationHandler.END 
-
-    except Exception as e:
-        logger.error(f"Error fetching user IDs directly from database for broadcast: {e}")
-        await query.edit_message_text("حدث خطأ أثناء جلب المستخدمين من قاعدة البيانات. لا يمكن إرسال الإشعار.")
-        if "broadcast_text" in context.user_data: del context.user_data["broadcast_text"]
-        keyboard_admin_menu = [
-            [InlineKeyboardButton("✏️ تعديل رسالة حول البوت", callback_data="admin_edit_specific_msg_about_bot_message")],
-            [InlineKeyboardButton("📝 تعديل رسائل أخرى للبوت", callback_data="admin_edit_other_messages_menu")],
-            [InlineKeyboardButton("📣 إرسال إشعار عام للمستخدمين", callback_data="admin_broadcast_start")],
-            [InlineKeyboardButton("📊 عرض لوحة الإحصائيات", callback_data="stats_admin_panel_v4")], 
-            [InlineKeyboardButton("⬅️ عودة إلى القائمة الرئيسية", callback_data="admin_back_to_start")]
-        ]
-        reply_markup_admin_menu = InlineKeyboardMarkup(keyboard_admin_menu)
-        await query.message.reply_text(text="🛠️ أدوات إدارة البوت:", reply_markup=reply_markup_admin_menu)
-        return ConversationHandler.END
-    finally:
-        if conn:
-            conn.close()
-
-    if not user_ids: # If still no user_ids after trying to fetch
-        await query.edit_message_text("لم يتم العثور على مستخدمين لإرسال الإشعار إليهم. تم إلغاء الإرسال.")
-        if "broadcast_text" in context.user_data: del context.user_data["broadcast_text"]
-        keyboard_admin_menu = [
-            [InlineKeyboardButton("✏️ تعديل رسالة حول البوت", callback_data="admin_edit_specific_msg_about_bot_message")],
-            [InlineKeyboardButton("📝 تعديل رسائل أخرى للبوت", callback_data="admin_edit_other_messages_menu")],
-            [InlineKeyboardButton("📣 إرسال إشعار عام للمستخدمين", callback_data="admin_broadcast_start")],
-            [InlineKeyboardButton("📊 عرض لوحة الإحصائيات", callback_data="stats_admin_panel_v4")], 
-            [InlineKeyboardButton("⬅️ عودة إلى القائمة الرئيسية", callback_data="admin_back_to_start")]
-        ]
-        reply_markup_admin_menu = InlineKeyboardMarkup(keyboard_admin_menu)
-        await query.message.reply_text(text="🛠️ أدوات إدارة البوت:", reply_markup=reply_markup_admin_menu)
-        return ConversationHandler.END
+    # Changed to use get_all_user_ids_for_broadcast to send to ALL users
+    user_ids = context.bot_data.get("DB_MANAGER").get_all_user_ids_for_broadcast()
     sent_count = 0
     failed_count = 0
 
