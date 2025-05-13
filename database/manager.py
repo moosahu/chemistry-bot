@@ -589,3 +589,6 @@ class DatabaseManager:
             return []
     
         return stats
+
+# Initialize the DatabaseManager instance for global use
+DB_MANAGER = DatabaseManager()
