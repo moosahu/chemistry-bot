@@ -458,8 +458,8 @@ class DatabaseManager:
             return float(average_duration)
         return 0.0
 
-    def get_detailed_question_stats(self, time_filter=None):
-        # Version: 5_Plus_QuestionStatsAPI_v14
+    def get_detailed_question_stats(self, time_filter="all"):
+        # Version: 5_Plus_QuestionStatsAPI_v15
         logger.info(f"STAT_DEBUG: get_detailed_question_stats called with time_filter: {time_filter}")
 
         try:
@@ -471,6 +471,7 @@ class DatabaseManager:
 
         time_filter_condition_qr, params_qr = self._get_time_filter_condition(time_filter, 'qr.completed_at')
 
+        # Ensure the multi-line f-string for SQL is correctly formatted and terminated.
         query_stats = f'''
         WITH UnnestedAnswers AS (
             SELECT
@@ -511,6 +512,8 @@ class DatabaseManager:
             qas.times_answered DESC;
         '''
 
+        # Corrected replace('\n', ' ') to replace('
+    ', ' ') for logging
         logger.info(f"STAT_DEBUG: Executing SQL query for question stats (first 200 chars): {query_stats[:200].replace('
     ', ' ')}")
         logger.debug(f"STAT_DEBUG: Full SQL query for question stats: {query_stats}")
