@@ -472,48 +472,36 @@ class DatabaseManager:
 
         Args:
             time_filter (str): Filter for the time range (
-                'today', 'last_week', 'last_month', 'all_time'
+                'today', 'last_7_days', 'last_30_days', 'all_time'
             ).
 
         Returns:
             list: A list of dictionaries, where each dictionary contains stats for a question.
-                  Example: [{
-                      'question_id': 'uuid',
-                      'text_content': 'What is ...?',
-                      'image_url': None,
-                      'options': ['Option 1', '[Image Option]'],
-                      'times_answered': 10,
-                      'times_correct': 5,
-                      'percentage_correct': 50.0,
-                      'avg_time_taken_seconds': 0 # Defaulted as time_taken is removed from query
-                  }]
         """
-        logger.info(f"Fetching detailed question stats with time filter: {time_filter}")
+        logger.info(f"[STATS_V56_LOG] Called get_detailed_question_stats with time_filter: {time_filter}")
         stats = []
         time_filter_sql_fragment = ""
 
         if time_filter == "today":
             time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
-        elif time_filter == "last_week":
-            # Assuming Sunday is the first day of the week for date_trunc('week', ...)
-            # PostgreSQL's week starts on Monday by default in some configurations.
-            # For a week ending now and starting 7 days ago (like last 7 days):
-            # time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE - INTERVAL '6 days' AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
-            # For the calendar week before the current one (e.g. if today is Wed, then previous Mon-Sun):
-            time_filter_sql_fragment = "AND qr.completed_at >= date_trunc('week', CURRENT_DATE) - INTERVAL '1 week' AND qr.completed_at < date_trunc('week', CURRENT_DATE)"
-        elif time_filter == "last_month":
-            time_filter_sql_fragment = "AND qr.completed_at >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month' AND qr.completed_at < date_trunc('month', CURRENT_DATE)"
+        elif time_filter == "last_7_days":
+            # Last 7 days including today
+            time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE - INTERVAL '6 days' AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
+        elif time_filter == "last_30_days":
+            # Last 30 days including today
+            time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE - INTERVAL '29 days' AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
+        # Add a log for the determined SQL fragment
+        logger.debug(f"[STATS_V56_LOG] Determined time_filter_sql_fragment: {time_filter_sql_fragment if time_filter_sql_fragment else 'None (all_time)'}")
 
         query_template = """
             SELECT
                 qa.question_id,
                 COUNT(qr.result_id) as times_answered,
                 SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as times_correct
-                -- AVG(qa.time_taken) as avg_time_taken_seconds -- Removed as time_taken not in question_interactions
             FROM
                 question_interactions qa
             JOIN
-                quiz_results qr ON qa.quiz_session_id = qr.result_id -- Assuming quiz_results.result_id is the session/attempt identifier
+                quiz_results qr ON qa.quiz_session_id = qr.result_id
             WHERE
                 qa.question_id IS NOT NULL {time_filter_sql}
             GROUP BY
@@ -523,40 +511,43 @@ class DatabaseManager:
         """
 
         final_query = query_template.format(time_filter_sql=time_filter_sql_fragment)
-        logger.debug(f"Executing SQL query for question stats: {final_query}")
+        logger.debug(f"[STATS_V56_LOG] Executing SQL query for question stats: {final_query}")
 
         conn = None
         try:
             conn = connect_db()
             if not conn:
-                logger.error("Failed to get database connection for detailed stats.")
+                logger.error("[STATS_V56_LOG] Failed to get database connection for detailed stats.")
                 return []
 
             with conn:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
                 cur.execute(final_query)
                 raw_stats = cur.fetchall()
-                logger.info(f"Fetched {len(raw_stats)} raw stats from DB for detailed question stats.")
+                logger.info(f"[STATS_V56_LOG] Fetched {len(raw_stats)} raw stat rows from DB.")
+                if len(raw_stats) > 0:
+                    logger.debug(f"[STATS_V56_LOG] First raw stat row: {dict(raw_stats[0])}")
 
                 for row_data in raw_stats:
                     row = dict(row_data)
+                    logger.debug(f"[STATS_V56_LOG] Processing raw DB row: {row}")
                     question_id = row.get('question_id')
                     times_answered = row.get('times_answered', 0)
                     times_correct = row.get('times_correct', 0)
-                    # avg_time_taken_seconds is no longer fetched from DB, default to 0 or handle as needed
                     avg_time_taken_seconds = 0 
 
                     times_correct = times_correct if times_correct is not None else 0
                     percentage_correct = (times_correct / times_answered * 100) if times_answered > 0 else 0
 
-                    logger.info(f"Fetching details for question_id: {question_id} from API.")
-                    question_details = {}
+                    logger.info(f"[STATS_V56_LOG] Fetching API details for question_id: {question_id}")
+                    question_details = None # Initialize to None
                     try:
                         question_details = fetch_from_api(question_id=question_id)
+                        logger.debug(f"[STATS_V56_LOG] API response for {question_id}: {question_details}")
                     except NameError as ne:
-                        logger.error(f"NameError calling fetch_from_api: {ne}. Ensure it is imported and available.")
+                        logger.error(f"[STATS_V56_LOG] NameError calling fetch_from_api: {ne}. Ensure it is imported.")
                     except Exception as api_exc:
-                        logger.error(f"Error calling fetch_from_api for question_id {question_id}: {api_exc}", exc_info=True)
+                        logger.error(f"[STATS_V56_LOG] Error calling fetch_from_api for question_id {question_id}: {api_exc}", exc_info=True)
 
                     text_content = "غير معروف"
                     image_url = None
@@ -566,6 +557,7 @@ class DatabaseManager:
                         text_content = question_details.get('text_content', "غير معروف")
                         image_url = question_details.get('image_url')
                         raw_options = question_details.get('options', [])
+                        logger.debug(f"[STATS_V56_LOG] Processing options for {question_id}: {raw_options}")
                         for opt in raw_options:
                             if isinstance(opt, dict):
                                 opt_text = opt.get('text_content')
@@ -584,9 +576,9 @@ class DatabaseManager:
                         elif not text_content and not image_url:
                             text_content = "محتوى السؤال غير متوفر"
                     else:
-                        logger.warning(f"Could not fetch valid details for question_id: {question_id} from API or details not a dict. Received: {type(question_details)}")
+                        logger.warning(f"[STATS_V56_LOG] Could not fetch valid details for question_id: {question_id} from API or details not a dict. Received: {type(question_details)}, Value: {question_details}")
 
-                    stats.append({
+                    stat_entry = {
                         'question_id': question_id,
                         'text_content': text_content,
                         'image_url': image_url,
@@ -594,23 +586,26 @@ class DatabaseManager:
                         'times_answered': times_answered,
                         'times_correct': times_correct,
                         'percentage_correct': round(percentage_correct, 2),
-                        'avg_time_taken_seconds': round(float(avg_time_taken_seconds), 2) # Ensure it's float before rounding
-                    })
-                logger.info(f"Successfully processed {len(stats)} questions with details for detailed question stats.")
+                        'avg_time_taken_seconds': round(float(avg_time_taken_seconds), 2)
+                    }
+                    stats.append(stat_entry)
+                    logger.debug(f"[STATS_V56_LOG] Appended stat entry for {question_id}: {stat_entry}")
+                logger.info(f"[STATS_V56_LOG] Successfully processed {len(stats)} questions with details.")
         except psycopg2.Error as db_err:
-            logger.error(f"Database error fetching detailed question stats: {db_err}", exc_info=True)
-            return []
+            logger.error(f"[STATS_V56_LOG] Database error: {db_err}", exc_info=True)
+            return [] # Return empty list on DB error
         except Exception as e:
-            logger.error(f"Generic error fetching or processing detailed question stats: {e}", exc_info=True)
-            return []
+            logger.error(f"[STATS_V56_LOG] Generic error: {e}", exc_info=True)
+            return [] # Return empty list on other errors
         finally:
             if conn is not None:
                 if hasattr(conn, 'closed') and not conn.closed:
                     conn.close()
-                    logger.debug("Database connection (psycopg2) closed after detailed stats query.")
-                elif not hasattr(conn, 'closed'): # For other connection types if any
+                    logger.debug("[STATS_V56_LOG] Database connection (psycopg2) closed.")
+                elif not hasattr(conn, 'closed'):
                     conn.close()
-                    logger.debug("Database connection (non-psycopg2) closed after detailed stats query.")
+                    logger.debug("[STATS_V56_LOG] Database connection (non-psycopg2) closed.")
+        logger.info(f"[STATS_V56_LOG] Returning {len(stats)} stats entries. First entry if any: {stats[0] if stats else 'None'}")
         return stats
 
 DB_MANAGER = DatabaseManager()
