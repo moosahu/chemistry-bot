@@ -1,9 +1,4 @@
-"""Manages all database interactions for the Chemistry Telegram Bot.
-
-Version 5_Plus_QuestionStatsV16_v12_CastLogFix: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
-to help debug why data might appear as zero or empty.
-"""
-
+from utils.api_client import fetch_from_api
 import psycopg2
 import psycopg2.extras # For DictCursor
 import logging
@@ -11,7 +6,17 @@ import random
 import json # For storing details in JSONB
 from datetime import datetime, timedelta # Added timedelta
 import uuid # Added for generating UUIDs
-from utils.api_client import fetch_from_api
+from config import logger
+from .connection import connect_db
+import psycopg2.extras
+
+
+"""Manages all database interactions for the Chemistry Telegram Bot.
+
+Version 5_Plus_QuestionStatsV16_v12_CastLogFix: Adds detailed logging and get_detailed_question_stats from V16 logic for raw results from admin statistics queries
+to help debug why data might appear as zero or empty.
+"""
+
 
 # Import config, connection, and schema setup
 try:
@@ -478,59 +483,79 @@ class DatabaseManager:
         Returns:
             list: A list of dictionaries, where each dictionary contains stats for a question.
         """
-        logger.info(f"[STATS_V56_LOG] Called get_detailed_question_stats with time_filter: {time_filter}")
+        logger.info(f"[STATS_DIAG_V57] Called get_detailed_question_stats with time_filter: {time_filter}")
         stats = []
         time_filter_sql_fragment = ""
 
         if time_filter == "today":
             time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
         elif time_filter == "last_7_days":
-            # Last 7 days including today
             time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE - INTERVAL '6 days' AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
         elif time_filter == "last_30_days":
-            # Last 30 days including today
             time_filter_sql_fragment = "AND qr.completed_at >= CURRENT_DATE - INTERVAL '29 days' AND qr.completed_at < CURRENT_DATE + INTERVAL '1 day'"
-        # Add a log for the determined SQL fragment
-        logger.debug(f"[STATS_V56_LOG] Determined time_filter_sql_fragment: {time_filter_sql_fragment if time_filter_sql_fragment else 'None (all_time)'}")
 
-        query_template = """
-            SELECT
-                qa.question_id,
-                COUNT(qr.result_id) as times_answered,
-                SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as times_correct
-            FROM
-                question_interactions qa
-            JOIN
-                quiz_results qr ON qa.quiz_session_id = qr.result_id
-            WHERE
-                qa.question_id IS NOT NULL {time_filter_sql}
-            GROUP BY
-                qa.question_id
-            ORDER BY
-                times_answered DESC;
-        """
-
-        final_query = query_template.format(time_filter_sql=time_filter_sql_fragment)
-        logger.debug(f"[STATS_V56_LOG] Executing SQL query for question stats: {final_query}")
+        logger.debug(f"[STATS_DIAG_V57] Determined time_filter_sql_fragment: {time_filter_sql_fragment if time_filter_sql_fragment else 'None (all_time)'}")
 
         conn = None
         try:
             conn = connect_db()
             if not conn:
-                logger.error("[STATS_V56_LOG] Failed to get database connection for detailed stats.")
+                logger.error("[STATS_DIAG_V57] Failed to get database connection.")
                 return []
 
             with conn:
                 cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+                # Diagnostic Query 1: Count in question_interactions with non-null question_id
+                diag_query_1 = "SELECT COUNT(*) FROM question_interactions WHERE question_id IS NOT NULL;"
+                cur.execute(diag_query_1)
+                count_qi_not_null = cur.fetchone()[0]
+                logger.info(f"[STATS_DIAG_V57] Diag 1: COUNT from question_interactions (question_id IS NOT NULL): {count_qi_not_null}")
+
+                # Diagnostic Query 2: Count in quiz_results
+                diag_query_2 = "SELECT COUNT(*) FROM quiz_results;"
+                cur.execute(diag_query_2)
+                count_qr = cur.fetchone()[0]
+                logger.info(f"[STATS_DIAG_V57] Diag 2: COUNT from quiz_results: {count_qr}")
+
+                # Diagnostic Query 3: Count from JOIN
+                diag_query_3 = "SELECT COUNT(*) FROM question_interactions qa JOIN quiz_results qr ON qa.quiz_session_id = qr.result_id;"
+                cur.execute(diag_query_3)
+                count_join = cur.fetchone()[0]
+                logger.info(f"[STATS_DIAG_V57] Diag 3: COUNT from JOIN (qa.quiz_session_id = qr.result_id): {count_join}")
+
+                # Diagnostic Query 4: Count from JOIN with question_id IS NOT NULL (before time filter)
+                diag_query_4 = "SELECT COUNT(*) FROM question_interactions qa JOIN quiz_results qr ON qa.quiz_session_id = qr.result_id WHERE qa.question_id IS NOT NULL;"
+                cur.execute(diag_query_4)
+                count_join_question_not_null = cur.fetchone()[0]
+                logger.info(f"[STATS_DIAG_V57] Diag 4: COUNT from JOIN with qa.question_id IS NOT NULL: {count_join_question_not_null}")
+
+                # Main statistical query
+                query_template = """                SELECT
+                        qa.question_id,
+                        COUNT(qr.result_id) as times_answered,
+                        SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as times_correct
+                    FROM
+                        question_interactions qa
+                    JOIN
+                        quiz_results qr ON qa.quiz_session_id = qr.result_id
+                    WHERE
+                        qa.question_id IS NOT NULL {time_filter_sql}
+                    GROUP BY
+                        qa.question_id
+                    ORDER BY
+                        times_answered DESC;"""
+                final_query = query_template.format(time_filter_sql=time_filter_sql_fragment)
+                logger.debug(f"[STATS_DIAG_V57] Executing MAIN SQL query: {final_query}")
                 cur.execute(final_query)
                 raw_stats = cur.fetchall()
-                logger.info(f"[STATS_V56_LOG] Fetched {len(raw_stats)} raw stat rows from DB.")
+                logger.info(f"[STATS_DIAG_V57] MAIN QUERY: Fetched {len(raw_stats)} raw stat rows from DB.")
                 if len(raw_stats) > 0:
-                    logger.debug(f"[STATS_V56_LOG] First raw stat row: {dict(raw_stats[0])}")
+                    logger.debug(f"[STATS_DIAG_V57] MAIN QUERY: First raw stat row: {dict(raw_stats[0])}")
 
                 for row_data in raw_stats:
                     row = dict(row_data)
-                    logger.debug(f"[STATS_V56_LOG] Processing raw DB row: {row}")
+                    logger.debug(f"[STATS_DIAG_V57] Processing raw DB row: {row}")
                     question_id = row.get('question_id')
                     times_answered = row.get('times_answered', 0)
                     times_correct = row.get('times_correct', 0)
@@ -539,15 +564,15 @@ class DatabaseManager:
                     times_correct = times_correct if times_correct is not None else 0
                     percentage_correct = (times_correct / times_answered * 100) if times_answered > 0 else 0
 
-                    logger.info(f"[STATS_V56_LOG] Fetching API details for question_id: {question_id}")
-                    question_details = None # Initialize to None
+                    logger.info(f"[STATS_DIAG_V57] Fetching API details for question_id: {question_id}")
+                    question_details = None
                     try:
                         question_details = fetch_from_api(question_id=question_id)
-                        logger.debug(f"[STATS_V56_LOG] API response for {question_id}: {question_details}")
+                        logger.debug(f"[STATS_DIAG_V57] API response for {question_id}: {question_details}")
                     except NameError as ne:
-                        logger.error(f"[STATS_V56_LOG] NameError calling fetch_from_api: {ne}. Ensure it is imported.")
+                        logger.error(f"[STATS_DIAG_V57] NameError calling fetch_from_api: {ne}. Ensure it is imported.")
                     except Exception as api_exc:
-                        logger.error(f"[STATS_V56_LOG] Error calling fetch_from_api for question_id {question_id}: {api_exc}", exc_info=True)
+                        logger.error(f"[STATS_DIAG_V57] Error calling fetch_from_api for question_id {question_id}: {api_exc}", exc_info=True)
 
                     text_content = "غير معروف"
                     image_url = None
@@ -557,7 +582,7 @@ class DatabaseManager:
                         text_content = question_details.get('text_content', "غير معروف")
                         image_url = question_details.get('image_url')
                         raw_options = question_details.get('options', [])
-                        logger.debug(f"[STATS_V56_LOG] Processing options for {question_id}: {raw_options}")
+                        logger.debug(f"[STATS_DIAG_V57] Processing options for {question_id}: {raw_options}")
                         for opt in raw_options:
                             if isinstance(opt, dict):
                                 opt_text = opt.get('text_content')
@@ -576,7 +601,7 @@ class DatabaseManager:
                         elif not text_content and not image_url:
                             text_content = "محتوى السؤال غير متوفر"
                     else:
-                        logger.warning(f"[STATS_V56_LOG] Could not fetch valid details for question_id: {question_id} from API or details not a dict. Received: {type(question_details)}, Value: {question_details}")
+                        logger.warning(f"[STATS_DIAG_V57] Could not fetch valid details for question_id: {question_id} from API. Received: {type(question_details)}, Value: {question_details}")
 
                     stat_entry = {
                         'question_id': question_id,
@@ -589,23 +614,23 @@ class DatabaseManager:
                         'avg_time_taken_seconds': round(float(avg_time_taken_seconds), 2)
                     }
                     stats.append(stat_entry)
-                    logger.debug(f"[STATS_V56_LOG] Appended stat entry for {question_id}: {stat_entry}")
-                logger.info(f"[STATS_V56_LOG] Successfully processed {len(stats)} questions with details.")
+                    logger.debug(f"[STATS_DIAG_V57] Appended stat entry for {question_id}: {stat_entry}")
+                logger.info(f"[STATS_DIAG_V57] Successfully processed {len(stats)} questions with details.")
         except psycopg2.Error as db_err:
-            logger.error(f"[STATS_V56_LOG] Database error: {db_err}", exc_info=True)
-            return [] # Return empty list on DB error
+            logger.error(f"[STATS_DIAG_V57] Database error: {db_err}", exc_info=True)
+            return []
         except Exception as e:
-            logger.error(f"[STATS_V56_LOG] Generic error: {e}", exc_info=True)
-            return [] # Return empty list on other errors
+            logger.error(f"[STATS_DIAG_V57] Generic error: {e}", exc_info=True)
+            return []
         finally:
             if conn is not None:
                 if hasattr(conn, 'closed') and not conn.closed:
                     conn.close()
-                    logger.debug("[STATS_V56_LOG] Database connection (psycopg2) closed.")
+                    logger.debug("[STATS_DIAG_V57] Database connection (psycopg2) closed.")
                 elif not hasattr(conn, 'closed'):
                     conn.close()
-                    logger.debug("[STATS_V56_LOG] Database connection (non-psycopg2) closed.")
-        logger.info(f"[STATS_V56_LOG] Returning {len(stats)} stats entries. First entry if any: {stats[0] if stats else 'None'}")
+                    logger.debug("[STATS_DIAG_V57] Database connection (non-psycopg2) closed.")
+        logger.info(f"[STATS_DIAG_V57] Returning {len(stats)} stats entries. First entry if any: {stats[0] if stats else 'None'}")
         return stats
 
 DB_MANAGER = DatabaseManager()
