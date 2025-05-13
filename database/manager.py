@@ -493,11 +493,11 @@ class DatabaseManager:
         time_filter_sql_fragment = ""
 
         if time_filter == "today":
-            time_filter_sql_fragment = "AND qr.timestamp >= date('now', 'start of day') AND qr.timestamp < date('now', 'start of day', '+1 day')"
+            time_filter_sql_fragment = "AND qr.completed_at >= date('now', 'start of day') AND qr.completed_at < date('now', 'start of day', '+1 day')"
         elif time_filter == "last_week":
-            time_filter_sql_fragment = "AND qr.timestamp >= date('now', 'weekday 0', '-7 days') AND qr.timestamp < date('now', 'weekday 0')"
+            time_filter_sql_fragment = "AND qr.completed_at >= date('now', 'weekday 0', '-7 days') AND qr.completed_at < date('now', 'weekday 0')"
         elif time_filter == "last_month":
-            time_filter_sql_fragment = "AND qr.timestamp >= date('now', 'start of month', '-1 month') AND qr.timestamp < date('now', 'start of month')"
+            time_filter_sql_fragment = "AND qr.completed_at >= date('now', 'start of month', '-1 month') AND qr.completed_at < date('now', 'start of month')"
 
         query_template = """
             SELECT

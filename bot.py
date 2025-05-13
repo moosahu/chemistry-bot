@@ -82,7 +82,7 @@ try:
             BROADCAST_MESSAGE_TEXT, 
             BROADCAST_CONFIRM 
         )
-        from database.manager import DatabaseManager 
+        from database.manager_definition import DatabaseManager 
         logger.info("Successfully imported new admin tools (edit/broadcast) and DatabaseManager class.")
         new_admin_tools_loaded = True # Set flag based on successful import
     except ImportError as ie_new_admin:
