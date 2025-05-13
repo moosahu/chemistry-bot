@@ -506,7 +506,7 @@ class DatabaseManager:
                 SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) as times_correct,
                 AVG(qa.time_taken) as avg_time_taken_seconds
             FROM
-                quiz_answers qa
+                user_answers qa
             JOIN
                 quiz_results qr ON qa.result_id = qr.result_id
             WHERE
