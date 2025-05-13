@@ -417,7 +417,7 @@ class QuizLogic:
 
         if self.db_manager and self.db_quiz_session_id:
             try:
-                self.db_manager.end_quiz_session(user_id=self.user_id, quiz_session_uuid=self.db_quiz_session_id, score=self.score, wrong_answers=wrong_answers, skipped_answers=skipped_answers, score_percentage=percentage, completed_at=quiz_end_time_dt, time_taken_seconds=time_taken_total_seconds, answers_details_json=json.dumps(self.answers, ensure_ascii=False))
+                self.db_manager.end_quiz_session(quiz_session_uuid=self.db_quiz_session_id, score=self.score, wrong_answers=wrong_answers, skipped_answers=skipped_answers, score_percentage=percentage, completed_at=quiz_end_time_dt, time_taken_seconds=time_taken_total_seconds, answers_details_json=json.dumps(self.answers, ensure_ascii=False))
                 logger.info(f"[QuizLogic {self.quiz_id}] Quiz results logged to DB for session {self.db_quiz_session_id}.")
             except Exception as e_db_end: logger.error(f"[QuizLogic {self.quiz_id}] DB exception on quiz end for session {self.db_quiz_session_id}: {e_db_end}", exc_info=True)
         elif not self.db_quiz_session_id: logger.warning(f"[QuizLogic {self.quiz_id}] Cannot log quiz end to DB, db_quiz_session_id not set.")
