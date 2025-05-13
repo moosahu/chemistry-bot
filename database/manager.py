@@ -459,7 +459,7 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: 5_Plus_QuestionStatsAPI_v15
+        # Version: 5_Plus_QuestionStatsAPI_v16_repr_fix
         logger.info(f"STAT_DEBUG: get_detailed_question_stats called with time_filter: {time_filter}")
 
         try:
@@ -471,7 +471,6 @@ class DatabaseManager:
 
         time_filter_condition_qr, params_qr = self._get_time_filter_condition(time_filter, 'qr.completed_at')
 
-        # Ensure the multi-line f-string for SQL is correctly formatted and terminated.
         query_stats = f'''
         WITH UnnestedAnswers AS (
             SELECT
@@ -512,11 +511,9 @@ class DatabaseManager:
             qas.times_answered DESC;
         '''
 
-        # Corrected replace('\n', ' ') to replace('
-    ', ' ') for logging
-        logger.info(f"STAT_DEBUG: Executing SQL query for question stats (first 200 chars): {query_stats[:200].replace('
-    ', ' ')}")
-        logger.debug(f"STAT_DEBUG: Full SQL query for question stats: {query_stats}")
+        logger.info(f"STAT_DEBUG: Executing SQL query for question stats (first 200 chars): {repr(query_stats[:200].replace('
+    ', ' '))}")
+        logger.debug(f"STAT_DEBUG: Full SQL query for question stats: {repr(query_stats)}")
         logger.info(f"STAT_DEBUG: With params: {params_qr}")
 
         db_stats_results = self._execute_query(query_stats, params_qr, fetch_all=True)
@@ -544,16 +541,16 @@ class DatabaseManager:
                     transformed_question = transform_api_question(api_response)
                     if transformed_question and transformed_question.get('question_text'):
                         question_text = transformed_question['question_text']
-                        logger.info(f"STAT_DEBUG: Successfully fetched and transformed question text for {question_id}: {question_text[:50]}...")
+                        logger.info(f"STAT_DEBUG: Successfully fetched and transformed question text for {question_id}: {repr(question_text[:50])}...")
                     elif transformed_question:
-                        logger.warning(f"STAT_DEBUG: API response for {question_id} transformed, but no 'question_text' field. Transformed: {transformed_question}")
+                        logger.warning(f"STAT_DEBUG: API response for {question_id} transformed, but no 'question_text' field. Transformed: {repr(transformed_question)}")
                     else:
-                        logger.warning(f"STAT_DEBUG: Failed to transform API response for {question_id}. Raw response: {api_response}")
+                        logger.warning(f"STAT_DEBUG: Failed to transform API response for {question_id}. Raw response: {repr(api_response)}")
                 elif api_response == "TIMEOUT":
                     question_text = "Unknown Question (API Timeout)"
                     logger.error(f"STAT_DEBUG: API call timed out for question_id: {question_id}")
                 else:
-                    logger.error(f"STAT_DEBUG: API call failed or returned empty/None for question_id: {question_id}. Response: {api_response}")
+                    logger.error(f"STAT_DEBUG: API call failed or returned empty/None for question_id: {question_id}. Response: {repr(api_response)}")
             except Exception as e_api:
                 logger.exception(f"STAT_DEBUG: Exception during API call or transformation for question_id: {question_id}. Error: {e_api}")
 
@@ -562,7 +559,7 @@ class DatabaseManager:
                 try:
                     avg_time_taken = float(avg_time_taken)
                 except (ValueError, TypeError):
-                    logger.warning(f"STAT_DEBUG: Could not convert avg_time_taken '{avg_time_taken}' to float for question_id {question_id}. Setting to None.")
+                    logger.warning(f"STAT_DEBUG: Could not convert avg_time_taken {repr(avg_time_taken)} to float for question_id {question_id}. Setting to None.")
                     avg_time_taken = None
 
             correct_answers = row.get('correct_answers', 0)
