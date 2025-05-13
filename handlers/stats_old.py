@@ -479,11 +479,12 @@ async def admin_stats_filter_callback(update: Update, context: CallbackContext) 
 
 # --- Conversation Handlers (Unchanged from v9) ---
 stats_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(stats_menu, pattern="^stats_menu$")],
+    entry_points=[CallbackQueryHandler(stats_menu, pattern="^menu_stats$")],
     states={
         STATS_MENU: [
             CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
             CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
+            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"),  # Added this line to handle returning to stats menu
             CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
         ]
     },
