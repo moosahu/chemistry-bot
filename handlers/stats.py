@@ -484,6 +484,7 @@ stats_conv_handler = ConversationHandler(
         STATS_MENU: [
             CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
             CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
+            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"),  # Added this line to handle returning to stats menu
             CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
         ]
     },
