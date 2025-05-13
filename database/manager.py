@@ -463,117 +463,99 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: 5_Plus_QuestionStatsAPI_v31_minimal_template
+        # Version: DETAILED_STATS_V39_API_INTEGRATION
+        logger.info(f"[STATS_ADMIN] Attempting to get detailed question stats with time_filter: {time_filter!r}")
+        
+        time_filter_sql_fragment = self._get_time_filter_condition(time_filter, "qr.completed_at")
+    
+        # Define the SQL query template as a string literal within the function
+        query_template_str = "WITH UnnestedAnswers AS (\n    SELECT\n        qr.id as result_id,\n        (elem ->> 'question_id') AS question_id,\n        (elem ->> 'question_text') AS question_text_from_log,\n        (elem ->> 'is_correct')::BOOLEAN AS is_correct,\n        (elem ->> 'time_taken')::FLOAT AS time_taken\n    FROM\n        quiz_results qr,\n        jsonb_array_elements(qr.answers_details) AS elem\n    WHERE\n        qr.completed_at IS NOT NULL \n        {time_filter_sql_fragment}\n),\nAggregatedStats AS (\n    SELECT\n        ua.question_id,\n        COALESCE(ua.question_text_from_log, 'N/A_FROM_LOG') as question_text_from_log,\n        COUNT(*) AS times_answered,\n        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,\n        SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,\n        SUM(ua.time_taken) AS total_time_taken_for_question_id\n    FROM\n        UnnestedAnswers ua\n    WHERE\n        ua.question_id IS NOT NULL AND ua.question_id <> ''\n    GROUP BY\n        ua.question_id, ua.question_text_from_log\n),\nFinalSelection AS (\n    SELECT\n        ags.question_id,\n        ags.question_text_from_log,\n        ags.times_answered,\n        ags.correct_answers,\n        ags.incorrect_answers,\n        ags.total_time_taken_for_question_id,\n        (CASE\n            WHEN ags.times_answered > 0 THEN (ags.correct_answers::FLOAT / ags.times_answered) * 100\n            ELSE 0\n        END) AS percentage_correct,\n        (CASE\n            WHEN ags.times_answered > 0 THEN ags.total_time_taken_for_question_id / ags.times_answered\n            ELSE 0\n        END) AS avg_time_taken_seconds\n    FROM\n        AggregatedStats ags\n)\nSELECT * FROM FinalSelection ORDER BY times_answered DESC;"
+        query_stats = query_template_str.format(time_filter_sql_fragment=time_filter_sql_fragment)
+    
+        logger.debug(f"[STATS_ADMIN] Executing detailed question stats query: {query_stats}")
+        
+        raw_stats_from_db = []
+        try:
+            # Execute the DB query
+            db_results = self._execute_query(query_stats, fetch_all=True)
+            
+            if db_results is None:
+                logger.warning(f"[STATS_ADMIN] Query for detailed question stats returned None (possible DB error). Time filter: {time_filter!r}")
+                return []
+    
+            if not db_results:
+                logger.info(f"[STATS_ADMIN] No detailed question stats found from DB for time_filter: {time_filter!r}")
+                return []
+            
+            raw_stats_from_db = db_results
+            logger.info(f"[STATS_ADMIN] Successfully fetched {len(raw_stats_from_db)} raw aggregated stats from DB.")
+    
+        except Exception as e:
+            logger.exception(f"[STATS_ADMIN] Error fetching detailed question stats from DB: {e}")
+            return [] # Return empty list on DB error
+    
+        # --- API Integration Part ---
+        final_stats = []
+        if not raw_stats_from_db:
+            logger.info(f"[STATS_ADMIN] No raw stats from DB to process for API integration.")
+            return []
+    
+        logger.info(f"[STATS_ADMIN] Starting API calls to fetch question texts for {len(raw_stats_from_db)} items.")
+        for row_index, row in enumerate(raw_stats_from_db):
+            question_id = str(row.get("question_id", ""))
+            question_text_from_api = "النص غير متوفر من الـ API" # Default text
+    
+            if question_id:
+                try:
+                    # Assuming fetch_from_api is imported from utils.api_client
+                    # The endpoint for a single question might be like "questions/{question_id}"
+                    api_data = fetch_from_api(f"questions/{question_id}")
+                    
+                    if api_data and isinstance(api_data, dict) and "question_text" in api_data:
+                        question_text_from_api = api_data["question_text"]
+                        logger.debug(f"[STATS_ADMIN] API success for q_id {question_id}.")
+                    elif api_data:
+                        logger.warning(f"[STATS_ADMIN] API response for question_id {question_id} missing 'question_text' or not a dict. Response: {api_data!r}")
+                    else:
+                        logger.warning(f"[STATS_ADMIN] No data returned from API for question_id {question_id}.")
+                except Exception as api_exc:
+                    logger.exception(f"[STATS_ADMIN] Error fetching question_text from API for question_id {question_id}: {api_exc}")
+            else:
+                logger.warning(f"[STATS_ADMIN] Missing question_id in row {row_index} ({row!r}). Cannot fetch from API.")
+    
+            final_stats.append({
+                "question_id": question_id,
+                "question_text": question_text_from_api,
+                "question_text_from_log": row.get("question_text_from_log", "N/A"),
+                "times_answered": row.get("times_answered", 0),
+                "correct_answers": row.get("correct_answers", 0),
+                "incorrect_answers": row.get("incorrect_answers", 0),
+                "percentage_correct": round(float(row.get("percentage_correct", 0.0)), 2),
+                "avg_time_taken_seconds": round(float(row.get("avg_time_taken_seconds", 0.0)), 2)
+            })
+        
+        logger.info(f"[STATS_ADMIN] Processed {len(final_stats)} question stats entries with API data integration.")
+        return final_stats
         # This is a minimal diagnostic function.
         # Using print for direct output during this diagnostic phase.
         print(f"STAT_DEBUG: Minimal get_detailed_question_stats_v31 called with time_filter: {time_filter}")
         return [{"minimal_diagnostic_active": True, "message": "Minimal function executed successfully."}]
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: DETAILED_STATS_V36_INSERTED_SQL_FUNC
+        # Version: DETAILED_STATS_V38_REPR_SQL_TEMPLATE
         logger.info(f"[STATS_ADMIN] Attempting to get detailed question stats with time_filter: {time_filter!r}")
         stats = []
         
         time_filter_sql_fragment = self._get_time_filter_condition(time_filter, "qr.completed_at")
-        query_stats = (
-            f"WITH UnnestedAnswers AS (
-    "
-            f"    SELECT
-    "
-            f"        qr.id as result_id,
-    "
-            f"        (elem ->> 'question_id') AS question_id,
-    "
-            f"        (elem ->> 'question_text') AS question_text_from_log,
-    "
-            f"        (elem ->> 'is_correct')::BOOLEAN AS is_correct,
-    "
-            f"        (elem ->> 'time_taken')::FLOAT AS time_taken
-    "
-            f"    FROM
-    "
-            f"        quiz_results qr,
-    "
-            f"        jsonb_array_elements(qr.answers_details) AS elem
-    "
-            f"    WHERE
-    "
-            f"        qr.completed_at IS NOT NULL "
-            f"        {time_filter_sql_fragment}
-    "
-            f"),
-    "
-            f"AggregatedStats AS (
-    "
-            f"    SELECT
-    "
-            f"        ua.question_id,
-    "
-            f"        COALESCE(ua.question_text_from_log, 'N/A_FROM_LOG') as question_text_from_log,
-    "
-            f"        COUNT(*) AS times_answered,
-    "
-            f"        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,
-    "
-            f"        SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,
-    "
-            f"        SUM(ua.time_taken) AS total_time_taken_for_question_id
-    "
-            f"    FROM
-    "
-            f"        UnnestedAnswers ua
-    "
-            f"    WHERE
-    "
-            f"        ua.question_id IS NOT NULL AND ua.question_id <> ''
-    "
-            f"    GROUP BY
-    "
-            f"        ua.question_id, ua.question_text_from_log
-    "
-            f"),
-    "
-            f"FinalSelection AS (
-    "
-            f"    SELECT
-    "
-            f"        ags.question_id,
-    "
-            f"        ags.question_text_from_log,
-    "
-            f"        ags.times_answered,
-    "
-            f"        ags.correct_answers,
-    "
-            f"        ags.incorrect_answers,
-    "
-            f"        ags.total_time_taken_for_question_id,
-    "
-            f"        (CASE
-    "
-            f"            WHEN ags.times_answered > 0 THEN (ags.correct_answers::FLOAT / ags.times_answered) * 100
-    "
-            f"            ELSE 0
-    "
-            f"        END) AS percentage_correct,
-    "
-            f"        (CASE
-    "
-            f"            WHEN ags.times_answered > 0 THEN ags.total_time_taken_for_question_id / ags.times_answered
-    "
-            f"            ELSE 0
-    "
-            f"        END) AS avg_time_taken_seconds
-    "
-            f"    FROM
-    "
-            f"        AggregatedStats ags
-    "
-            f")
-    "
-            f"SELECT * FROM FinalSelection ORDER BY times_answered DESC;
-    "
-        )
+    
+        # Define the SQL query template as a string literal within the function
+        # repr() ensures that sql_query_template_for_format (from the script's global scope)
+        # is correctly represented as a string literal in the generated code.
+        query_template_str = "WITH UnnestedAnswers AS (\n    SELECT\n        qr.id as result_id,\n        (elem ->> 'question_id') AS question_id,\n        (elem ->> 'question_text') AS question_text_from_log,\n        (elem ->> 'is_correct')::BOOLEAN AS is_correct,\n        (elem ->> 'time_taken')::FLOAT AS time_taken\n    FROM\n        quiz_results qr,\n        jsonb_array_elements(qr.answers_details) AS elem\n    WHERE\n        qr.completed_at IS NOT NULL \n        {time_filter_sql_fragment}\n),\nAggregatedStats AS (\n    SELECT\n        ua.question_id,\n        COALESCE(ua.question_text_from_log, 'N/A_FROM_LOG') as question_text_from_log,\n        COUNT(*) AS times_answered,\n        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,\n        SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,\n        SUM(ua.time_taken) AS total_time_taken_for_question_id\n    FROM\n        UnnestedAnswers ua\n    WHERE\n        ua.question_id IS NOT NULL AND ua.question_id <> ''\n    GROUP BY\n        ua.question_id, ua.question_text_from_log\n),\nFinalSelection AS (\n    SELECT\n        ags.question_id,\n        ags.question_text_from_log,\n        ags.times_answered,\n        ags.correct_answers,\n        ags.incorrect_answers,\n        ags.total_time_taken_for_question_id,\n        (CASE\n            WHEN ags.times_answered > 0 THEN (ags.correct_answers::FLOAT / ags.times_answered) * 100\n            ELSE 0\n        END) AS percentage_correct,\n        (CASE\n            WHEN ags.times_answered > 0 THEN ags.total_time_taken_for_question_id / ags.times_answered\n            ELSE 0\n        END) AS avg_time_taken_seconds\n    FROM\n        AggregatedStats ags\n)\nSELECT * FROM FinalSelection ORDER BY times_answered DESC;"
+        
+        # Now, format this string literal with the dynamic time_filter_sql_fragment
+        query_stats = query_template_str.format(time_filter_sql_fragment=time_filter_sql_fragment)
+    
         logger.debug(f"[STATS_ADMIN] Executing detailed question stats query: {query_stats}")
         
         try:
