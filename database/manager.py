@@ -459,7 +459,7 @@ class DatabaseManager:
         return 0.0
 
     def get_detailed_question_stats(self, time_filter="all"):
-        # Version: 5_Plus_QuestionStatsAPI_v16_repr_fix
+        # Version: 5_Plus_QuestionStatsAPI_v21_fstring_sql_embed_fix
         logger.info(f"STAT_DEBUG: get_detailed_question_stats called with time_filter: {time_filter}")
 
         try:
@@ -469,113 +469,9 @@ class DatabaseManager:
             logger.error(f"STAT_DEBUG: Failed to import from upload.api_client. Error: {e_import}. Make sure 'upload' package is in PYTHONPATH and contains api_client.py.")
             return []
 
-        time_filter_condition_qr, params_qr = self._get_time_filter_condition(time_filter, 'qr.completed_at')
+        time_filter_sql_fragment = self._get_time_filter_condition(time_filter, 'qr.completed_at')
 
-        query_stats = f'''
-        WITH UnnestedAnswers AS (
-            SELECT
-                qr.quiz_session_id,
-                (answer_detail ->> 'question_id') AS question_id,
-                (answer_detail ->> 'is_correct')::boolean AS is_correct,
-                (answer_detail ->> 'time_taken_seconds')::numeric AS time_taken_seconds
-            FROM
-                quiz_results qr,
-                jsonb_array_elements(qr.answers_details) AS answer_detail
-            WHERE
-                qr.status = 'completed'
-                {time_filter_condition_qr}
-        ),
-        QuestionAggregatedStats AS (
-            SELECT
-                ua.question_id,
-                COUNT(*) AS times_answered,
-                SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) AS correct_answers,
-                SUM(CASE WHEN NOT ua.is_correct THEN 1 ELSE 0 END) AS incorrect_answers,
-                AVG(ua.time_taken_seconds) AS avg_time_taken_seconds
-            FROM
-                UnnestedAnswers ua
-            WHERE
-                ua.question_id IS NOT NULL AND ua.question_id <> ''
-            GROUP BY
-                ua.question_id
-        )
-        SELECT
-            qas.question_id,
-            qas.times_answered,
-            qas.correct_answers,
-            qas.incorrect_answers,
-            qas.avg_time_taken_seconds
-        FROM
-            QuestionAggregatedStats qas
-        ORDER BY
-            qas.times_answered DESC;
-        '''
-
-        logger.info(f"STAT_DEBUG: Executing SQL query for question stats (first 200 chars): {repr(query_stats[:200].replace('
-    ', ' '))}")
-        logger.debug(f"STAT_DEBUG: Full SQL query for question stats: {repr(query_stats)}")
-        logger.info(f"STAT_DEBUG: With params: {params_qr}")
-
-        db_stats_results = self._execute_query(query_stats, params_qr, fetch_all=True)
-
-        if db_stats_results is None:
-            logger.error("STAT_DEBUG: Failed to fetch aggregated stats from DB or no stats found.")
-            return []
-
-        detailed_stats = []
-        for row in db_stats_results:
-            question_id = row.get('question_id')
-            if not question_id:
-                logger.warning(f"STAT_DEBUG: Encountered a row with NULL or empty question_id in DB stats. Skipping. Row: {row}")
-                continue
-
-            logger.info(f"STAT_DEBUG: Processing stats for question_id: {question_id}")
-
-            question_text = "Unknown Question (API Error or Text not Found)"
-            try:
-                api_endpoint = f"questions/{question_id}" 
-                logger.info(f"STAT_DEBUG: Fetching question details from API for question_id: {question_id} using endpoint: {api_endpoint}")
-                api_response = fetch_from_api(endpoint=api_endpoint)
-
-                if api_response and api_response != "TIMEOUT":
-                    transformed_question = transform_api_question(api_response)
-                    if transformed_question and transformed_question.get('question_text'):
-                        question_text = transformed_question['question_text']
-                        logger.info(f"STAT_DEBUG: Successfully fetched and transformed question text for {question_id}: {repr(question_text[:50])}...")
-                    elif transformed_question:
-                        logger.warning(f"STAT_DEBUG: API response for {question_id} transformed, but no 'question_text' field. Transformed: {repr(transformed_question)}")
-                    else:
-                        logger.warning(f"STAT_DEBUG: Failed to transform API response for {question_id}. Raw response: {repr(api_response)}")
-                elif api_response == "TIMEOUT":
-                    question_text = "Unknown Question (API Timeout)"
-                    logger.error(f"STAT_DEBUG: API call timed out for question_id: {question_id}")
-                else:
-                    logger.error(f"STAT_DEBUG: API call failed or returned empty/None for question_id: {question_id}. Response: {repr(api_response)}")
-            except Exception as e_api:
-                logger.exception(f"STAT_DEBUG: Exception during API call or transformation for question_id: {question_id}. Error: {e_api}")
-
-            avg_time_taken = row.get('avg_time_taken_seconds')
-            if avg_time_taken is not None:
-                try:
-                    avg_time_taken = float(avg_time_taken)
-                except (ValueError, TypeError):
-                    logger.warning(f"STAT_DEBUG: Could not convert avg_time_taken {repr(avg_time_taken)} to float for question_id {question_id}. Setting to None.")
-                    avg_time_taken = None
-
-            correct_answers = row.get('correct_answers', 0)
-            times_answered = row.get('times_answered', 0)
-            percentage_correct = (correct_answers / times_answered * 100) if times_answered > 0 else 0
-
-            stat_entry = {
-                'question_id': question_id,
-                'question_text': question_text,
-                'times_answered': times_answered,
-                'correct_answers': correct_answers,
-                'incorrect_answers': row.get('incorrect_answers', 0),
-                'percentage_correct': round(percentage_correct, 2),
-                'avg_time_taken_seconds': round(avg_time_taken, 2) if avg_time_taken is not None else None
-            }
-            detailed_stats.append(stat_entry)
-
-        logger.info(f"STAT_DEBUG: Finished processing get_detailed_question_stats. Found {len(detailed_stats)} questions.")
-        return detailed_stats
+        # SQL parts are defined using triple quotes, with content embedded from the constants above.
+        # The f-string interpolation here will place the content of SQL_PARTX_INNER_CONTENT
+        # inside the triple quotes in the generated string.
+        sql_part1 =
