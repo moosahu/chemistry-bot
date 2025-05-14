@@ -4,6 +4,7 @@ Conversation handler for the quiz selection and execution flow.
 (MANUS_MODIFIED_OLD_FILE: Added specific handlers for results screen buttons to ensure proper cleanup and state transition.)
 (MANUS_MODIFIED_V2: Fixed entry point for quiz conversation to use 'start_quiz' from main menu.)
 (MANUS_MODIFIED_V3: Corrected f-string syntax errors related to backslashes in expressions.)
+(MANUS_MODIFIED_V4: Reverted transform_api_question call to original single argument.)
 """
 
 import logging
@@ -219,7 +220,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
         context.user_data["selected_quiz_scope_id"] = "all"
         max_q = len(api_response)
         kbd = create_question_count_keyboard(max_q, quiz_type_key, unit_id="all")
-        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \')
+        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \")
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"اختر عدد الأسئلة لاختبار '{quiz_type_display_name}': (المتاح: {max_q})", kbd)
         return ENTER_QUESTION_COUNT
 
@@ -273,14 +274,14 @@ async def select_course_for_unit_quiz_handler(update: Update, context: CallbackC
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_unit_quiz",0)))
         return SELECT_COURSE_FOR_UNIT_QUIZ
     if not units or not isinstance(units, list) or not units:
-        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \')
+        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \")
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"لا توجد وحدات متاحة للمقرر '{selected_course_name}'.", create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_unit_quiz",0)))
         return SELECT_COURSE_FOR_UNIT_QUIZ
     
     context.user_data["available_units_for_course"] = units
     context.user_data["current_unit_page_for_course"] = 0
     kbd = create_unit_selection_keyboard(units, selected_course_id, 0)
-    # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \')
+    # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \")
     await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"اختر الوحدة الدراسية للمقرر '{selected_course_name}':", kbd)
     return SELECT_UNIT_FOR_COURSE
 
@@ -307,7 +308,7 @@ async def select_unit_for_course_handler(update: Update, context: CallbackContex
         context.user_data["current_unit_page_for_course"] = page
         units = context.user_data["available_units_for_course"]
         kbd = create_unit_selection_keyboard(units, selected_course_id, page)
-        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \')
+        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \")
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"اختر الوحدة الدراسية للمقرر '{selected_course_name}':", kbd)
         return SELECT_UNIT_FOR_COURSE
 
@@ -326,7 +327,7 @@ async def select_unit_for_course_handler(update: Update, context: CallbackContex
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_unit_selection_keyboard(units, selected_course_id, current_unit_page))
         return SELECT_UNIT_FOR_COURSE
     if not api_response or not isinstance(api_response, list) or not api_response:
-        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \')
+        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \")
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"لا توجد أسئلة متاحة للوحدة '{selected_unit_name}'.", create_unit_selection_keyboard(units, selected_course_id, current_unit_page))
         return SELECT_UNIT_FOR_COURSE
 
@@ -334,7 +335,7 @@ async def select_unit_for_course_handler(update: Update, context: CallbackContex
     context.user_data["selected_quiz_scope_id"] = selected_unit_id
     max_q = len(api_response)
     kbd = create_question_count_keyboard(max_q, QUIZ_TYPE_UNIT, selected_unit_id, selected_course_id)
-    # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \')
+    # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \")
     await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"اختر عدد الأسئلة لاختبار الوحدة '{selected_unit_name}' (المتاح: {max_q}):", kbd)
     return ENTER_QUESTION_COUNT
 
@@ -355,7 +356,7 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
         current_unit_page = context.user_data.get("current_unit_page_for_course", 0)
         selected_course_name = context.user_data.get("selected_course_name_for_unit_quiz", "المقرر المحدد")
         kbd = create_unit_selection_keyboard(units, course_id_for_unit, current_unit_page)
-        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \')
+        # MANUS_MODIFIED_V3: Corrected f-string syntax (removed \t and \")
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"اختر الوحدة الدراسية للمقرر '{selected_course_name}':", kbd)
         return SELECT_UNIT_FOR_COURSE
     elif callback_data == "quiz_action_back_to_type_selection":
@@ -391,7 +392,8 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
     
     transformed_questions = []
     for q_data in selected_questions:
-        transformed_q = transform_api_question(q_data, str(uuid.uuid4())) 
+        # MANUS_MODIFIED_V4: Reverted transform_api_question call to original single argument.
+        transformed_q = transform_api_question(q_data) 
         if transformed_q:
             transformed_questions.append(transformed_q)
     
