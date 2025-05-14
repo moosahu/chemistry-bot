@@ -247,18 +247,18 @@ def main() -> None:
         logger.info("Common start_handler (from handlers.common) added as new admin tools were not loaded at import.")
 
     if quiz_conv_handler:
-        application.add_handler(quiz_conv_handler)
+        application.add_handler(quiz_conv_handler, group=-1)
     else:
         logger.warning("quiz_conv_handler was not imported successfully or failed during import, skipping addition.")
 
     if info_conv_handler:
-        application.add_handler(info_conv_handler)
+        application.add_handler(info_conv_handler, group=-1)
         logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
     else:
         logger.warning("info_conv_handler was not imported or is None, skipping addition.")
 
     if stats_conv_handler:
-        application.add_handler(stats_conv_handler)
+        application.add_handler(stats_conv_handler, group=-1)
         logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
     else:
         logger.warning("stats_conv_handler is None, skipping addition.")
