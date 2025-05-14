@@ -419,13 +419,21 @@ class QuizLogic:
         # Update DB with final results
         if self.db_manager and self.db_quiz_session_id:
             try:
+                # Calculate wrong_answers and skipped_answers based on existing variables
+                wrong_answers_calc = total_answered - self.score
+                skipped_answers_calc = total_skipped_auto + total_timed_out + total_error_sending
+                quiz_end_time_dt_calc = datetime.now(timezone.utc) # To match original variable name for clarity
+
                 self.db_manager.end_quiz_session(
-                    session_id=self.db_quiz_session_id, 
-                    end_time=datetime.now(timezone.utc),
-                    final_score=self.score, 
-                    final_percentage=round(percentage, 2),
-                    total_time_taken_seconds=round(total_time_taken_seconds, 2),
-                    answers_details=json.dumps(self.answers, ensure_ascii=False) 
+                    user_id=self.user_id,
+                    quiz_session_uuid=self.db_quiz_session_id,
+                    score=self.score,
+                    wrong_answers=wrong_answers_calc,
+                    skipped_answers=skipped_answers_calc,
+                    score_percentage=round(percentage, 2),
+                    completed_at=quiz_end_time_dt_calc,
+                    time_taken_seconds=round(total_time_taken_seconds, 2),
+                    answers_details_json=json.dumps(self.answers, ensure_ascii=False)
                 )
                 logger.info(f"[QuizLogic {self.quiz_id}] Quiz session {self.db_quiz_session_id} updated in DB with final results.")
             except Exception as e_db_end: logger.error(f"[QuizLogic {self.quiz_id}] DB exception on quiz end update: {e_db_end}", exc_info=True)
