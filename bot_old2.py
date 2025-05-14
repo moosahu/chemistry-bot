@@ -273,7 +273,7 @@ def main() -> None:
         logger.warning("New Admin Statistics (V4/V7/V8) handlers were not imported, skipping their addition.")
 
     logger.info("Adding global main_menu_callback handler...")
-    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
+    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot|quiz_action_main_menu)$"))
     logger.info("Global main_menu_callback handler added.")
 
     if new_admin_tools_loaded:
