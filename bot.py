@@ -247,18 +247,18 @@ def main() -> None:
         logger.info("Common start_handler (from handlers.common) added as new admin tools were not loaded at import.")
 
     if quiz_conv_handler:
-        application.add_handler(quiz_conv_handler, group=-1)
+        application.add_handler(quiz_conv_handler)
     else:
         logger.warning("quiz_conv_handler was not imported successfully or failed during import, skipping addition.")
 
     if info_conv_handler:
-        application.add_handler(info_conv_handler, group=-1)
+        application.add_handler(info_conv_handler)
         logger.debug(f"[DEBUG] info_conv_handler added to application: {info_conv_handler}")
     else:
         logger.warning("info_conv_handler was not imported or is None, skipping addition.")
 
     if stats_conv_handler:
-        application.add_handler(stats_conv_handler, group=-1)
+        application.add_handler(stats_conv_handler)
         logger.debug(f"[DEBUG] stats_conv_handler added to application: {stats_conv_handler}")
     else:
         logger.warning("stats_conv_handler is None, skipping addition.")
@@ -273,7 +273,7 @@ def main() -> None:
         logger.warning("New Admin Statistics (V4/V7/V8) handlers were not imported, skipping their addition.")
 
     logger.info("Adding global main_menu_callback handler...")
-    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot|quiz_action_main_menu)$"))
+    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
 
     if new_admin_tools_loaded:
