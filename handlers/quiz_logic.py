@@ -5,6 +5,7 @@
 # MANUS_MODIFIED_OLD_FILE: Fixes for quiz completion and restart logic.
 # MANUS_MODIFIED_OLD_FILE_V2: Restored original detailed show_results logic.
 # MANUS_MODIFIED_OLD_FILE_V3: Fixed AttributeError: 'CallbackQuery' object has no attribute 'bot'
+# MANUS_MODIFIED_OLD_FILE_V4: Fixed SyntaxError: unterminated string literal (detected at line 453)
 
 import asyncio
 import logging
@@ -70,7 +71,7 @@ class QuizLogic:
         if self.total_questions != self.total_questions_for_db:
              logger.warning(f"[QuizLogic {self.quiz_id}] Mismatch: total_questions_for_db ({self.total_questions_for_db}) vs actual len(questions_data) ({self.total_questions}).")
 
-        logger.debug(f"[QuizLogic {self.quiz_id}] Initialized. User: {self.user_id}, QuizName: \t'{self.quiz_name}\t', ActualNumQs: {self.total_questions}.")
+        logger.debug(f"[QuizLogic {self.quiz_id}] Initialized. User: {self.user_id}, QuizName: \t'{self.quiz_name}'\t, ActualNumQs: {self.total_questions}.")
 
     async def start_quiz(self, bot: Bot, context: CallbackContext, update: Update) -> int:
         logger.info(f"[QuizLogic {self.quiz_id}] start_quiz called for user {self.user_id}")
@@ -86,7 +87,7 @@ class QuizLogic:
                 elif isinstance(scope_id_for_db_call, str):
                     try: scope_id_for_db_call = int(scope_id_for_db_call)
                     except ValueError: 
-                        logger.error(f"[QuizLogic {self.quiz_id}] Invalid quiz_scope_id_for_db \t'{self.quiz_scope_id_for_db}\t'. Setting to None.")
+                        logger.error(f"[QuizLogic {self.quiz_id}] Invalid quiz_scope_id_for_db \t'{self.quiz_scope_id_for_db}'\t. Setting to None.")
                         scope_id_for_db_call = None
                 
                 self.db_quiz_session_id = self.db_manager.start_quiz_session_and_get_id(
@@ -450,8 +451,7 @@ class QuizLogic:
             if ans['status'] == 'answered':
                 chosen_text_short = ans['chosen_option_text'][:50] + ("..." if len(ans['chosen_option_text']) > 50 else "")
                 correct_text_short = ans['correct_option_text'][:50] + ("..." if len(ans['correct_option_text']) > 50 else "")
-                results_text += f" - اخترت: {chosen_text_short} ({'صحيح ✅' if ans['is_correct'] else 'خطأ ❌'})
-"
+                results_text += f" - اخترت: {chosen_text_short} ({'صحيح ✅' if ans['is_correct'] else 'خطأ ❌'})\n"
                 if not ans['is_correct']:
                     results_text += f" - الصحيح: {correct_text_short}\n"
             elif ans['status'] == 'timed_out':
