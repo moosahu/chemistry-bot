@@ -1,12 +1,6 @@
 """
 Conversation handler for the quiz selection and execution flow.
 (MODIFIED: Uses api_client.py for questions, QuizLogic imports DB_MANAGER directly)
-(MANUS_MODIFIED_OLD_FILE: Added specific handlers for results screen buttons to ensure proper cleanup and state transition.)
-(MANUS_MODIFIED_V2: Fixed entry point for quiz conversation to use 'start_quiz' from main menu.)
-(MANUS_MODIFIED_V3: Corrected f-string syntax errors related to backslashes in expressions.)
-(MANUS_MODIFIED_V4: Reverted transform_api_question call to original single argument.)
-(MANUS_MODIFIED_V5: Attempted to restore stats button, led to import error.)
-(MANUS_MODIFIED_V6: Corrected stats button on results screen to return STATS_MENU state.)
 """
 
 import logging
@@ -209,7 +203,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
         if api_response == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE 
-        if not api_response or not isinstance(api_response, list) or not api_response: 
+        if not api_response or not isinstance(api_response, list):
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, error_text_no_data("أسئلة شاملة"), create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
         

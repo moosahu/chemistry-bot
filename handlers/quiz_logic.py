@@ -2,10 +2,6 @@
 # handlers/quiz_logic.py (Modified to import DB_MANAGER directly)
 # v2: Fixes for filter_id in DB session and NoneType error in show_results
 # v3: Enhanced support for image questions and image options
-# MANUS_MODIFIED_OLD_FILE: Fixes for quiz completion and restart logic.
-# MANUS_MODIFIED_OLD_FILE_V2: Restored original detailed show_results logic.
-# MANUS_MODIFIED_OLD_FILE_V3: Fixed AttributeError: 'CallbackQuery' object has no attribute 'bot'
-# MANUS_MODIFIED_OLD_FILE_V4: Fixed SyntaxError: unterminated string literal (detected at line 453)
 
 import asyncio
 import logging
