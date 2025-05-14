@@ -467,10 +467,11 @@ class QuizLogic:
             new_msg = await safe_send_message(bot, self.chat_id, full_results_text, kbd_after_results, parse_mode="HTML")
             if new_msg: context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = new_msg.message_id
         
-        await self.cleanup_quiz_data(context, self.user_id, "quiz_completed_results_shown", preserve_current_logic_in_userdata=True)
+        await self.cleanup_quiz_data(context, self.user_id, "quiz_completed_results_shown")
         return SHOWING_RESULTS
 
- async def cleanup_quiz_data(self, context: CallbackContext, user_id: int, reason: str = "unknown", preserve_current_logic_in_userdata: bool = False) -> None:nfo(f"[QuizLogic {self.quiz_id}] Internal cleanup. User {user_id}. Reason: {reason}. Active: {self.active}")
+    async def cleanup_quiz_data(self, context: CallbackContext, user_id: int, reason: str):
+        logger.info(f"[QuizLogic {self.quiz_id}] Internal cleanup. User {user_id}. Reason: {reason}. Active: {self.active}")
         self.active = False
         # Clear any sent option image messages for this quiz instance
         for msg_id in self.sent_option_image_message_ids:
