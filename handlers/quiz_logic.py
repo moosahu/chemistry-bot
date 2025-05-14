@@ -450,7 +450,11 @@ class QuizLogic:
         results_text += "\n📜 <b>تفاصيل الإجابات:</b>\n"
 
         for i, ans in enumerate(self.answers):
-            q_text_short = ans['question_text'][:50] + ("..." if len(ans['question_text']) > 50 else "")
+            q_text = ans.get('question_text')
+            if q_text:
+                q_text_short = q_text[:50] + ("..." if len(q_text) > 50 else "")
+            else:
+                q_text_short = "سؤال غير متوفر"
             results_text += f"\n<b>سؤال {i+1}:</b> \"{q_text_short}\"\n"
             if ans['status'] == 'answered':
                 chosen_text_short = ans['chosen_option_text'][:50] + ("..." if len(ans['chosen_option_text']) > 50 else "")
