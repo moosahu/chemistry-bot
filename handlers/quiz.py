@@ -5,7 +5,8 @@ Conversation handler for the quiz selection and execution flow.
 (MANUS_MODIFIED_V2: Fixed entry point for quiz conversation to use 'start_quiz' from main menu.)
 (MANUS_MODIFIED_V3: Corrected f-string syntax errors related to backslashes in expressions.)
 (MANUS_MODIFIED_V4: Reverted transform_api_question call to original single argument.)
-(MANUS_MODIFIED_V5: Restored stats button functionality on results screen to call stats_menu_callback.)
+(MANUS_MODIFIED_V5: Attempted to restore stats button, led to import error.)
+(MANUS_MODIFIED_V6: Corrected stats button on results screen to return STATS_MENU state.)
 """
 
 import logging
@@ -27,18 +28,17 @@ from config import (
     SELECT_COURSE_FOR_UNIT_QUIZ, SELECT_UNIT_FOR_COURSE, 
     ENTER_QUESTION_COUNT, TAKING_QUIZ, SHOWING_RESULTS, END,
     QUIZ_TYPE_ALL, QUIZ_TYPE_UNIT, 
-    DEFAULT_QUESTION_TIME_LIMIT
+    DEFAULT_QUESTION_TIME_LIMIT,
+    STATS_MENU # MANUS_MODIFIED_V6: Added STATS_MENU for returning state
 )
 from utils.helpers import safe_send_message, safe_edit_message_text, get_quiz_type_string, remove_job_if_exists
 from utils.api_client import fetch_from_api, transform_api_question 
-# MANUS_MODIFIED_V5: Added stats_menu_callback to import
-from handlers.common import main_menu_callback, start_command, stats_menu_callback 
-# MANUS_MODIFIED_OLD_FILE: Ensure this imports the fixed quiz_logic
+# MANUS_MODIFIED_V6: Removed problematic import of stats_menu_callback
+from handlers.common import main_menu_callback, start_command 
 from .quiz_logic import QuizLogic 
 
 ITEMS_PER_PAGE = 6
 
-# --- Utility function to clean up quiz-related user_data and jobs ---
 async def _cleanup_quiz_session_data(user_id: int, chat_id: int, context: CallbackContext, reason: str):
     logger.info(f"[QuizCleanup] Cleaning up quiz session data for user {user_id}, chat {chat_id}. Reason: {reason}")
     
@@ -93,7 +93,6 @@ async def go_to_main_menu_from_quiz(update: Update, context: CallbackContext) ->
     await main_menu_callback(update, context) 
     return ConversationHandler.END
 
-# --- Keyboards --- 
 def create_quiz_type_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("🎲 اختبار عشوائي شامل (كل المقررات)", callback_data=f"quiz_type_{QUIZ_TYPE_ALL}")],
@@ -159,7 +158,6 @@ def create_question_count_keyboard(max_questions: int, quiz_type: str, unit_id: 
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_callback_data)])
     return InlineKeyboardMarkup(keyboard)
 
-# --- Quiz Setup States --- 
 async def quiz_menu_entry(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -441,18 +439,19 @@ async def handle_restart_quiz_from_results_cb(update: Update, context: CallbackC
     user_id = query.from_user.id
     await query.answer()
     logger.info(f"User {user_id} chose to restart quiz from results. Calling quiz_menu_entry.")
+    # Cleanup is handled by quiz_menu_entry
     return await quiz_menu_entry(update, context) 
 
-# MANUS_MODIFIED_V5: Restored stats button functionality
+# MANUS_MODIFIED_V6: Corrected stats button to return STATS_MENU state
 async def handle_show_stats_from_results_cb(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     await query.answer()
-    logger.info(f"User {user_id} chose to show stats from results. Cleaning up quiz session.")
+    logger.info(f"User {user_id} (chat {chat_id}) chose to show stats from results. Cleaning up quiz session and returning STATS_MENU state.")
     await _cleanup_quiz_session_data(user_id, chat_id, context, "show_stats_from_results")
-    await stats_menu_callback(update, context) # Changed from main_menu_callback to stats_menu_callback
-    return ConversationHandler.END
+    # The main ConversationHandler (in bot.py or application setup) should handle STATS_MENU state.
+    return STATS_MENU
 
 async def handle_main_menu_from_results_cb(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -486,15 +485,17 @@ quiz_conv_handler = ConversationHandler(
             CallbackQueryHandler(handle_restart_quiz_from_results_cb, pattern="^quiz_action_restart_quiz_cb$"),
             CallbackQueryHandler(handle_show_stats_from_results_cb, pattern="^quiz_action_show_stats_cb$"),
             CallbackQueryHandler(handle_main_menu_from_results_cb, pattern="^quiz_action_main_menu_from_results_cb$"),
+            # Fallback for any other callback in SHOWING_RESULTS, likely an old answer button if message not edited properly
             CallbackQueryHandler(handle_quiz_answer_wrapper) 
         ],
     },
     fallbacks=[
         CommandHandler("start", start_command_fallback_for_quiz),
+        # General main menu fallback if user clicks a generic main menu button during quiz setup stages
         CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^quiz_action_main_menu$"), 
     ],
-    persistent=False, 
+    persistent=False, # Recommended to be False for in-memory ConversationHandlers
     name="quiz_conversation",
-    allow_reentry=True 
+    allow_reentry=True # Important for restarting quiz from results
 )
 
