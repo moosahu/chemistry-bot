@@ -61,7 +61,9 @@ async def start_command(update: Update, context: CallbackContext) -> int:
 
     welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
                    "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
-    keyboard = create_main_menu_keyboard(user.id)
+    # Pass DB_MANAGER to create_main_menu_keyboard
+    db_m = context.bot_data.get("DB_MANAGER", DB_MANAGER) # Get from context or use global
+    keyboard = create_main_menu_keyboard(user.id, db_m)
     # Clear any existing quiz logic from user_data to ensure a fresh start
     if "current_quiz_logic" in context.user_data:
         logger.info(f"Clearing existing current_quiz_logic for user {user.id} from /start command.")
@@ -134,7 +136,9 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
 
     if state_to_return == MAIN_MENU:
         menu_text = "القائمة الرئيسية:"
-        keyboard = create_main_menu_keyboard(user.id)
+        # Pass DB_MANAGER to create_main_menu_keyboard
+        db_m = context.bot_data.get("DB_MANAGER", DB_MANAGER) # Get from context or use global
+        keyboard = create_main_menu_keyboard(user.id, db_m)
         if query and query.message: # Ensure query.message exists
             # *** CORRECTED THE CALL TO safe_edit_message_text ***
             await safe_edit_message_text(context.bot, query.message.chat_id, query.message.message_id, text=menu_text, reply_markup=keyboard)
