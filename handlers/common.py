@@ -32,19 +32,14 @@ except ImportError as e:
         def is_user_admin(*args, **kwargs): logger.warning("Dummy DB_MANAGER.is_user_admin called"); return False
     DB_MANAGER = DummyDBManager()
 
-def create_main_menu_keyboard(user_id: int, db_manager_instance) -> InlineKeyboardMarkup:
-    """Creates the main menu keyboard, potentially showing admin options."""
+def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Creates the main menu keyboard."""
     keyboard = [
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
         [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
     ]
-    if db_manager_instance and db_manager_instance.is_user_admin(user_id):
-        # logger.info(f"User {user_id} is an admin. Adding admin panel button to main menu.") # Logger removed for simplicity here
-        keyboard.append([InlineKeyboardButton("⚙️ لوحة تحكم الأدمن", callback_data="admin_panel")])
-    # else:
-        # logger.info(f"User {user_id} is not an admin or DB_MANAGER is unavailable. Admin panel button not added.")
     return InlineKeyboardMarkup(keyboard)
 
 async def start_command(update: Update, context: CallbackContext) -> int:
@@ -140,8 +135,7 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
 
     if state_to_return == MAIN_MENU:
         menu_text = "القائمة الرئيسية:"
-        db_m = context.bot_data.get("DB_MANAGER", DB_MANAGER) # Get from context or use global fallback
-        keyboard = create_main_menu_keyboard(user.id, db_m)
+        keyboard = create_main_menu_keyboard(user.id)
         if query and query.message: # Ensure query.message exists
             # *** CORRECTED THE CALL TO safe_edit_message_text ***
             await safe_edit_message_text(context.bot, query.message.chat_id, query.message.message_id, text=menu_text, reply_markup=keyboard)
