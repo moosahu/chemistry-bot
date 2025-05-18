@@ -641,8 +641,10 @@ class QuizLogic:
 
         total_answered = sum(1 for ans in self.answers if ans["status"] == "answered")
         total_skipped_auto = sum(1 for ans in self.answers if ans["status"] == "skipped_auto")
+        total_skipped_by_user = sum(1 for ans in self.answers if ans["status"] == "skipped_by_user")
         total_timed_out = sum(1 for ans in self.answers if ans["status"] == "timed_out")
         total_error_sending = sum(1 for ans in self.answers if ans["status"] == "error_sending")
+        total_quiz_ended = sum(1 for ans in self.answers if ans["status"] in ["quiz_ended_by_user", "not_reached_quiz_ended"])
         
         total_processed_questions = len(self.answers)
         percentage = (self.score / total_processed_questions * 100) if total_processed_questions > 0 else 0
@@ -650,12 +652,15 @@ class QuizLogic:
         total_time_taken_seconds = sum(ans["time_taken"] for ans in self.answers if ans["time_taken"] > 0) # Only positive times
         avg_time_per_q_seconds = (total_time_taken_seconds / total_answered) if total_answered > 0 else 0
 
+        # حساب إجمالي الأسئلة المتخطاة/المهملة
+        total_skipped_questions = total_skipped_auto + total_skipped_by_user + total_timed_out + total_error_sending + total_quiz_ended
+
         # Update DB with final results
         if self.db_manager and self.db_quiz_session_id:
             try:
                 # Calculate wrong_answers and skipped_answers based on existing variables
                 wrong_answers_calc = total_answered - self.score
-                skipped_answers_calc = total_skipped_auto + total_timed_out + total_error_sending
+                skipped_answers_calc = total_skipped_questions
                 quiz_end_time_dt_calc = datetime.now(timezone.utc) # To match original variable name for clarity
 
                 self.db_manager.end_quiz_session(
@@ -677,7 +682,7 @@ class QuizLogic:
         results_text += f"🎯 نتيجتك: {self.score} من {total_processed_questions}\n"
         results_text += f"✅ الإجابات الصحيحة: {self.score}\n"
         results_text += f"❌ الإجابات الخاطئة: {total_answered - self.score}\n" 
-        results_text += f"⏭️ الأسئلة المتخطاة/المهملة: {total_skipped_auto + total_timed_out + total_error_sending}\n"
+        results_text += f"⏭️ الأسئلة المتخطاة/المهملة: {total_skipped_questions}\n"
         results_text += f"📊 النسبة المئوية: {percentage:.2f}%\n"
         if avg_time_per_q_seconds > 0:
             results_text += f"⏱️ متوسط وقت الإجابة للسؤال: {avg_time_per_q_seconds:.2f} ثانية\n"
