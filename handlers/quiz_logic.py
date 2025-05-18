@@ -329,7 +329,9 @@ class QuizLogic:
         
         logger.info(f"[QuizLogic {self.quiz_id}] All questions processed/skipped. Showing results. User {self.user_id}")
         # Use context.bot here as self.bot is not an attribute of QuizLogic
-        return await self.show_results(context.bot, context, update)    async def handle_skip_question(self, update: Update, context: CallbackContext, callback_data: str) -> int:
+        return await self.show_results(context.bot, context, update)
+        
+    async def handle_skip_question(self, update: Update, context: CallbackContext, callback_data: str) -> int:
         """معالجة تخطي السؤال الحالي والانتقال للسؤال التالي"""
         if not self.active:
             return END
