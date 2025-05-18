@@ -154,12 +154,10 @@ class QuizLogic:
                 "is_correct": option_data.get("is_correct", False)
             })
         
-        # إضافة زر تخطي السؤال وزر إنهاء الاختبار في صف جديد
-        action_buttons = [
-            InlineKeyboardButton(text="⏭️ تخطي السؤال", callback_data=f"skip_{self.quiz_id}_{self.current_question_index}"),
-            InlineKeyboardButton(text="❌ إنهاء الاختبار", callback_data=f"end_{self.quiz_id}_{self.current_question_index}")
-        ]
-        keyboard_buttons.append(action_buttons)
+        # إضافة زر تخطي السؤال وزر إنهاء الاختبار
+        skip_button = InlineKeyboardButton(text="⏭️ تخطي السؤال", callback_data=f"skip_{self.quiz_id}_{self.current_question_index}")
+        end_button = InlineKeyboardButton(text="❌ إنهاء الاختبار", callback_data=f"end_{self.quiz_id}_{self.current_question_index}")
+        keyboard_buttons.append([skip_button, end_button])
             
         return InlineKeyboardMarkup(keyboard_buttons), displayable_options
 
@@ -333,97 +331,6 @@ class QuizLogic:
         # Use context.bot here as self.bot is not an attribute of QuizLogic
         return await self.show_results(context.bot, context, update)
 
-    async def handle_skip_question(self, update: Update, context: CallbackContext, skip_data: str) -> int:
-        """معالجة زر تخطي السؤال"""
-        query = update.callback_query
-        await query.answer("تم تخطي السؤال")
-        
-        parts = skip_data.split("_")
-        if len(parts) < 3: logger.warning(f"[QuizLogic {self.quiz_id}] Invalid skip callback: {skip_data}"); return TAKING_QUIZ
-
-        skip_quiz_id, skip_q_idx_str = parts[1], parts[2]
-        skip_q_idx = int(skip_q_idx_str)
-
-        if not self.active or skip_quiz_id != self.quiz_id or skip_q_idx != self.current_question_index:
-            logger.warning(f"[QuizLogic {self.quiz_id}] Stale/mismatched skip. Active:{self.active}({self.quiz_id} vs {skip_quiz_id}), Qidx:{self.current_question_index} vs {skip_q_idx}. Ignoring.")
-            return TAKING_QUIZ 
-        
-        # إيقاف مؤقت انتهاء الوقت
-        job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
-        remove_job_if_exists(job_name, context)
-        
-        # إيقاف مؤقت تحديث العداد
-        update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
-        remove_job_if_exists(update_job_name, context)
-
-        current_question_data = self.questions_data[self.current_question_index]
-        q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
-        
-        # تسجيل السؤال كـ "تم تخطيه"
-        self.answers.append({
-            "question_id": q_id_log,
-            "question_text": current_question_data.get("question_text", "نص السؤال غير متوفر"),
-            "chosen_option_id": None,
-            "chosen_option_text": "تم تخطي السؤال",
-            "correct_option_id": self._get_correct_option_id(current_question_data),
-            "correct_option_text": self._get_correct_option_display_text(current_question_data),
-            "is_correct": False,
-            "time_taken": -1,
-            "status": "skipped_manual"
-        })
-        
-        # الانتقال للسؤال التالي
-        self.current_question_index += 1
-        
-        if self.current_question_index >= self.total_questions:
-            logger.info(f"[QuizLogic {self.quiz_id}] All questions completed/skipped after skip. Showing results.")
-            return await self.show_results(context.bot, context, update)
-        else:
-            return await self.send_question(context.bot, context, update)
-    
-    async def handle_end_quiz(self, update: Update, context: CallbackContext, end_data: str) -> int:
-        """معالجة زر إنهاء الاختبار"""
-        query = update.callback_query
-        await query.answer("جاري إنهاء الاختبار...")
-        
-        parts = end_data.split("_")
-        if len(parts) < 3: logger.warning(f"[QuizLogic {self.quiz_id}] Invalid end callback: {end_data}"); return TAKING_QUIZ
-
-        end_quiz_id, end_q_idx_str = parts[1], parts[2]
-        end_q_idx = int(end_q_idx_str)
-
-        if not self.active or end_quiz_id != self.quiz_id:
-            logger.warning(f"[QuizLogic {self.quiz_id}] Stale/mismatched end. Active:{self.active}({self.quiz_id} vs {end_quiz_id}). Ignoring.")
-            return TAKING_QUIZ 
-        
-        # إيقاف جميع المؤقتات
-        job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
-        remove_job_if_exists(job_name, context)
-        
-        update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
-        remove_job_if_exists(update_job_name, context)
-        
-        # تسجيل الأسئلة المتبقية كـ "غير مجاب عليها"
-        current_question_data = self.questions_data[self.current_question_index]
-        q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
-        
-        # تسجيل السؤال الحالي كـ "تم إنهاء الاختبار"
-        self.answers.append({
-            "question_id": q_id_log,
-            "question_text": current_question_data.get("question_text", "نص السؤال غير متوفر"),
-            "chosen_option_id": None,
-            "chosen_option_text": "تم إنهاء الاختبار",
-            "correct_option_id": self._get_correct_option_id(current_question_data),
-            "correct_option_text": self._get_correct_option_display_text(current_question_data),
-            "is_correct": False,
-            "time_taken": -2,
-            "status": "quiz_ended_early"
-        })
-        
-        # عرض النتائج
-        logger.info(f"[QuizLogic {self.quiz_id}] Quiz ended early by user. Showing results.")
-        return await self.show_results(context.bot, context, update)
-    
     async def handle_answer(self, update: Update, context: CallbackContext, answer_data: str) -> int:
         query = update.callback_query
         await query.answer()
