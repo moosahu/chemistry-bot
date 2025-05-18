@@ -10,6 +10,7 @@ import uuid
 import telegram # For telegram.error types
 from datetime import datetime, timezone 
 import json
+import math
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot 
 from telegram.ext import ConversationHandler, CallbackContext, JobQueue 
 
@@ -45,7 +46,8 @@ class QuizLogic:
         self.quiz_scope_id_for_db = quiz_scope_id 
         self.total_questions_for_db = total_questions_for_db_log
 
-        self.question_time_limit = time_limit_per_question
+        # تعيين وقت السؤال إلى 3 دقائق (180 ثانية) بغض النظر عن القيمة المرسلة
+        self.question_time_limit = 180
         self.quiz_id = quiz_instance_id_for_logging 
         
         self.db_manager = DB_MANAGER
@@ -154,6 +156,71 @@ class QuizLogic:
             
         return InlineKeyboardMarkup(keyboard_buttons), displayable_options
 
+    def _format_time_remaining(self, seconds_remaining):
+        """تنسيق الوقت المتبقي بشكل مناسب للعرض"""
+        if seconds_remaining <= 0:
+            return "00:00"
+        
+        minutes = math.floor(seconds_remaining / 60)
+        seconds = math.floor(seconds_remaining % 60)
+        return f"{minutes:02d}:{seconds:02d}"
+    
+    async def update_timer_display(self, context: CallbackContext):
+        """تحديث عرض العداد في رسالة السؤال"""
+        job_data = context.job.data
+        chat_id = job_data["chat_id"]
+        quiz_id_from_job = job_data["quiz_id"]
+        q_idx = job_data["question_index"]
+        msg_id = job_data["message_id"]
+        is_image = job_data["is_image"]
+        question_text = job_data["question_text"]
+        header = job_data["header"]
+        options_keyboard = job_data["options_keyboard"]  # استرجاع لوحة المفاتيح المخزنة
+        
+        # التحقق من أن العداد لا يزال نشطاً للسؤال الحالي
+        if not self.active or quiz_id_from_job != self.quiz_id or q_idx != self.current_question_index:
+            logger.debug(f"[QuizLogic {self.quiz_id}] Timer update cancelled - question changed or quiz inactive")
+            return
+        
+        # حساب الوقت المتبقي
+        elapsed_time = time.time() - self.question_start_time
+        remaining_time = max(0, self.question_time_limit - elapsed_time)
+        
+        # تنسيق الوقت المتبقي
+        time_display = self._format_time_remaining(remaining_time)
+        
+        # إضافة عداد الوقت إلى نص السؤال
+        timer_text = f"⏱️ الوقت المتبقي: {time_display}"
+        full_text = f"{header}{question_text}\n\n{timer_text}"
+        
+        try:
+            if is_image:
+                await safe_edit_message_caption(context.bot, chat_id, msg_id, caption=full_text, reply_markup=options_keyboard, parse_mode="HTML")
+            else:
+                await safe_edit_message_text(context.bot, chat_id, msg_id, text=full_text, reply_markup=options_keyboard, parse_mode="HTML")
+                
+            # جدولة التحديث التالي إذا كان لا يزال هناك وقت متبقي
+            if remaining_time > 5:  # تحديث كل 5 ثوانٍ
+                update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+                remove_job_if_exists(update_job_name, context)
+                context.job_queue.run_once(
+                    self.update_timer_display, 
+                    5.0,  # تحديث كل 5 ثوانٍ لتجنب تجاوز حدود تيليجرام
+                    data=job_data,
+                    name=update_job_name
+                )
+            elif remaining_time > 0:  # تحديث أخير قبل انتهاء الوقت
+                update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+                remove_job_if_exists(update_job_name, context)
+                context.job_queue.run_once(
+                    self.update_timer_display, 
+                    remaining_time,
+                    data=job_data,
+                    name=update_job_name
+                )
+        except Exception as e:
+            logger.warning(f"[QuizLogic {self.quiz_id}] Failed to update timer display: {e}")
+    
     async def send_question(self, bot: Bot, context: CallbackContext, update: Update = None):
         if not self.active: return END 
 
@@ -198,12 +265,17 @@ class QuizLogic:
             if not main_q_text_from_data and main_q_image_url: question_display_text = "السؤال معروض في الصورة أعلاه."
             elif not main_q_text_from_data and not main_q_image_url: question_display_text = "نص السؤال غير متوفر حالياً."
             
+            # إضافة عداد الوقت الأولي
+            time_display = self._format_time_remaining(self.question_time_limit)
+            timer_text = f"\n\n⏱️ الوقت المتبقي: {time_display}"
+            full_question_text = question_display_text + timer_text
+            
             sent_main_q_message = None
             try:
                 if main_q_image_url:
-                    sent_main_q_message = await bot.send_photo(chat_id=self.chat_id, photo=main_q_image_url, caption=header + question_display_text, reply_markup=options_keyboard, parse_mode="HTML")
+                    sent_main_q_message = await bot.send_photo(chat_id=self.chat_id, photo=main_q_image_url, caption=header + full_question_text, reply_markup=options_keyboard, parse_mode="HTML")
                 else:
-                    sent_main_q_message = await safe_send_message(bot, chat_id=self.chat_id, text=header + question_display_text, reply_markup=options_keyboard, parse_mode="HTML")
+                    sent_main_q_message = await safe_send_message(bot, chat_id=self.chat_id, text=header + full_question_text, reply_markup=options_keyboard, parse_mode="HTML")
             except Exception as e_send_q:
                 logger.error(f"[QuizLogic {self.quiz_id}] Failed to send main question q_id {q_id_log}: {e_send_q}", exc_info=True)
                 q_text_err = main_q_text_from_data or "سؤال غير متوفر (خطأ إرسال)"
@@ -214,13 +286,35 @@ class QuizLogic:
             
             if sent_main_q_message:
                 self.last_question_message_id = sent_main_q_message.message_id
-                if context and hasattr(context, 'user_data'): context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = sent_main_q_message.message_id
+                if context and hasattr(context, 'user_data') and context.user_data is not None: context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = sent_main_q_message.message_id
                 self.question_start_time = time.time()
+                
+                # إعداد مؤقت انتهاء الوقت
                 job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
                 remove_job_if_exists(job_name, context)
                 context.job_queue.run_once(self.question_timeout_callback, self.question_time_limit, 
                     data={"chat_id": self.chat_id, "user_id": self.user_id, "quiz_id": self.quiz_id, "question_index_at_timeout": self.current_question_index, "main_question_message_id": self.last_question_message_id, "option_image_ids": list(self.sent_option_image_message_ids)}, name=job_name)
                 logger.info(f"[QuizLogic {self.quiz_id}] Timer set for Q{self.current_question_index}, job: {job_name}")
+                
+                # إعداد مؤقت تحديث العداد
+                update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+                remove_job_if_exists(update_job_name, context)
+                context.job_queue.run_once(
+                    self.update_timer_display, 
+                    5.0,  # تحديث أول بعد 5 ثوانٍ
+                    data={
+                        "chat_id": self.chat_id,
+                        "quiz_id": self.quiz_id,
+                        "question_index": self.current_question_index,
+                        "message_id": self.last_question_message_id,
+                        "is_image": bool(main_q_image_url),
+                        "question_text": question_display_text,
+                        "header": header,
+                        "options_keyboard": options_keyboard  # تخزين لوحة المفاتيح لاستخدامها في التحديثات
+                    },
+                    name=update_job_name
+                )
+                
                 return TAKING_QUIZ 
             else: 
                 logger.error(f"[QuizLogic {self.quiz_id}] sent_main_q_message was None for q_idx {self.current_question_index}. Error in logic.")
@@ -248,8 +342,14 @@ class QuizLogic:
             return TAKING_QUIZ 
 
         time_taken = time.time() - self.question_start_time
+        
+        # إيقاف مؤقت انتهاء الوقت
         job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
         remove_job_if_exists(job_name, context)
+        
+        # إيقاف مؤقت تحديث العداد
+        update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+        remove_job_if_exists(update_job_name, context)
 
         current_question_data = self.questions_data[self.current_question_index]
         q_id_log = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
@@ -314,6 +414,10 @@ class QuizLogic:
         option_img_ids_from_job = job_data.get("option_image_ids", [])
 
         logger.info(f"[QuizLogic {quiz_id_from_job}] Timeout for Q{q_idx_at_timeout}, user {user_id}")
+
+        # إيقاف مؤقت تحديث العداد عند انتهاء الوقت
+        update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+        remove_job_if_exists(update_job_name, context)
 
         if not self.active or quiz_id_from_job != self.quiz_id or q_idx_at_timeout != self.current_question_index:
             logger.info(f"[QuizLogic {quiz_id_from_job}] Stale timeout for Q{q_idx_at_timeout}. Current Q_idx: {self.current_question_index}. Ignoring.")
