@@ -46,7 +46,8 @@ class QuizLogic:
         self.quiz_scope_id_for_db = quiz_scope_id 
         self.total_questions_for_db = total_questions_for_db_log
 
-        self.question_time_limit = time_limit_per_question
+        # تعيين وقت السؤال إلى 3 دقائق (180 ثانية) إذا لم يتم تحديده
+        self.question_time_limit = 180 if time_limit_per_question is None else time_limit_per_question
         self.quiz_id = quiz_instance_id_for_logging 
         
         self.db_manager = DB_MANAGER
@@ -174,6 +175,7 @@ class QuizLogic:
         is_image = job_data["is_image"]
         question_text = job_data["question_text"]
         header = job_data["header"]
+        options_keyboard = job_data["options_keyboard"]  # استرجاع لوحة المفاتيح المخزنة
         
         # التحقق من أن العداد لا يزال نشطاً للسؤال الحالي
         if not self.active or quiz_id_from_job != self.quiz_id or q_idx != self.current_question_index:
@@ -193,9 +195,9 @@ class QuizLogic:
         
         try:
             if is_image:
-                await safe_edit_message_caption(context.bot, chat_id, msg_id, caption=full_text, parse_mode="HTML")
+                await safe_edit_message_caption(context.bot, chat_id, msg_id, caption=full_text, reply_markup=options_keyboard, parse_mode="HTML")
             else:
-                await safe_edit_message_text(context.bot, chat_id, msg_id, text=full_text, parse_mode="HTML")
+                await safe_edit_message_text(context.bot, chat_id, msg_id, text=full_text, reply_markup=options_keyboard, parse_mode="HTML")
                 
             # جدولة التحديث التالي إذا كان لا يزال هناك وقت متبقي
             if remaining_time > 5:  # تحديث كل 5 ثوانٍ
@@ -307,7 +309,8 @@ class QuizLogic:
                         "message_id": self.last_question_message_id,
                         "is_image": bool(main_q_image_url),
                         "question_text": question_display_text,
-                        "header": header
+                        "header": header,
+                        "options_keyboard": options_keyboard  # تخزين لوحة المفاتيح لاستخدامها في التحديثات
                     },
                     name=update_job_name
                 )
