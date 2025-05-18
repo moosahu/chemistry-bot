@@ -46,8 +46,8 @@ class QuizLogic:
         self.quiz_scope_id_for_db = quiz_scope_id 
         self.total_questions_for_db = total_questions_for_db_log
 
-        # تعيين وقت السؤال إلى 3 دقائق (180 ثانية) إذا لم يتم تحديده
-        self.question_time_limit = 180 if time_limit_per_question is None else time_limit_per_question
+        # تعيين وقت السؤال إلى 3 دقائق (180 ثانية) بغض النظر عن القيمة المرسلة
+        self.question_time_limit = 180
         self.quiz_id = quiz_instance_id_for_logging 
         
         self.db_manager = DB_MANAGER
