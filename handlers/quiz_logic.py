@@ -438,8 +438,8 @@ class QuizLogic:
         query = update.callback_query
         await query.answer()
         
-        parts = answer_data.split("_")
-        if len(parts) < 4: logger.warning(f"[QuizLogic {self.quiz_id}] Invalid answer callback: {answer_data}"); return TAKING_QUIZ
+        parts = callback_data.split("_")
+        if len(parts) < 4: logger.warning(f"[QuizLogic {self.quiz_id}] Invalid answer callback: {callback_data}"); return TAKING_QUIZ
 
         ans_quiz_id, ans_q_idx_str = parts[1], parts[2]
         chosen_option_id_from_callback = "_".join(parts[3:])
