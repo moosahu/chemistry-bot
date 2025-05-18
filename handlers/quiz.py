@@ -467,7 +467,9 @@ quiz_conv_handler = ConversationHandler(
             CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_action_back_to_type_selection$") # Back to type selection (all quiz)
         ],
         TAKING_QUIZ: [ 
-            CallbackQueryHandler(handle_quiz_answer_wrapper, pattern="^answer_")
+            CallbackQueryHandler(handle_quiz_answer_wrapper, pattern="^answer_"),
+            CallbackQueryHandler(handle_quiz_answer_wrapper, pattern="^skip_"),
+            CallbackQueryHandler(handle_quiz_answer_wrapper, pattern="^end_")
         ],
         SHOWING_RESULTS: [
             CallbackQueryHandler(quiz_menu_entry, pattern="^quiz_action_restart_quiz_cb$"), 
