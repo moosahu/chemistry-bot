@@ -286,7 +286,7 @@ class QuizLogic:
             
             if sent_main_q_message:
                 self.last_question_message_id = sent_main_q_message.message_id
-                if context and hasattr(context, 'user_data'): context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = sent_main_q_message.message_id
+                if context and hasattr(context, 'user_data') and context.user_data is not None: context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = sent_main_q_message.message_id
                 self.question_start_time = time.time()
                 
                 # إعداد مؤقت انتهاء الوقت
