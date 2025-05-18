@@ -419,14 +419,8 @@ async def handle_quiz_answer_wrapper(update: Update, context: CallbackContext) -
         await main_menu_callback(update, context)
         return ConversationHandler.END
 
-    if quiz_logic_instance.active:
-        # توجيه الاستجابة إلى الدالة المناسبة حسب نوع الزر المضغوط
-        if query.data.startswith("skip_"):
-            return await quiz_logic_instance.handle_skip_question(update, context, query.data)
-        elif query.data.startswith("end_"):
-            return await quiz_logic_instance.handle_end_quiz(update, context, query.data)
-        else:
-            return await quiz_logic_instance.handle_answer(update, context, query.data)
+    if quiz_logic_instance.active: 
+        return await quiz_logic_instance.handle_answer(update, context, query.data)
     else: 
         logger.info(f"User {user_id} (chat {chat_id}) interacted with an inactive QuizLogic instance. Callback: {query.data}. Cleaning up and going to main menu.")
         await query.answer("هذا الاختبار قد انتهى بالفعل. يتم نقلك للقائمة الرئيسية.")

@@ -329,9 +329,110 @@ class QuizLogic:
         
         logger.info(f"[QuizLogic {self.quiz_id}] All questions processed/skipped. Showing results. User {self.user_id}")
         # Use context.bot here as self.bot is not an attribute of QuizLogic
-        return await self.show_results(context.bot, context, update)
-
-    async def handle_answer(self, update: Update, context: CallbackContext, answer_data: str) -> int:
+        return await self.show_results(context.bot, context, update)    async def handle_skip_question(self, update: Update, context: CallbackContext, callback_data: str) -> int:
+        """معالجة تخطي السؤال الحالي والانتقال للسؤال التالي"""
+        if not self.active:
+            return END
+            
+        query = update.callback_query
+        await query.answer("تم تخطي السؤال")
+        
+        # تسجيل السؤال المتخطى في سجل الإجابات
+        current_question_data = self.questions_data[self.current_question_index]
+        q_id = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
+        q_text = current_question_data.get('question_text', 'سؤال غير متوفر')
+        
+        # حساب الوقت المستغرق حتى التخطي
+        time_taken = time.time() - self.question_start_time if self.question_start_time else 0
+        
+        # إضافة معلومات السؤال المتخطى إلى سجل الإجابات
+        self.answers.append({
+            "question_id": q_id,
+            "question_text": q_text,
+            "chosen_option_id": None,
+            "chosen_option_text": "تم تخطي السؤال",
+            "correct_option_id": None,
+            "correct_option_text": self._get_correct_option_display_text(current_question_data, for_skip=True),
+            "is_correct": False,
+            "time_taken": time_taken,
+            "status": "skipped_by_user"
+        })
+        
+        # إلغاء مؤقت السؤال الحالي
+        question_timer_job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+        remove_job_if_exists(question_timer_job_name, context)
+        
+        # إلغاء مؤقت تحديث العداد
+        update_timer_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+        remove_job_if_exists(update_timer_job_name, context)
+        
+        # الانتقال للسؤال التالي
+        self.current_question_index += 1
+        
+        # التحقق مما إذا كان هناك أسئلة متبقية
+        if self.current_question_index < self.total_questions:
+            return await self.send_question(context.bot, context)
+        else:
+            return await self.show_results(context.bot, context)
+    
+    async def handle_end_quiz(self, update: Update, context: CallbackContext, callback_data: str) -> int:
+        """معالجة إنهاء الاختبار فوراً وعرض النتائج"""
+        if not self.active:
+            return END
+            
+        query = update.callback_query
+        await query.answer("تم إنهاء الاختبار")
+        
+        # تسجيل السؤال الحالي كمتخطى
+        current_question_data = self.questions_data[self.current_question_index]
+        q_id = current_question_data.get('question_id', f'q_idx_{self.current_question_index}')
+        q_text = current_question_data.get('question_text', 'سؤال غير متوفر')
+        
+        # حساب الوقت المستغرق حتى الإنهاء
+        time_taken = time.time() - self.question_start_time if self.question_start_time else 0
+        
+        # إضافة معلومات السؤال الحالي إلى سجل الإجابات
+        self.answers.append({
+            "question_id": q_id,
+            "question_text": q_text,
+            "chosen_option_id": None,
+            "chosen_option_text": "تم إنهاء الاختبار",
+            "correct_option_id": None,
+            "correct_option_text": self._get_correct_option_display_text(current_question_data, for_skip=True),
+            "is_correct": False,
+            "time_taken": time_taken,
+            "status": "quiz_ended_by_user"
+        })
+        
+        # تسجيل باقي الأسئلة كمتخطاة
+        for i in range(self.current_question_index + 1, self.total_questions):
+            question_data = self.questions_data[i]
+            q_id = question_data.get('question_id', f'q_idx_{i}')
+            q_text = question_data.get('question_text', 'سؤال غير متوفر')
+            
+            self.answers.append({
+                "question_id": q_id,
+                "question_text": q_text,
+                "chosen_option_id": None,
+                "chosen_option_text": "تم إنهاء الاختبار قبل الوصول لهذا السؤال",
+                "correct_option_id": None,
+                "correct_option_text": self._get_correct_option_display_text(question_data, for_skip=True),
+                "is_correct": False,
+                "time_taken": -1,
+                "status": "not_reached_quiz_ended"
+            })
+        
+        # إلغاء مؤقت السؤال الحالي
+        question_timer_job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+        remove_job_if_exists(question_timer_job_name, context)
+        
+        # إلغاء مؤقت تحديث العداد
+        update_timer_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
+        remove_job_if_exists(update_timer_job_name, context)
+        
+        # عرض النتائج
+        return await self.show_results(context.bot, context)
+    async def handle_answer(self, update: Update, context: CallbackContext, callback_data: str) -> int:
         query = update.callback_query
         await query.answer()
         
