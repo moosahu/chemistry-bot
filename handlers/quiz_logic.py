@@ -701,6 +701,27 @@ class QuizLogic:
                 results_text += f" - اخترت: {chosen_text_short} ({'صحيح ✅' if ans['is_correct'] else 'خطأ ❌'})\n"
                 if not ans['is_correct']:
                     results_text += f" - الصحيح: {correct_text_short}\n"
+                    
+                    # إضافة شرح للإجابات الخاطئة فقط
+                    question_id = ans.get('question_id')
+                    if question_id:
+                        # البحث عن السؤال في questions_data باستخدام question_id
+                        question_data = None
+                        for q in self.questions_data:
+                            if str(q.get('question_id')) == str(question_id):
+                                question_data = q
+                                break
+                        
+                        if question_data:
+                            # إضافة الشرح إذا كان متوفراً
+                            explanation = question_data.get('explanation')
+                            explanation_image = question_data.get('explanation_image_path')
+                            
+                            if explanation:
+                                results_text += f" - <b>الشرح:</b> {explanation}\n"
+                            
+                            if explanation_image:
+                                results_text += f" - <b>صورة توضيحية:</b> {explanation_image}\n"
             elif ans['status'] == 'timed_out':
                 results_text += " - الحالة: انتهى الوقت ⌛\n"
             elif ans['status'] == 'skipped_auto':
