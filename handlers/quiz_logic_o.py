@@ -737,102 +737,7 @@ class QuizLogic:
             else:
                 results_text += f" - الحالة: {ans['status']}\n"
 
-        # تقسيم النتائج الطويلة إلى عدة رسائل إذا تجاوزت الحد المسموح به
-        # الحد الأقصى لطول رسالة تيليجرام هو 4096 حرف
-        MAX_MESSAGE_LENGTH = 4000  # نستخدم 4000 بدلاً من 4096 للأمان
-        
-        # إنشاء أجزاء الرسالة
-        message_parts = []
-        
-        # الجزء الأول دائماً يحتوي على ملخص النتائج
-        summary_text = f"🏁 <b>نتائج اختبار '{self.quiz_name}'</b> 🏁\n\n"
-        summary_text += f"🎯 نتيجتك: {self.score} من {total_processed_questions}\n"
-        summary_text += f"✅ الإجابات الصحيحة: {self.score}\n"
-        summary_text += f"❌ الإجابات الخاطئة: {total_answered - self.score}\n" 
-        summary_text += f"⏭️ الأسئلة المتخطاة/المهملة: {total_skipped_questions}\n"
-        summary_text += f"📊 النسبة المئوية: {percentage:.2f}%\n"
-        if avg_time_per_q_seconds > 0:
-            summary_text += f"⏱️ متوسط وقت الإجابة للسؤال: {avg_time_per_q_seconds:.2f} ثانية\n"
-        
-        message_parts.append(summary_text)
-        
-        # تقسيم تفاصيل الإجابات إلى أجزاء
-        current_part = "\n📜 <b>تفاصيل الإجابات:</b>\n"
-        
-        for i, ans in enumerate(self.answers):
-            # إنشاء نص تفاصيل السؤال الحالي
-            question_detail = ""
-            q_text = ans.get('question_text')
-            if q_text:
-                q_text_short = q_text[:50] + ("..." if len(q_text) > 50 else "")
-            else:
-                q_text_short = "سؤال غير متوفر"
-            question_detail += f"\n<b>سؤال {i+1}:</b> \"{q_text_short}\"\n"
-            
-            if ans['status'] == 'answered':
-                chosen_text_short = ans['chosen_option_text'][:50] + ("..." if len(ans['chosen_option_text']) > 50 else "")
-                correct_text_short = ans['correct_option_text'][:50] + ("..." if len(ans['correct_option_text']) > 50 else "")
-                question_detail += f" - اخترت: {chosen_text_short} ({'صحيح ✅' if ans['is_correct'] else 'خطأ ❌'})\n"
-                if not ans['is_correct']:
-                    question_detail += f" - الصحيح: {correct_text_short}\n"
-                    
-                    # إضافة شرح للإجابات الخاطئة فقط
-                    question_id = ans.get('question_id')
-                    if question_id:
-                        # البحث عن السؤال في questions_data باستخدام question_id
-                        question_data = None
-                        for q in self.questions_data:
-                            if str(q.get('question_id')) == str(question_id):
-                                question_data = q
-                                break
-                        
-                        if question_data:
-                            # إضافة الشرح إذا كان متوفراً
-                            explanation = question_data.get('explanation')
-                            explanation_image = question_data.get('explanation_image_path')
-                            
-                            if explanation:
-                                question_detail += f" - <b>الشرح:</b> {explanation}\n"
-                            
-                            if explanation_image:
-                                question_detail += f" - <b>صورة توضيحية:</b> {explanation_image}\n"
-            elif ans['status'] == 'timed_out':
-                question_detail += " - الحالة: انتهى الوقت ⌛\n"
-            elif ans['status'] == 'skipped_auto':
-                question_detail += " - الحالة: تم التخطي (خيارات غير كافية) ⏭️\n"
-            elif ans['status'] == 'skipped_by_user':
-                question_detail += " - الحالة: تم التخطي بواسطة المستخدم ⏭️\n"
-            elif ans['status'] == 'quiz_ended_by_user':
-                question_detail += " - الحالة: تم إنهاء الاختبار بواسطة المستخدم ❌\n"
-            elif ans['status'] == 'not_reached_quiz_ended':
-                question_detail += " - الحالة: لم يتم الوصول للسؤال (تم إنهاء الاختبار) ❌\n"
-            elif ans['status'] == 'error_sending':
-                question_detail += " - الحالة: خطأ في إرسال السؤال ⚠️\n"
-            else:
-                question_detail += f" - الحالة: {ans['status']}\n"
-            
-            # التحقق مما إذا كان إضافة تفاصيل السؤال الحالي سيتجاوز الحد الأقصى
-            if len(current_part) + len(question_detail) > MAX_MESSAGE_LENGTH:
-                # إضافة الجزء الحالي إلى قائمة الأجزاء وبدء جزء جديد
-                message_parts.append(current_part)
-                current_part = f"📜 <b>تفاصيل الإجابات (تابع):</b>\n{question_detail}"
-            else:
-                # إضافة تفاصيل السؤال الحالي إلى الجزء الحالي
-                current_part += question_detail
-        
-        # إضافة الجزء الأخير إذا كان غير فارغ
-        if current_part:
-            message_parts.append(current_part)
-        
-        # إرسال جميع أجزاء الرسالة
-        keyboard = [
-            [InlineKeyboardButton("✨ ابدأ اختباراً جديداً", callback_data="quiz_action_restart_quiz_cb")],
-            [InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="menu_stats")],
-            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # تحديد الرسالة المراد تعديلها أو إرسالها
+        # Determine the message to edit or send
         target_message_id = None
         if update and update.callback_query and update.callback_query.message:
             target_message_id = update.callback_query.message.message_id
@@ -842,29 +747,27 @@ class QuizLogic:
         # Fallback if context.user_data doesn't have the specific message ID
         if not target_message_id and context and hasattr(context, 'user_data'):
             target_message_id = context.user_data.get(f"last_quiz_interaction_message_id_{self.chat_id}")
-        
-        # إرسال الجزء الأول (ملخص النتائج) مع تعديل الرسالة الحالية إذا أمكن
-        first_part = message_parts[0]
+
+        keyboard = [
+            [InlineKeyboardButton("✨ ابدأ اختباراً جديداً", callback_data="quiz_action_restart_quiz_cb")],
+            [InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="menu_stats")],
+            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         if target_message_id:
             try:
-                await safe_edit_message_text(bot, self.chat_id, target_message_id, first_part, None, parse_mode="HTML")
-                target_message_id = None  # تم استخدام الرسالة المستهدفة، لا نستخدمها مرة أخرى
+                await safe_edit_message_text(bot, self.chat_id, target_message_id, results_text, reply_markup, parse_mode="HTML")
             except Exception as e_edit_results:
                 logger.warning(f"[QuizLogic {self.quiz_id}] Failed to edit message for results: {e_edit_results}")
                 # Fallback to sending a new message
-                sent_msg = await safe_send_message(bot, self.chat_id, first_part, None, parse_mode="HTML")
+                sent_msg = await safe_send_message(bot, self.chat_id, results_text, reply_markup, parse_mode="HTML")
                 if sent_msg and context and hasattr(context, 'user_data'):
                     context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = sent_msg.message_id
         else:
-            sent_msg = await safe_send_message(bot, self.chat_id, first_part, None, parse_mode="HTML")
+            sent_msg = await safe_send_message(bot, self.chat_id, results_text, reply_markup, parse_mode="HTML")
             if sent_msg and context and hasattr(context, 'user_data'):
                 context.user_data[f"last_quiz_interaction_message_id_{self.chat_id}"] = sent_msg.message_id
-        
-        # إرسال باقي الأجزاء كرسائل جديدة
-        for i in range(1, len(message_parts)):
-            # إضافة أزرار التنقل فقط في الجزء الأخير
-            current_markup = reply_markup if i == len(message_parts) - 1 else None
-            await safe_send_message(bot, self.chat_id, message_parts[i], current_markup, parse_mode="HTML")
 
         await self.cleanup_quiz_data(context, self.user_id, "quiz_completed")
         return SHOWING_RESULTS
