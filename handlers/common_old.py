@@ -38,7 +38,6 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
-        [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
         [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -48,17 +47,6 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     user = update.effective_user
     chat_id = update.effective_chat.id
     logger.info(f"User {user.id} ({user.username or user.first_name}) started the bot in chat {chat_id}.")
-
-    # التحقق من حالة تسجيل المستخدم
-    try:
-        from registration import check_registration_status
-        is_registered = await check_registration_status(update, context, DB_MANAGER)
-        if not is_registered:
-            logger.info(f"User {user.id} needs to complete registration first.")
-            return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
-    except ImportError as e:
-        logger.error(f"Error importing registration module: {e}")
-        is_registered = True  # افتراض أن المستخدم مسجل في حالة عدم وجود وحدة التسجيل
 
     if DB_MANAGER:
         DB_MANAGER.register_or_update_user(
@@ -74,7 +62,7 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
                    "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
     db_m = context.bot_data.get("DB_MANAGER", DB_MANAGER) # Get from context or use global fallback
-    keyboard = create_main_menu_keyboard(user.id)
+    keyboard = create_main_menu_keyboard(user.id, db_m)
     # Clear any existing quiz logic from user_data to ensure a fresh start
     if "current_quiz_logic" in context.user_data:
         logger.info(f"Clearing existing current_quiz_logic for user {user.id} from /start command.")
