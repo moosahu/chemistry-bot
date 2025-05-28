@@ -20,14 +20,14 @@ from telegram.ext import (
 
 # استيراد الثوابت والمكونات اللازمة
 try:
-    from ..config import (
+    from config import (
         logger,
         MAIN_MENU,
         REGISTRATION_NAME, REGISTRATION_EMAIL, REGISTRATION_GRADE, REGISTRATION_CONFIRM,
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_GRADE,
         END
     )
-    from ..utils.helpers import safe_send_message, safe_edit_message_text
+    from utils.helpers import safe_send_message, safe_edit_message_text
 except ImportError as e:
     # استخدام قيم افتراضية في حالة فشل الاستيراد
     logging.basicConfig(level=logging.DEBUG)
@@ -314,7 +314,7 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
         success_text = f"تم التسجيل بنجاح! 🎉\n\nمرحباً بك {registration_data.get('full_name')} في بوت الاختبارات.\n\nيمكنك الآن استخدام جميع ميزات البوت."
         
         # إعادة توجيه المستخدم إلى القائمة الرئيسية
-        from common import create_main_menu_keyboard
+        from handlers.common import create_main_menu_keyboard
         keyboard = create_main_menu_keyboard(user.id)
         
         await safe_edit_message_text(
@@ -457,7 +457,7 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
     
     elif action == "main_menu":
         # إعادة توجيه المستخدم إلى القائمة الرئيسية
-        from common import main_menu_callback
+        from handlers.common import main_menu_callback
         return await main_menu_callback(update, context)
     
     # في حالة حدوث خطأ
