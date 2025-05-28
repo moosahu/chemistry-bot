@@ -20,14 +20,14 @@ from telegram.ext import (
 
 # استيراد الثوابت والمكونات اللازمة
 try:
-    from ..config import (
+    from config import (
         logger,
         MAIN_MENU,
         REGISTRATION_NAME, REGISTRATION_EMAIL, REGISTRATION_GRADE, REGISTRATION_CONFIRM,
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_GRADE,
         END
     )
-    from ..utils.helpers import safe_send_message, safe_edit_message_text
+    from utils.helpers import safe_send_message, safe_edit_message_text
 except ImportError as e:
     # استخدام قيم افتراضية في حالة فشل الاستيراد
     logging.basicConfig(level=logging.DEBUG)
