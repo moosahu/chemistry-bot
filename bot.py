@@ -234,15 +234,6 @@ def main() -> None:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.", exc_info=True)
         exit(1)
 
-    # إضافة محادثات التسجيل الإلزامي وتعديل المعلومات
-    try:
-        from registration import registration_conv_handler, edit_info_conv_handler
-        application.add_handler(registration_conv_handler)
-        application.add_handler(edit_info_conv_handler)
-        logger.info("Registration and edit info conversation handlers added successfully.")
-    except ImportError as e:
-        logger.error(f"Error importing registration handlers: {e}. Registration features will not be available.")
-
     # Handler registration logic uses 'new_admin_tools_loaded' which is set at import time.
     # This determines if the *code* for admin tools is available to be registered.
     # The actual readiness of DB_MANAGER at runtime is checked within the admin handlers themselves.
