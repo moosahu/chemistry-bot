@@ -20,61 +20,14 @@ from telegram.ext import (
 
 # استيراد الثوابت والمكونات اللازمة
 try:
-    from config import (
+    from ..config import (
         logger,
         MAIN_MENU,
         REGISTRATION_NAME, REGISTRATION_EMAIL, REGISTRATION_GRADE, REGISTRATION_CONFIRM,
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_GRADE,
         END
     )
-    
-    # تعريف الدوال المساعدة مباشرة لتجنب مشاكل الاستيراد
-    async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
-        """إرسال رسالة بشكل آمن مع معالجة الأخطاء"""
-        try:
-            return await bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-        except Exception as e:
-            logger.error(f"خطأ في إرسال الرسالة: {e}")
-            try:
-                # محاولة إرسال رسالة بدون تنسيق خاص
-                return await bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    reply_markup=reply_markup
-                )
-            except Exception as e2:
-                logger.error(f"فشل محاولة إرسال الرسالة البديلة: {e2}")
-                return None
-
-    async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
-        """تعديل نص الرسالة بشكل آمن مع معالجة الأخطاء"""
-        try:
-            return await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-        except Exception as e:
-            logger.error(f"خطأ في تعديل نص الرسالة: {e}")
-            try:
-                # محاولة تعديل الرسالة بدون تنسيق خاص
-                return await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=text,
-                    reply_markup=reply_markup
-                )
-            except Exception as e2:
-                logger.error(f"فشل محاولة تعديل نص الرسالة البديلة: {e2}")
-                return None
-                
+    from ..utils.helpers import safe_send_message, safe_edit_message_text
 except ImportError as e:
     # استخدام قيم افتراضية في حالة فشل الاستيراد
     logging.basicConfig(level=logging.DEBUG)
