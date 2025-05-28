@@ -27,8 +27,12 @@ try:
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_GRADE,
         END
     )
-    from ..utils.helpers import safe_send_message, safe_edit_message_text
+    from utils.helpers import safe_send_message, safe_edit_message_text
 except ImportError as e:
+    # استخدام قيم افتراضية في حالة فشل الاستيراد
+    logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
+    logger.error(f"خطأ في استيراد الوحدات في registration.py: {e}. استخدام قيم افتراضية.")
     # استخدام قيم افتراضية في حالة فشل الاستيراد
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)

@@ -51,7 +51,7 @@ async def start_command(update: Update, context: CallbackContext) -> int:
 
     # التحقق من حالة تسجيل المستخدم
     try:
-        from registration import check_registration_status
+        from .registration import check_registration_status
         is_registered = await check_registration_status(update, context, DB_MANAGER)
         if not is_registered:
             logger.info(f"User {user.id} needs to complete registration first.")
