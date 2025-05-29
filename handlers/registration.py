@@ -27,7 +27,54 @@ try:
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_GRADE,
         END
     )
-    from utils.helpers import safe_send_message, safe_edit_message_text
+    
+    # تعريف الدوال المساعدة مباشرة داخل الملف لتجنب مشاكل الاستيراد
+    async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
+        """إرسال رسالة بشكل آمن مع معالجة الأخطاء"""
+        try:
+            return await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الرسالة: {e}")
+            try:
+                # محاولة إرسال رسالة بدون تنسيق خاص
+                return await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    reply_markup=reply_markup
+                )
+            except Exception as e2:
+                logger.error(f"فشل محاولة إرسال الرسالة البديلة: {e2}")
+                return None
+
+    async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
+        """تعديل نص الرسالة بشكل آمن مع معالجة الأخطاء"""
+        try:
+            return await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        except Exception as e:
+            logger.error(f"خطأ في تعديل نص الرسالة: {e}")
+            try:
+                # محاولة تعديل الرسالة بدون تنسيق خاص
+                return await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    reply_markup=reply_markup
+                )
+            except Exception as e2:
+                logger.error(f"فشل محاولة تعديل نص الرسالة البديلة: {e2}")
+                return None
+                
 except ImportError as e:
     # استخدام قيم افتراضية في حالة فشل الاستيراد
     logging.basicConfig(level=logging.DEBUG)
@@ -314,8 +361,17 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
         success_text = f"تم التسجيل بنجاح! 🎉\n\nمرحباً بك {registration_data.get('full_name')} في بوت الاختبارات.\n\nيمكنك الآن استخدام جميع ميزات البوت."
         
         # إعادة توجيه المستخدم إلى القائمة الرئيسية
-        from handlers.common import create_main_menu_keyboard
-        keyboard = create_main_menu_keyboard(user.id, db_manager)
+        try:
+            from handlers.common import create_main_menu_keyboard
+            keyboard = create_main_menu_keyboard(user.id, db_manager)
+        except ImportError:
+            # إنشاء لوحة مفاتيح بسيطة في حالة فشل الاستيراد
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
+                [InlineKeyboardButton("📊 إحصائياتي", callback_data="menu_stats")],
+                [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
+                [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
+            ])
         
         await safe_edit_message_text(
             context.bot,
@@ -457,8 +513,22 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
     
     elif action == "main_menu":
         # إعادة توجيه المستخدم إلى القائمة الرئيسية
-        from handlers.common import main_menu_callback
-        return await main_menu_callback(update, context)
+        try:
+            from handlers.common import main_menu_callback
+            return await main_menu_callback(update, context)
+        except ImportError:
+            # إنشاء رسالة بسيطة في حالة فشل الاستيراد
+            await safe_edit_message_text(
+                context.bot,
+                chat_id,
+                query.message.message_id,
+                text="تم العودة إلى القائمة الرئيسية.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
+                    [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")]
+                ])
+            )
+            return MAIN_MENU
     
     # في حالة حدوث خطأ
     user_info = context.user_data.get('edit_user_info', {})
@@ -675,7 +745,8 @@ registration_conv_handler = ConversationHandler(
 # إنشاء محادثة تعديل المعلومات
 edit_info_conv_handler = ConversationHandler(
     entry_points=[
-        CommandHandler("edit_info", start_edit_user_info)
+        CommandHandler("edit_info", start_edit_user_info),
+        CallbackQueryHandler(start_edit_user_info, pattern=r"^edit_my_info$")
     ],
     states={
         EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection)],
