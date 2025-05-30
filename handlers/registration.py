@@ -264,7 +264,9 @@ def get_user_info(db_manager, user_id):
                     return None
     except Exception as e:
         logger.error(f"خطأ في الحصول على معلومات المستخدم {user_id}: {e}")
-        return Nonasync def check_registration_status(update: Update, context: CallbackContext, db_manager=None):
+        return None
+
+async def check_registration_status(update: Update, context: CallbackContext, db_manager=None):
     """
     التحقق من حالة تسجيل المستخدم وتوجيهه لإكمال التسجيل إذا لم يكن مسجلاً
     
