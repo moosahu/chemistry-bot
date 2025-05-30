@@ -194,7 +194,7 @@ def save_user_info(db_manager, user_id, **kwargs):
         else:
             # استخدام SQLAlchemy مباشرة إذا لم تتوفر الدوال المناسبة
             from sqlalchemy import update, insert
-            from db_setup import users_table
+            from database.db_setup import users_table
             
             # التحقق من وجود المستخدم
             with db_manager.engine.connect() as conn:
@@ -249,7 +249,7 @@ def get_user_info(db_manager, user_id):
         else:
             # استخدام SQLAlchemy مباشرة إذا لم تتوفر الدالة المناسبة
             from sqlalchemy import select
-            from db_setup import users_table
+            from database.db_setup import users_table
             
             with db_manager.engine.connect() as conn:
                 result = conn.execute(
@@ -287,8 +287,28 @@ async def check_registration_status(update: Update, context: CallbackContext, db
     # التحقق من حالة تسجيل المستخدم
     user_info = get_user_info(db_manager, user_id)
     
+    # طباعة معلومات التسجيل للتشخيص
+    if user_info:
+        logger.info(f"معلومات المستخدم {user_id}: is_registered = {user_info.get('is_registered')}, نوع: {type(user_info.get('is_registered'))}")
+    
+    # التحقق من حالة التسجيل بشكل أكثر دقة
+    is_registered = False
+    if user_info:
+        # تحويل قيمة is_registered إلى قيمة منطقية بغض النظر عن نوعها
+        reg_value = user_info.get('is_registered')
+        if reg_value is not None:
+            # تحويل القيمة إلى منطقية بشكل صريح
+            if isinstance(reg_value, bool):
+                is_registered = reg_value
+            elif isinstance(reg_value, str):
+                is_registered = reg_value.lower() in ('true', 't', 'yes', 'y', '1')
+            elif isinstance(reg_value, int):
+                is_registered = reg_value > 0
+            else:
+                is_registered = bool(reg_value)
+    
     # إذا لم يكن هناك معلومات للمستخدم أو لم يكمل التسجيل
-    if not user_info or not user_info.get('is_registered', False):
+    if not is_registered:
         logger.info(f"المستخدم {user_id} غير مسجل، توجيهه لإكمال التسجيل")
         await start_registration(update, context)
         return False
@@ -593,11 +613,24 @@ async def start_edit_user_info(update: Update, context: CallbackContext) -> int:
                f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
                "اختر المعلومات التي ترغب في تعديلها:"
     
-    await safe_send_message(
-        context.bot,
-        chat_id,
-        text=info_text,
-        reply_markup=create_edit_info_keyboard()
+    # التحقق مما إذا كان الاستدعاء من زر inline button أو من أمر نصي
+    if update.callback_query:
+        # إذا كان من زر، نستخدم edit_message_text لتعديل الرسالة الحالية
+        query = update.callback_query
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=info_text,
+            reply_markup=create_edit_info_keyboard()
+        )
+    else:
+        # إذا كان من أمر نصي، نستخدم send_message لإرسال رسالة جديدة
+        await safe_send_message(
+            context.bot,
+            chat_id,
+            text=info_text,
+            reply_markup=create_edit_info_keyboard()
     )
     return EDIT_USER_INFO_MENU
 
@@ -664,9 +697,11 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         # استدعاء دالة القائمة الرئيسية من handlers.common
         try:
             from handlers.common import main_menu_callback
-            return await main_menu_callback(update, context)
+            # تعديل هنا: إرجاع END بدلاً من استدعاء main_menu_callback
+            return END
         except ImportError:
-            return MAIN_MENU
+            # تعديل هنا: إرجاع END بدلاً من MAIN_MENU
+            return END
     
     # في حالة حدوث خطأ
     user_info = context.user_data.get('edit_user_info', {})
