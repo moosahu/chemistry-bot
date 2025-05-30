@@ -125,7 +125,11 @@ def register_admin_handlers(application: Application):
     المعلمات:
         application (Application): تطبيق البوت
     """
-    # تسجيل أمر تصدير بيانات المستخدمين
-    application.add_handler(CommandHandler("export_users", export_users_command))
-    
-    logger.info("تم تسجيل معالجات الأوامر الإدارية بنجاح")
+    try:
+        # تسجيل أمر تصدير بيانات المستخدمين
+        export_handler = CommandHandler("export_users", export_users_command)
+        application.add_handler(export_handler)
+        
+        logger.info("تم تسجيل معالجات الأوامر الإدارية بنجاح")
+    except Exception as e:
+        logger.error(f"خطأ أثناء تسجيل معالجات الأوامر الإدارية: {e}")
