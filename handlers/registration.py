@@ -593,11 +593,24 @@ async def start_edit_user_info(update: Update, context: CallbackContext) -> int:
                f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
                "اختر المعلومات التي ترغب في تعديلها:"
     
-    await safe_send_message(
-        context.bot,
-        chat_id,
-        text=info_text,
-        reply_markup=create_edit_info_keyboard()
+    # التحقق مما إذا كان الاستدعاء من زر inline button أو من أمر نصي
+    if update.callback_query:
+        # إذا كان من زر، نستخدم edit_message_text لتعديل الرسالة الحالية
+        query = update.callback_query
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=info_text,
+            reply_markup=create_edit_info_keyboard()
+        )
+    else:
+        # إذا كان من أمر نصي، نستخدم send_message لإرسال رسالة جديدة
+        await safe_send_message(
+            context.bot,
+            chat_id,
+            text=info_text,
+            reply_markup=create_edit_info_keyboard()
     )
     return EDIT_USER_INFO_MENU
 
