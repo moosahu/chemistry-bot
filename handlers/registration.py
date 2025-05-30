@@ -632,6 +632,69 @@ async def handle_verification_code_input(update: Update, context: CallbackContex
     )
     return REGISTRATION_GRADE
 
+# معالجة اختيار الصف الدراسي
+async def handle_grade_selection(update: Update, context: CallbackContext) -> int:
+    """معالجة اختيار الصف الدراسي من المستخدم"""
+    query = update.callback_query
+    user = query.from_user
+    chat_id = query.message.chat_id
+    
+    try:
+        # استخراج الصف الدراسي من callback_data
+        grade_data = query.data
+        
+        if grade_data.startswith("grade_secondary_"):
+            grade_number = grade_data.split("_")[-1]
+            grade = f"ثانوي {grade_number}"
+        elif grade_data == "grade_university":
+            grade = "طالب جامعي"
+        elif grade_data == "grade_teacher":
+            grade = "معلم"
+        elif grade_data == "grade_other":
+            grade = "أخرى"
+        else:
+            # إذا لم يتم التعرف على الصف، نطلب من المستخدم الاختيار مرة أخرى
+            await query.answer("خيار غير صالح. يرجى اختيار صف دراسي من القائمة.")
+            return REGISTRATION_GRADE
+        
+        # حفظ الصف الدراسي في بيانات المستخدم المؤقتة
+        if 'registration_data' not in context.user_data:
+            context.user_data['registration_data'] = {}
+        
+        context.user_data['registration_data']['grade'] = grade
+        
+        # عرض ملخص المعلومات للتأكيد
+        registration_data = context.user_data['registration_data']
+        summary_text = "مراجعة معلومات التسجيل:\n\n" \
+                      f"الاسم: {registration_data.get('full_name')}\n" \
+                      f"البريد الإلكتروني: {registration_data.get('email')}\n" \
+                      f"رقم الجوال: {registration_data.get('phone')}\n" \
+                      f"الصف الدراسي: {grade}\n\n" \
+                      "هل المعلومات صحيحة؟ يمكنك تأكيد المعلومات أو تعديلها."
+        
+        # إنشاء لوحة مفاتيح للتأكيد أو التعديل
+        keyboard = create_confirmation_keyboard()
+        
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=summary_text,
+            reply_markup=keyboard
+        )
+        
+        return REGISTRATION_CONFIRM
+    except Exception as e:
+        logger.error(f"خطأ في معالجة اختيار الصف الدراسي: {e}")
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="حدث خطأ في اختيار الصف الدراسي. يرجى المحاولة مرة أخرى:",
+            reply_markup=create_grade_keyboard()
+        )
+        return REGISTRATION_GRADE
+
 # معالجة إعادة إرسال كود التحقق
 async def handle_resend_code(update: Update, context: CallbackContext) -> int:
     """معالجة طلب إعادة إرسال كود التحقق"""
