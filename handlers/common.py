@@ -55,11 +55,35 @@ async def start_command(update: Update, context: CallbackContext) -> int:
         is_registered = await check_registration_status(update, context, DB_MANAGER)
         if not is_registered:
             logger.info(f"User {user.id} needs to complete registration first.")
-            return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
+            # توجيه المستخدم لإكمال التسجيل أولاً وإنهاء تنفيذ الدالة هنا
+            # لمنع عرض القائمة الرئيسية قبل إكمال التسجيل
+            return REGISTRATION_NAME
     except ImportError as e:
         logger.error(f"Error importing registration module: {e}")
         is_registered = True  # افتراض أن المستخدم مسجل في حالة عدم وجود وحدة التسجيل
 
+    # التحقق من حالة التسجيل مرة أخرى باستخدام DB_MANAGER مباشرة
+    # للتأكد من أن المستخدم مسجل فعلياً قبل عرض القائمة الرئيسية
+    db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
+    if db_manager:
+        try:
+            # محاولة الحصول على معلومات المستخدم من قاعدة البيانات
+            user_info = None
+            if hasattr(db_manager, 'get_user_info'):
+                user_info = db_manager.get_user_info(user.id)
+            
+            # التحقق من وجود معلومات المستخدم وأنه مسجل
+            if not user_info or not user_info.get('is_registered', False):
+                logger.info(f"User {user.id} not registered according to DB_MANAGER. Redirecting to registration.")
+                try:
+                    from .registration import start_registration
+                    await start_registration(update, context)
+                    return REGISTRATION_NAME
+                except ImportError as e:
+                    logger.error(f"Error importing start_registration: {e}")
+        except Exception as e:
+            logger.error(f"Error checking registration status with DB_MANAGER: {e}")
+    
     if DB_MANAGER:
         DB_MANAGER.register_or_update_user(
             user_id=user.id,
