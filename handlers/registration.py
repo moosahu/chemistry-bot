@@ -507,7 +507,7 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # إرسال كود التحقق (محاكاة لرسالة SMS)
+        # إرسال رسالة إعلامية للمستخدم (بدون عرض الكود)
         if wait_message:
             # تحديث رسالة الانتظار بدلاً من إرسال رسالة جديدة
             await safe_edit_message_text(
@@ -515,7 +515,6 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
                 chat_id,
                 wait_message.message_id,
                 text=f"✅ تم إرسال كود التحقق إلى رقم الجوال {phone}.\n\n"
-                     f"📱 <b>الكود هو: {verification_code}</b>\n\n"
                      "🔢 يرجى إدخال كود التحقق المكون من 6 أرقام:",
                 reply_markup=reply_markup,
                 parse_mode="HTML"
@@ -526,7 +525,6 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
                 context.bot,
                 chat_id,
                 text=f"✅ تم إرسال كود التحقق إلى رقم الجوال {phone}.\n\n"
-                     f"📱 <b>الكود هو: {verification_code}</b>\n\n"
                      "🔢 يرجى إدخال كود التحقق المكون من 6 أرقام:",
                 reply_markup=reply_markup,
                 parse_mode="HTML"
@@ -754,13 +752,12 @@ async def handle_resend_code(update: Update, context: CallbackContext) -> int:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # إرسال كود التحقق الجديد
+        # إرسال رسالة إعلامية للمستخدم (بدون عرض الكود)
         await safe_edit_message_text(
             context.bot,
             chat_id,
             message_id,
             text=f"✅ تم إعادة إرسال كود التحقق إلى رقم الجوال {phone}.\n\n"
-                 f"📱 <b>الكود الجديد هو: {verification_code}</b>\n\n"
                  "🔢 يرجى إدخال كود التحقق المكون من 6 أرقام:",
             reply_markup=reply_markup,
             parse_mode="HTML"
