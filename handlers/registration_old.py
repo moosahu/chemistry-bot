@@ -194,7 +194,7 @@ def save_user_info(db_manager, user_id, **kwargs):
         else:
             # استخدام SQLAlchemy مباشرة إذا لم تتوفر الدوال المناسبة
             from sqlalchemy import update, insert
-            from database.db_setup import users_table
+            from db_setup import users_table
             
             # التحقق من وجود المستخدم
             with db_manager.engine.connect() as conn:
@@ -249,7 +249,7 @@ def get_user_info(db_manager, user_id):
         else:
             # استخدام SQLAlchemy مباشرة إذا لم تتوفر الدالة المناسبة
             from sqlalchemy import select
-            from database.db_setup import users_table
+            from db_setup import users_table
             
             with db_manager.engine.connect() as conn:
                 result = conn.execute(
