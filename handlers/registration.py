@@ -664,9 +664,11 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         # استدعاء دالة القائمة الرئيسية من handlers.common
         try:
             from handlers.common import main_menu_callback
-            return await main_menu_callback(update, context)
+            # تعديل هنا: إرجاع END بدلاً من استدعاء main_menu_callback
+            return END
         except ImportError:
-            return MAIN_MENU
+            # تعديل هنا: إرجاع END بدلاً من MAIN_MENU
+            return END
     
     # في حالة حدوث خطأ
     user_info = context.user_data.get('edit_user_info', {})
