@@ -930,8 +930,22 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         return EDIT_USER_GRADE
     elif field == "main":
         # العودة إلى القائمة الرئيسية
-        from handlers.common import main_menu_callback
-        return await main_menu_callback(update, context)
+        try:
+            # إظهار القائمة الرئيسية
+            from handlers.common import main_menu_callback
+            await main_menu_callback(update, context)
+            # إنهاء محادثة تعديل المعلومات بشكل صريح
+            logger.info(f"المستخدم {user.id} عاد للقائمة الرئيسية من تعديل المعلومات")
+            return MAIN_MENU
+        except Exception as e:
+            logger.error(f"خطأ عند العودة للقائمة الرئيسية: {e}")
+            await safe_edit_message_text(
+                context.bot,
+                chat_id,
+                query.message.message_id,
+                text="جاري العودة للقائمة الرئيسية..."
+            )
+            return ConversationHandler.END
     else:
         # إذا لم يتم التعرف على الحقل، نعود إلى قائمة تعديل المعلومات
         return await start_edit_user_info(update, context)
