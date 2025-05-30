@@ -359,6 +359,11 @@ async def check_registration_status(update: Update, context: CallbackContext, db
         logger.info(f"المستخدم {user_id} غير مسجل، توجيهه لإكمال التسجيل")
         await start_registration(update, context)
         return False
+    else:
+        # إذا كان المستخدم مسجلاً، عرض القائمة الرئيسية مباشرة
+        logger.info(f"المستخدم {user_id} مسجل بالفعل، عرض القائمة الرئيسية")
+        from handlers.common import main_menu_callback
+        await main_menu_callback(update, context)
     
     return True
 
@@ -786,7 +791,7 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         # العودة إلى القائمة الرئيسية
         from handlers.common import main_menu_callback
         await main_menu_callback(update, context)
-        return MAIN_MENU
+        return ConversationHandler.END
     else:
         # إذا لم يتم التعرف على نوع التعديل، نعود إلى قائمة تعديل المعلومات
         user_info = context.user_data.get('registration_data', {})
