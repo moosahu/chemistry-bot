@@ -266,6 +266,7 @@ def get_user_info(db_manager, user_id):
         logger.error(f"خطأ في الحصول على معلومات المستخدم {user_id}: {e}")
         return None
 
+# التحقق من حالة تسجيل المستخدم
 async def check_registration_status(update: Update, context: CallbackContext, db_manager=None):
     """
     التحقق من حالة تسجيل المستخدم وتوجيهه لإكمال التسجيل إذا لم يكن مسجلاً
@@ -281,52 +282,19 @@ async def check_registration_status(update: Update, context: CallbackContext, db
         db_manager = context.bot_data.get("DB_MANAGER")
         if not db_manager:
             logger.error(f"لا يمكن الوصول إلى DB_MANAGER في check_registration_status للمستخدم {user_id}")
-            # تغيير هنا: لا نفترض أن المستخدم مسجل في حالة عدم وجود مدير قاعدة بيانات
-            # بدلاً من ذلك، نطلب منه التسجيل
-            await start_registration(update, context)
-            return False
+            return True  # نفترض أن المستخدم مسجل في حالة عدم وجود مدير قاعدة بيانات
     
     # التحقق من حالة تسجيل المستخدم
     user_info = get_user_info(db_manager, user_id)
     
     # طباعة معلومات التسجيل للتشخيص
-    logger.info(f"التحقق من حالة تسجيل المستخدم {user_id}")
-    
-    # التحقق من وجود المعلومات الأساسية
-    has_basic_info = False
     if user_info:
         logger.info(f"معلومات المستخدم {user_id}: is_registered = {user_info.get('is_registered')}, نوع: {type(user_info.get('is_registered'))}")
-        
-        # التحقق من أن جميع المعلومات الأساسية موجودة وليست None أو 'None'
-        has_full_name = user_info.get('full_name') not in [None, 'None', '']
-        has_email = user_info.get('email') not in [None, 'None', '']
-        has_phone = user_info.get('phone') not in [None, 'None', '']
-        has_grade = user_info.get('grade') not in [None, 'None', '']
-        
-        has_basic_info = all([has_full_name, has_email, has_phone, has_grade])
-        
-        logger.info(f"المستخدم {user_id} لديه معلومات أساسية: {has_basic_info}")
-        logger.info(f"تفاصيل: الاسم: {has_full_name}, البريد: {has_email}, الجوال: {has_phone}, الصف: {has_grade}")
-        
-        # إذا كان لديه معلومات أساسية ولكن is_registered ليست True، نقوم بتحديثها
-        if has_basic_info and not user_info.get('is_registered'):
-            logger.info(f"تحديث حالة التسجيل للمستخدم {user_id} لأن لديه معلومات أساسية")
-            save_user_info(db_manager, user_id, is_registered=True)
-            # إعادة استرجاع المعلومات بعد التحديث
-            user_info = get_user_info(db_manager, user_id)
-    else:
-        logger.info(f"لم يتم العثور على معلومات للمستخدم {user_id}")
     
     # التحقق من حالة التسجيل بشكل أكثر دقة
     is_registered = False
-    
-    # تغيير هنا: نتحقق أولاً من وجود المعلومات الأساسية
-    if has_basic_info:
-        # إذا كانت جميع المعلومات الأساسية موجودة، نعتبر المستخدم مسجلاً
-        is_registered = True
-        logger.info(f"اعتبار المستخدم {user_id} مسجلاً لأن لديه جميع المعلومات الأساسية")
-    elif user_info:
-        # إذا كانت المعلومات الأساسية غير مكتملة، نتحقق من قيمة is_registered
+    if user_info:
+        # تحويل قيمة is_registered إلى قيمة منطقية بغض النظر عن نوعها
         reg_value = user_info.get('is_registered')
         if reg_value is not None:
             # تحويل القيمة إلى منطقية بشكل صريح
@@ -339,8 +307,6 @@ async def check_registration_status(update: Update, context: CallbackContext, db
             else:
                 is_registered = bool(reg_value)
     
-    logger.info(f"نتيجة التحقق من تسجيل المستخدم {user_id}: {is_registered}")
-    
     # إذا لم يكن هناك معلومات للمستخدم أو لم يكمل التسجيل
     if not is_registered:
         logger.info(f"المستخدم {user_id} غير مسجل، توجيهه لإكمال التسجيل")
@@ -349,6 +315,7 @@ async def check_registration_status(update: Update, context: CallbackContext, db
     
     return True
 
+# بدء عملية التسجيل
 async def start_registration(update: Update, context: CallbackContext) -> int:
     """بدء عملية التسجيل الإلزامي للمستخدم"""
     user = update.effective_user
@@ -623,15 +590,8 @@ async def start_edit_user_info(update: Update, context: CallbackContext) -> int:
     user = update.effective_user
     chat_id = update.effective_chat.id
     
-    # التحقق من حالة التسجيل أولاً
-    db_manager = context.bot_data.get("DB_MANAGER")
-    is_registered = await check_registration_status(update, context, db_manager)
-    
-    # إذا لم يكن المستخدم مسجلاً، سيتم توجيهه للتسجيل في check_registration_status
-    if not is_registered:
-        return REGISTRATION_NAME
-    
     # الحصول على معلومات المستخدم من قاعدة البيانات
+    db_manager = context.bot_data.get("DB_MANAGER")
     user_info = get_user_info(db_manager, user.id)
     
     if not user_info:
@@ -642,24 +602,15 @@ async def start_edit_user_info(update: Update, context: CallbackContext) -> int:
             'grade': 'غير محدد'
         }
     
-    # معالجة القيم None واستبدالها بـ "غير محدد"
-    processed_user_info = {
-        'full_name': user_info.get('full_name') if user_info.get('full_name') not in [None, 'None'] else 'غير محدد',
-        'email': user_info.get('email') if user_info.get('email') not in [None, 'None'] else 'غير محدد',
-        'phone': user_info.get('phone') if user_info.get('phone') not in [None, 'None'] else 'غير محدد',
-        'grade': user_info.get('grade') if user_info.get('grade') not in [None, 'None'] else 'غير محدد',
-        'is_registered': user_info.get('is_registered', False)
-    }
-    
-    # حفظ معلومات المستخدم المعالجة في user_data
-    context.user_data['edit_user_info'] = processed_user_info
+    # حفظ معلومات المستخدم الحالية في user_data
+    context.user_data['edit_user_info'] = user_info
     
     # عرض معلومات المستخدم الحالية
     info_text = "معلوماتك الحالية:\n\n" \
-               f"الاسم: {processed_user_info['full_name']}\n" \
-               f"البريد الإلكتروني: {processed_user_info['email']}\n" \
-               f"رقم الجوال: {processed_user_info['phone']}\n" \
-               f"الصف الدراسي: {processed_user_info['grade']}\n\n" \
+               f"الاسم: {user_info.get('full_name', 'غير محدد')}\n" \
+               f"البريد الإلكتروني: {user_info.get('email', 'غير محدد')}\n" \
+               f"رقم الجوال: {user_info.get('phone', 'غير محدد')}\n" \
+               f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
                "اختر المعلومات التي ترغب في تعديلها:"
     
     # التحقق مما إذا كان الاستدعاء من زر inline button أو من أمر نصي
