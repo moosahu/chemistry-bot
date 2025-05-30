@@ -347,7 +347,9 @@ async def check_registration_status(update: Update, context: CallbackContext, db
         await start_registration(update, context)
         return False
     
-    return Truenc def start_registration(update: Update, context: CallbackContext) -> int:
+    return True
+
+async def start_registration(update: Update, context: CallbackContext) -> int:
     """بدء عملية التسجيل الإلزامي للمستخدم"""
     user = update.effective_user
     chat_id = update.effective_chat.id
