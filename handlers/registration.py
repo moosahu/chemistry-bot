@@ -18,85 +18,72 @@ from telegram.ext import (
     filters
 )
 
-# استيراد الثوابت والمكونات اللازمة
+# تعريف الدوال المساعدة مباشرة في بداية الملف (خارج أي كتلة try/except)
+async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
+    """إرسال رسالة بشكل آمن مع معالجة الأخطاء"""
+    try:
+        return await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        logging.error(f"خطأ في إرسال الرسالة: {e}")
+        try:
+            # محاولة إرسال رسالة بدون تنسيق خاص
+            return await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=reply_markup
+            )
+        except Exception as e2:
+            logging.error(f"فشل محاولة إرسال الرسالة البديلة: {e2}")
+            return None
+
+async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
+    """تعديل نص الرسالة بشكل آمن مع معالجة الأخطاء"""
+    try:
+        return await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        logging.error(f"خطأ في تعديل نص الرسالة: {e}")
+        try:
+            # محاولة تعديل الرسالة بدون تنسيق خاص
+            return await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=reply_markup
+            )
+        except Exception as e2:
+            logging.error(f"فشل محاولة تعديل نص الرسالة البديلة: {e2}")
+            return None
+
+# إعداد التسجيل
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# تعريف ثوابت الحالات
 try:
     from config import (
-        logger,
         MAIN_MENU,
         REGISTRATION_NAME, REGISTRATION_EMAIL, REGISTRATION_GRADE, REGISTRATION_CONFIRM,
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_GRADE,
         END
     )
-    
-    # تعريف الدوال المساعدة مباشرة داخل الملف لتجنب مشاكل الاستيراد
-    async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
-        """إرسال رسالة بشكل آمن مع معالجة الأخطاء"""
-        try:
-            return await bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-        except Exception as e:
-            logger.error(f"خطأ في إرسال الرسالة: {e}")
-            try:
-                # محاولة إرسال رسالة بدون تنسيق خاص
-                return await bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    reply_markup=reply_markup
-                )
-            except Exception as e2:
-                logger.error(f"فشل محاولة إرسال الرسالة البديلة: {e2}")
-                return None
-
-    async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
-        """تعديل نص الرسالة بشكل آمن مع معالجة الأخطاء"""
-        try:
-            return await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-        except Exception as e:
-            logger.error(f"خطأ في تعديل نص الرسالة: {e}")
-            try:
-                # محاولة تعديل الرسالة بدون تنسيق خاص
-                return await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=text,
-                    reply_markup=reply_markup
-                )
-            except Exception as e2:
-                logger.error(f"فشل محاولة تعديل نص الرسالة البديلة: {e2}")
-                return None
-                
 except ImportError as e:
-    # استخدام قيم افتراضية في حالة فشل الاستيراد
-    logging.basicConfig(level=logging.DEBUG)
-    logger = logging.getLogger(__name__)
-    logger.error(f"خطأ في استيراد الوحدات في registration.py: {e}. استخدام قيم افتراضية.")
-    
+    logger.error(f"خطأ في استيراد الثوابت من config.py: {e}. استخدام قيم افتراضية.")
     # تعريف ثوابت افتراضية
     MAIN_MENU = 0
     REGISTRATION_NAME, REGISTRATION_EMAIL, REGISTRATION_GRADE, REGISTRATION_CONFIRM = range(20, 24)
     EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_GRADE = range(24, 28)
     END = -1
-    
-    # دوال مساعدة افتراضية
-    async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
-        logger.error("استدعاء دالة safe_send_message الافتراضية!")
-        try: await bot.send_message(chat_id=chat_id, text="خطأ: وظيفة البوت غير متاحة.")
-        except: pass
-    
-    async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
-        logger.error("استدعاء دالة safe_edit_message_text الافتراضية!")
-        try: await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="خطأ: وظيفة البوت غير متاحة.", reply_markup=reply_markup, parse_mode=parse_mode)
-        except: pass
 
 # التحقق من صحة البريد الإلكتروني
 def is_valid_email(email):
@@ -157,6 +144,18 @@ def create_edit_info_keyboard():
         [InlineKeyboardButton("✏️ تعديل البريد الإلكتروني", callback_data="edit_email")],
         [InlineKeyboardButton("✏️ تعديل الصف الدراسي", callback_data="edit_grade")],
         [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# إنشاء لوحة مفاتيح القائمة الرئيسية
+def create_main_menu_keyboard(user_id, db_manager=None):
+    """إنشاء لوحة مفاتيح القائمة الرئيسية"""
+    keyboard = [
+        [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
+        [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
+        [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
+        [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
+        [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -360,18 +359,8 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
         # إظهار رسالة نجاح التسجيل
         success_text = f"تم التسجيل بنجاح! 🎉\n\nمرحباً بك {registration_data.get('full_name')} في بوت الاختبارات.\n\nيمكنك الآن استخدام جميع ميزات البوت."
         
-        # إعادة توجيه المستخدم إلى القائمة الرئيسية
-        try:
-            from handlers.common import create_main_menu_keyboard
-            keyboard = create_main_menu_keyboard(user.id, db_manager)
-        except ImportError:
-            # إنشاء لوحة مفاتيح بسيطة في حالة فشل الاستيراد
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
-                [InlineKeyboardButton("📊 إحصائياتي", callback_data="menu_stats")],
-                [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
-                [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
-            ])
+        # إنشاء لوحة مفاتيح القائمة الرئيسية
+        keyboard = create_main_menu_keyboard(user.id, db_manager)
         
         await safe_edit_message_text(
             context.bot,
@@ -513,22 +502,17 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
     
     elif action == "main_menu":
         # إعادة توجيه المستخدم إلى القائمة الرئيسية
-        try:
-            from handlers.common import main_menu_callback
-            return await main_menu_callback(update, context)
-        except ImportError:
-            # إنشاء رسالة بسيطة في حالة فشل الاستيراد
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="تم العودة إلى القائمة الرئيسية.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
-                    [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")]
-                ])
-            )
-            return MAIN_MENU
+        menu_text = "القائمة الرئيسية:"
+        keyboard = create_main_menu_keyboard(user.id)
+        
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=menu_text,
+            reply_markup=keyboard
+        )
+        return MAIN_MENU
     
     # في حالة حدوث خطأ
     user_info = context.user_data.get('edit_user_info', {})
