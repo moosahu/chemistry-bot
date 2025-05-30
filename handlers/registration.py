@@ -583,8 +583,7 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
             email=registration_data.get('email'),
             phone=registration_data.get('phone'),
             grade=registration_data.get('grade'),
-            is_registered=True,
-            registration_date=datetime.now()
+            is_registered=True
         )
         
         if not success:
