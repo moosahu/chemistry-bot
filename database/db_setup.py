@@ -50,7 +50,12 @@ users_table = Table(
     Column("first_seen_timestamp", TIMESTAMP(timezone=True), server_default=func.now()),
     Column("last_active_timestamp", TIMESTAMP(timezone=True), nullable=True), # Added based on DBeaver screenshot
     Column("last_interaction_date", TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now()),
-    Column("is_admin", Boolean, default=False, nullable=False) # Added based on DBeaver screenshot
+    Column("is_admin", Boolean, default=False, nullable=False), # Added based on DBeaver screenshot
+    Column("email", Text, nullable=True), # Added for registration
+    Column("phone", Text, nullable=True), # Added for registration
+    Column("grade", Text, nullable=True), # Added for registration
+    Column("full_name", Text, nullable=True), # Added for registration
+    Column("is_registered", Boolean, default=False, nullable=True) # Added for registration
 )
 
 # Quiz Session Data Table (as per user's original psycopg2 version)
