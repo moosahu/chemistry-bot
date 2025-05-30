@@ -480,28 +480,78 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
     # حفظ رقم الجوال في بيانات المستخدم المؤقتة
     context.user_data['registration_data']['phone'] = phone
     
-    # توليد كود تحقق وتخزينه مع وقت انتهاء الصلاحية (10 دقائق)
-    verification_code = generate_verification_code()
-    expiry_time = datetime.now() + timedelta(minutes=10)
-    
-    # تخزين بيانات التحقق في بيانات المستخدم المؤقتة
-    context.user_data['verification_data'] = {
-        'code': verification_code,
-        'expiry_time': expiry_time,
-        'attempts': 0,
-        'phone': phone
-    }
-    
-    # إرسال كود التحقق (محاكاة لرسالة SMS)
-    await safe_send_message(
+    # إرسال رسالة انتظار للمستخدم
+    wait_message = await safe_send_message(
         context.bot,
         chat_id,
-        text=f"تم إرسال كود التحقق إلى رقم الجوال {phone}.\n\n"
-             f"(محاكاة: الكود هو {verification_code})\n\n"
-             "يرجى إدخال كود التحقق المكون من 6 أرقام:"
+        text="جاري إعداد كود التحقق... ⏳"
     )
     
-    return REGISTRATION_VERIFY_PHONE
+    try:
+        # توليد كود تحقق وتخزينه مع وقت انتهاء الصلاحية (10 دقائق)
+        verification_code = generate_verification_code()
+        expiry_time = datetime.now() + timedelta(minutes=10)
+        
+        # تخزين بيانات التحقق في بيانات المستخدم المؤقتة
+        context.user_data['verification_data'] = {
+            'code': verification_code,
+            'expiry_time': expiry_time,
+            'attempts': 0,
+            'phone': phone,
+            'message_id': wait_message.message_id if wait_message else None
+        }
+        
+        # إنشاء لوحة مفاتيح لإعادة إرسال الكود
+        keyboard = [
+            [InlineKeyboardButton("🔄 إعادة إرسال الكود", callback_data="resend_code")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # إرسال كود التحقق (محاكاة لرسالة SMS)
+        if wait_message:
+            # تحديث رسالة الانتظار بدلاً من إرسال رسالة جديدة
+            await safe_edit_message_text(
+                context.bot,
+                chat_id,
+                wait_message.message_id,
+                text=f"✅ تم إرسال كود التحقق إلى رقم الجوال {phone}.\n\n"
+                     f"📱 <b>الكود هو: {verification_code}</b>\n\n"
+                     "🔢 يرجى إدخال كود التحقق المكون من 6 أرقام:",
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        else:
+            # إرسال رسالة جديدة في حالة فشل رسالة الانتظار
+            await safe_send_message(
+                context.bot,
+                chat_id,
+                text=f"✅ تم إرسال كود التحقق إلى رقم الجوال {phone}.\n\n"
+                     f"📱 <b>الكود هو: {verification_code}</b>\n\n"
+                     "🔢 يرجى إدخال كود التحقق المكون من 6 أرقام:",
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        
+        logger.info(f"تم إرسال كود التحقق {verification_code} للمستخدم {user.id}")
+        return REGISTRATION_VERIFY_PHONE
+        
+    except Exception as e:
+        logger.error(f"خطأ في إرسال كود التحقق للمستخدم {user.id}: {e}")
+        # في حالة حدوث خطأ، نرسل رسالة خطأ ونعود لطلب رقم الجوال
+        if wait_message:
+            await safe_edit_message_text(
+                context.bot,
+                chat_id,
+                wait_message.message_id,
+                text="⚠️ حدث خطأ في إرسال كود التحقق. يرجى المحاولة مرة أخرى."
+            )
+        else:
+            await safe_send_message(
+                context.bot,
+                chat_id,
+                text="⚠️ حدث خطأ في إرسال كود التحقق. يرجى المحاولة مرة أخرى."
+            )
+        return REGISTRATION_PHONE
 
 # معالجة إدخال كود التحقق
 async def handle_verification_code_input(update: Update, context: CallbackContext) -> int:
@@ -512,22 +562,37 @@ async def handle_verification_code_input(update: Update, context: CallbackContex
     
     # التحقق من وجود بيانات التحقق
     if 'verification_data' not in context.user_data:
+        logger.warning(f"لا توجد بيانات تحقق للمستخدم {user.id}")
+        keyboard = [
+            [InlineKeyboardButton("🔄 إعادة المحاولة", callback_data="retry_phone")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await safe_send_message(
             context.bot,
             chat_id,
-            text="حدث خطأ في عملية التحقق. يرجى إدخال رقم الجوال مرة أخرى:"
+            text="⚠️ حدث خطأ في عملية التحقق. يرجى إعادة المحاولة.",
+            reply_markup=reply_markup
         )
         return REGISTRATION_PHONE
     
     # زيادة عدد المحاولات
     context.user_data['verification_data']['attempts'] += 1
+    attempts = context.user_data['verification_data']['attempts']
     
     # التحقق من عدد المحاولات (الحد الأقصى 3 محاولات)
-    if context.user_data['verification_data']['attempts'] > 3:
+    if attempts > 3:
+        logger.warning(f"المستخدم {user.id} تجاوز الحد الأقصى من المحاولات")
+        keyboard = [
+            [InlineKeyboardButton("🔄 إعادة المحاولة", callback_data="retry_phone")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await safe_send_message(
             context.bot,
             chat_id,
-            text="تجاوزت الحد الأقصى من المحاولات. يرجى إدخال رقم الجوال مرة أخرى:"
+            text="⚠️ تجاوزت الحد الأقصى من المحاولات. يرجى إعادة المحاولة.",
+            reply_markup=reply_markup
         )
         # إعادة تعيين بيانات التحقق
         del context.user_data['verification_data']
@@ -535,29 +600,142 @@ async def handle_verification_code_input(update: Update, context: CallbackContex
     
     # التحقق من صحة الكود
     if not is_verification_code_valid(context, user.id, code):
-        remaining_attempts = 3 - context.user_data['verification_data']['attempts']
+        remaining_attempts = 3 - attempts
+        
+        # إنشاء لوحة مفاتيح لإعادة إرسال الكود
+        keyboard = [
+            [InlineKeyboardButton("🔄 إعادة إرسال الكود", callback_data="resend_code")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await safe_send_message(
             context.bot,
             chat_id,
-            text=f"كود التحقق غير صحيح أو انتهت صلاحيته. يرجى المحاولة مرة أخرى.\n"
-                 f"المحاولات المتبقية: {remaining_attempts}"
+            text=f"❌ كود التحقق غير صحيح أو انتهت صلاحيته.\n"
+                 f"⚠️ المحاولات المتبقية: {remaining_attempts}\n\n"
+                 f"🔢 يرجى إدخال الكود الصحيح أو إعادة إرسال كود جديد:",
+            reply_markup=reply_markup
         )
         return REGISTRATION_VERIFY_PHONE
     
     # تم التحقق بنجاح، الانتقال إلى الخطوة التالية
+    logger.info(f"تم التحقق من رقم الجوال للمستخدم {user.id} بنجاح")
+    
     # طلب الصف الدراسي
     keyboard = create_grade_keyboard()
     await safe_send_message(
         context.bot, 
         chat_id, 
-        text="تم التحقق من رقم الجوال بنجاح! ✅\n\nالخطوة التالية: اختر الصف الدراسي:",
+        text="✅ تم التحقق من رقم الجوال بنجاح!\n\n"
+             "الخطوة التالية: اختر الصف الدراسي:",
         reply_markup=keyboard
     )
     return REGISTRATION_GRADE
 
-# معالجة اختيار الصف الدراسي
-async def handle_grade_selection(update: Update, context: CallbackContext) -> int:
-    """معالجة اختيار الصف الدراسي من المستخدم"""
+# معالجة إعادة إرسال كود التحقق
+async def handle_resend_code(update: Update, context: CallbackContext) -> int:
+    """معالجة طلب إعادة إرسال كود التحقق"""
+    query = update.callback_query
+    user = query.from_user
+    chat_id = query.message.chat_id
+    message_id = query.message.message_id
+    
+    # التحقق من وجود بيانات التحقق
+    if 'verification_data' not in context.user_data:
+        logger.warning(f"لا توجد بيانات تحقق للمستخدم {user.id} عند طلب إعادة إرسال الكود")
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            message_id,
+            text="⚠️ حدث خطأ في عملية التحقق. يرجى إدخال رقم الجوال مرة أخرى:"
+        )
+        return REGISTRATION_PHONE
+    
+    # الحصول على رقم الجوال من بيانات التحقق
+    phone = context.user_data['verification_data'].get('phone')
+    if not phone:
+        logger.warning(f"لا يوجد رقم جوال في بيانات التحقق للمستخدم {user.id}")
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            message_id,
+            text="⚠️ حدث خطأ في عملية التحقق. يرجى إدخال رقم الجوال مرة أخرى:"
+        )
+        return REGISTRATION_PHONE
+    
+    # إرسال رسالة انتظار
+    await safe_edit_message_text(
+        context.bot,
+        chat_id,
+        message_id,
+        text="جاري إعادة إرسال كود التحقق... ⏳"
+    )
+    
+    try:
+        # توليد كود تحقق جديد وتحديث وقت انتهاء الصلاحية
+        verification_code = generate_verification_code()
+        expiry_time = datetime.now() + timedelta(minutes=10)
+        
+        # تحديث بيانات التحقق في بيانات المستخدم المؤقتة
+        context.user_data['verification_data'] = {
+            'code': verification_code,
+            'expiry_time': expiry_time,
+            'attempts': 0,  # إعادة تعيين عدد المحاولات
+            'phone': phone,
+            'message_id': message_id
+        }
+        
+        # إنشاء لوحة مفاتيح لإعادة إرسال الكود
+        keyboard = [
+            [InlineKeyboardButton("🔄 إعادة إرسال الكود", callback_data="resend_code")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # إرسال كود التحقق الجديد
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            message_id,
+            text=f"✅ تم إعادة إرسال كود التحقق إلى رقم الجوال {phone}.\n\n"
+                 f"📱 <b>الكود الجديد هو: {verification_code}</b>\n\n"
+                 "🔢 يرجى إدخال كود التحقق المكون من 6 أرقام:",
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+        
+        logger.info(f"تم إعادة إرسال كود التحقق {verification_code} للمستخدم {user.id}")
+        return REGISTRATION_VERIFY_PHONE
+        
+    except Exception as e:
+        logger.error(f"خطأ في إعادة إرسال كود التحقق للمستخدم {user.id}: {e}")
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            message_id,
+            text="⚠️ حدث خطأ في إعادة إرسال كود التحقق. يرجى المحاولة مرة أخرى."
+        )
+        return REGISTRATION_PHONE
+
+# معالجة إعادة المحاولة لإدخال رقم الجوال
+async def handle_retry_phone(update: Update, context: CallbackContext) -> int:
+    """معالجة طلب إعادة المحاولة لإدخال رقم الجوال"""
+    query = update.callback_query
+    user = query.from_user
+    chat_id = query.message.chat_id
+    
+    # تنظيف بيانات التحقق المؤقتة
+    if 'verification_data' in context.user_data:
+        del context.user_data['verification_data']
+    
+    # طلب رقم الجوال مرة أخرى
+    await safe_edit_message_text(
+        context.bot,
+        chat_id,
+        query.message.message_id,
+        text="يرجى إدخال رقم جوالك مرة أخرى (مثال: 05xxxxxxxx أو +966xxxxxxxxx):"
+    )
+    
+    return REGISTRATION_PHONE
     query = update.callback_query
     user = query.from_user
     chat_id = query.message.chat_id
@@ -1166,8 +1344,14 @@ registration_conv_handler = ConversationHandler(
     states={
         REGISTRATION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name_input)],
         REGISTRATION_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_input)],
-        REGISTRATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_input)],
-        REGISTRATION_VERIFY_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_verification_code_input)],
+        REGISTRATION_PHONE: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_input),
+            CallbackQueryHandler(handle_retry_phone, pattern=r'^retry_phone$')
+        ],
+        REGISTRATION_VERIFY_PHONE: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_verification_code_input),
+            CallbackQueryHandler(handle_resend_code, pattern=r'^resend_code$')
+        ],
         REGISTRATION_GRADE: [CallbackQueryHandler(handle_grade_selection, pattern=r'^grade_')],
         REGISTRATION_CONFIRM: [
             CallbackQueryHandler(handle_registration_confirmation, pattern=r'^confirm_registration$'),
