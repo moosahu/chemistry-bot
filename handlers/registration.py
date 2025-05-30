@@ -287,8 +287,28 @@ async def check_registration_status(update: Update, context: CallbackContext, db
     # التحقق من حالة تسجيل المستخدم
     user_info = get_user_info(db_manager, user_id)
     
+    # طباعة معلومات التسجيل للتشخيص
+    if user_info:
+        logger.info(f"معلومات المستخدم {user_id}: is_registered = {user_info.get('is_registered')}, نوع: {type(user_info.get('is_registered'))}")
+    
+    # التحقق من حالة التسجيل بشكل أكثر دقة
+    is_registered = False
+    if user_info:
+        # تحويل قيمة is_registered إلى قيمة منطقية بغض النظر عن نوعها
+        reg_value = user_info.get('is_registered')
+        if reg_value is not None:
+            # تحويل القيمة إلى منطقية بشكل صريح
+            if isinstance(reg_value, bool):
+                is_registered = reg_value
+            elif isinstance(reg_value, str):
+                is_registered = reg_value.lower() in ('true', 't', 'yes', 'y', '1')
+            elif isinstance(reg_value, int):
+                is_registered = reg_value > 0
+            else:
+                is_registered = bool(reg_value)
+    
     # إذا لم يكن هناك معلومات للمستخدم أو لم يكمل التسجيل
-    if not user_info or not user_info.get('is_registered', False):
+    if not is_registered:
         logger.info(f"المستخدم {user_id} غير مسجل، توجيهه لإكمال التسجيل")
         await start_registration(update, context)
         return False
