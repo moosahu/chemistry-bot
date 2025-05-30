@@ -82,6 +82,8 @@ try:
             BROADCAST_MESSAGE_TEXT, 
             BROADCAST_CONFIRM 
         )
+        # إضافة استيراد أدوات تصدير بيانات المستخدمين
+        from handlers.admin_tools.admin_commands import register_admin_handlers
         from database.manager_definition import DatabaseManager 
         logger.info("Successfully imported new admin tools (edit/broadcast) and DatabaseManager class.")
         new_admin_tools_loaded = True # Set flag based on successful import
@@ -328,6 +330,14 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"))
         application.add_handler(CallbackQueryHandler(admin_back_to_start_callback, pattern=r"^admin_back_to_start$"))
         application.add_handler(CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$"))
+        
+        # تسجيل معالجات أدوات تصدير بيانات المستخدمين
+        try:
+            register_admin_handlers(application)
+            logger.info("User data export admin handlers registered successfully.")
+        except Exception as export_exc:
+            logger.error(f"Error registering user data export admin handlers: {export_exc}. Export feature will not be available.")
+        
         logger.info("New admin tools (edit/broadcast) ConversationHandlers and CallbackQueryHandlers added.")
     else:
         logger.warning("New admin tools (edit/broadcast) were not loaded at import, skipping their ConversationHandlers.")
