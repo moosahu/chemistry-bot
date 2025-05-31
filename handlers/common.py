@@ -20,20 +20,21 @@ except ImportError as e:
 
 # تعريف ثوابت حالات التسجيل
 REGISTRATION_NAME = 20
-    async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
-        logger.error("Placeholder safe_send_message called!")
-        try: await bot.send_message(chat_id=chat_id, text="Error: Bot function unavailable.")
-        except: pass
-    async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
-        logger.error("Placeholder safe_edit_message_text called with new signature!")
-        # This placeholder now matches the likely signature that caused the error
-        try: await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="Error: Bot function unavailable.", reply_markup=reply_markup, parse_mode=parse_mode)
-        except: pass
-    # Dummy DB_MANAGER
-    class DummyDBManager:
-        def register_or_update_user(*args, **kwargs): logger.warning("Dummy DB_MANAGER.register_or_update_user called"); return True
-        def is_user_admin(*args, **kwargs): logger.warning("Dummy DB_MANAGER.is_user_admin called"); return False
-    DB_MANAGER = DummyDBManager()
+
+async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
+    logger.error("Placeholder safe_send_message called!")
+    try: await bot.send_message(chat_id=chat_id, text="Error: Bot function unavailable.")
+    except: pass
+async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=None, parse_mode=None):
+    logger.error("Placeholder safe_edit_message_text called with new signature!")
+    # This placeholder now matches the likely signature that caused the error
+    try: await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="Error: Bot function unavailable.", reply_markup=reply_markup, parse_mode=parse_mode)
+    except: pass
+# Dummy DB_MANAGER
+class DummyDBManager:
+    def register_or_update_user(*args, **kwargs): logger.warning("Dummy DB_MANAGER.register_or_update_user called"); return True
+    def is_user_admin(*args, **kwargs): logger.warning("Dummy DB_MANAGER.is_user_admin called"); return False
+DB_MANAGER = DummyDBManager()
 
 def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard."""
