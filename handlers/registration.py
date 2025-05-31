@@ -1129,6 +1129,9 @@ registration_handler = ConversationHandler(
     }
 )
 
+# إنشاء alias للتوافق مع الكود القديم
+registration_conv_handler = registration_handler
+
 # معالج أمر تعديل المعلومات
 edit_info_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(handle_edit_info_request, pattern=r'^edit_my_info$')],
