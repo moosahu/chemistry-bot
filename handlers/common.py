@@ -96,6 +96,14 @@ async def start_command(update: Update, context: CallbackContext) -> int:
             logger.error(f"Error checking registration status with DB_MANAGER: {e}")
             is_registered = False  # في حالة حدوث خطأ، نفترض أن المستخدم غير مسجل
     
+    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً (أكثر دقة وتحديثاً)
+    is_registered_in_context = context.user_data.get('is_registered', False)
+    
+    # إذا كان المستخدم مسجلاً في context.user_data، نعتبره مسجلاً بغض النظر عن نتيجة التحقق من قاعدة البيانات
+    if is_registered_in_context:
+        is_registered = True
+        logger.info(f"User {user.id} is marked as registered in context.user_data")
+    
     # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
     if not is_registered:
         logger.info(f"User {user.id} not registered. Redirecting to registration.")
@@ -159,29 +167,37 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     user = update.effective_user
     state_to_return = MAIN_MENU 
     
-    # التحقق من حالة تسجيل المستخدم قبل السماح بالوصول إلى أي ميزة
-    is_registered = False
-    db_manager = context.bot_data.get("DB_MANAGER")
+    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً (أكثر دقة وتحديثاً)
+    is_registered = context.user_data.get('is_registered', False)
     
-    if db_manager and hasattr(db_manager, 'get_user_info'):
-        try:
-            user_info = db_manager.get_user_info(user.id)
-            if user_info:
-                # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
-                full_name = user_info.get('full_name')
-                email = user_info.get('email')
-                phone = user_info.get('phone')
-                grade = user_info.get('grade')
-                
-                has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
-                has_email = email not in [None, 'None', '']
-                has_phone = phone not in [None, 'None', '']
-                has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
-                
-                is_registered = all([has_full_name, has_email, has_phone, has_grade])
-                logger.info(f"User {user.id} registration status in main_menu_callback: {is_registered}")
-        except Exception as e:
-            logger.error(f"Error checking registration status in main_menu_callback: {e}")
+    # إذا لم تكن حالة التسجيل موجودة في context.user_data، نتحقق من قاعدة البيانات
+    if not is_registered:
+        db_manager = context.bot_data.get("DB_MANAGER")
+        
+        if db_manager and hasattr(db_manager, 'get_user_info'):
+            try:
+                user_info = db_manager.get_user_info(user.id)
+                if user_info:
+                    # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
+                    full_name = user_info.get('full_name')
+                    email = user_info.get('email')
+                    phone = user_info.get('phone')
+                    grade = user_info.get('grade')
+                    
+                    has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
+                    has_email = email not in [None, 'None', '']
+                    has_phone = phone not in [None, 'None', '']
+                    has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
+                    
+                    is_registered = all([has_full_name, has_email, has_phone, has_grade])
+                    
+                    # تخزين حالة التسجيل في context.user_data للاستخدام المستقبلي
+                    if is_registered:
+                        context.user_data['is_registered'] = True
+                    
+                    logger.info(f"User {user.id} registration status in main_menu_callback: {is_registered}")
+            except Exception as e:
+                logger.error(f"Error checking registration status in main_menu_callback: {e}")
     
     # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
     if not is_registered and query:

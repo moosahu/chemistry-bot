@@ -613,6 +613,9 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
         )
         
         if success:
+            # تحديث حالة التسجيل في context.user_data لضمان عدم إعادة طلب التسجيل
+            context.user_data['is_registered'] = True
+            
             # إرسال رسالة نجاح التسجيل
             await query.answer("تم التسجيل بنجاح!")
             await safe_edit_message_text(
