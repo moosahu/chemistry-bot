@@ -151,7 +151,13 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
             logger.warning("لا توجد بيانات مستخدمين مسجلين لتصديرها")
             return None
         
-        # معالجة الحقول الزمنية لإزالة معلومات المنطقة الزمنية
+        # تحويل القيم المنطقية إلى نصوص عربية (نعم/لا)
+        boolean_columns = ["مسجل", "مدير"]
+        for col in boolean_columns:
+            if col in df.columns:
+                df[col] = df[col].map({True: "نعم", False: "لا"})
+        
+        # معالجة الحقول الزمنية وتحويلها إلى تنسيق نصي واضح
         datetime_columns = [
             "تاريخ أول ظهور", 
             "تاريخ آخر نشاط", 
@@ -160,8 +166,9 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
         
         for col in datetime_columns:
             if col in df.columns:
-                # تحويل الحقول الزمنية إلى قيم بدون منطقة زمنية
+                # تحويل الحقول الزمنية إلى قيم بدون منطقة زمنية ثم إلى نص بتنسيق واضح
                 df[col] = pd.to_datetime(df[col]).dt.tz_localize(None)
+                df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
         
         # إنشاء اسم الملف مع الطابع الزمني ومعرف المدير
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
