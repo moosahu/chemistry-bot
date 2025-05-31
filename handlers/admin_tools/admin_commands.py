@@ -99,16 +99,52 @@ async def check_admin_rights(user_id, context):
             logger.error("لم يتم العثور على مدير قاعدة البيانات في سياق البوت")
             return False
         
-        # استعلام للتحقق من صلاحيات المدير
-        query = "SELECT is_admin FROM users WHERE user_id = :user_id"
-        result = await db_manager.fetch_one(query, {'user_id': user_id})
-        
-        if result and result.get('is_admin'):
-            logger.info(f"تم التحقق من صلاحيات المدير للمستخدم {user_id}: صلاحيات مدير مؤكدة")
-            return True
-        
-        logger.warning(f"تم التحقق من صلاحيات المدير للمستخدم {user_id}: ليس مديراً")
-        return False
+        # استخدام محرك SQLAlchemy مباشرة للاستعلام
+        try:
+            # محاولة الوصول إلى محرك قاعدة البيانات
+            engine = getattr(db_manager, 'engine', None)
+            
+            if not engine:
+                logger.error("لم يتم العثور على محرك قاعدة البيانات في مدير قاعدة البيانات")
+                return False
+            
+            # استعلام للتحقق من صلاحيات المدير
+            query = text("SELECT is_admin FROM users WHERE user_id = :user_id")
+            
+            # تنفيذ الاستعلام
+            with engine.connect() as connection:
+                result = connection.execute(query, {"user_id": user_id}).fetchone()
+                
+                if result and result[0]:
+                    logger.info(f"تم التحقق من صلاحيات المدير للمستخدم {user_id}: صلاحيات مدير مؤكدة")
+                    return True
+                
+                logger.warning(f"تم التحقق من صلاحيات المدير للمستخدم {user_id}: ليس مديراً")
+                return False
+                
+        except AttributeError:
+            # إذا لم يكن هناك محرك، نحاول استخدام طريقة execute مباشرة إذا كانت متوفرة
+            try:
+                query = "SELECT is_admin FROM users WHERE user_id = :user_id"
+                params = {"user_id": user_id}
+                
+                # محاولة استخدام طريقة execute إذا كانت متوفرة
+                if hasattr(db_manager, 'execute'):
+                    result = await db_manager.execute(query, params)
+                    
+                    # التحقق من النتيجة (قد تختلف طريقة الوصول حسب التنفيذ)
+                    if result and hasattr(result, 'fetchone'):
+                        row = result.fetchone()
+                        if row and row[0]:
+                            logger.info(f"تم التحقق من صلاحيات المدير للمستخدم {user_id}: صلاحيات مدير مؤكدة")
+                            return True
+                
+                logger.warning(f"تم التحقق من صلاحيات المدير للمستخدم {user_id}: ليس مديراً")
+                return False
+            
+            except Exception as exec_error:
+                logger.error(f"خطأ أثناء تنفيذ استعلام التحقق من صلاحيات المدير: {exec_error}")
+                return False
     
     except Exception as e:
         logger.error(f"خطأ أثناء التحقق من صلاحيات المدير للمستخدم {user_id}: {e}")
