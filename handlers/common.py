@@ -17,6 +17,9 @@ except ImportError as e:
     logger.error(f"Error importing modules in handlers.common: {e}. Using placeholders.")
     # Define placeholders for constants and functions
     MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END = 0, 1, 7, 8, -1 # Match config.py, added END
+
+# تعريف ثوابت حالات التسجيل
+REGISTRATION_NAME = 20
     async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
         logger.error("Placeholder safe_send_message called!")
         try: await bot.send_message(chat_id=chat_id, text="Error: Bot function unavailable.")
