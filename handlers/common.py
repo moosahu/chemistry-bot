@@ -49,22 +49,13 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     chat_id = update.effective_chat.id
     logger.info(f"User {user.id} ({user.username or user.first_name}) started the bot in chat {chat_id}.")
 
-    # التحقق من حالة تسجيل المستخدم
-    try:
-        from .registration import check_registration_status
-        is_registered = await check_registration_status(update, context, DB_MANAGER)
-        if not is_registered:
-            logger.info(f"User {user.id} needs to complete registration first.")
-            # توجيه المستخدم لإكمال التسجيل أولاً وإنهاء تنفيذ الدالة هنا
-            # لمنع عرض القائمة الرئيسية قبل إكمال التسجيل
-            return REGISTRATION_NAME
-    except ImportError as e:
-        logger.error(f"Error importing registration module: {e}")
-        is_registered = True  # افتراض أن المستخدم مسجل في حالة عدم وجود وحدة التسجيل
-
-    # التحقق من حالة التسجيل مرة أخرى باستخدام DB_MANAGER مباشرة
-    # للتأكد من أن المستخدم مسجل فعلياً قبل عرض القائمة الرئيسية
+    # التحقق من حالة تسجيل المستخدم - تعديل منطق التحقق لجعله أكثر صرامة
+    is_registered = False
+    
+    # الحصول على مدير قاعدة البيانات من context
     db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
+    
+    # التحقق من حالة التسجيل باستخدام DB_MANAGER
     if db_manager:
         try:
             # محاولة الحصول على معلومات المستخدم من قاعدة البيانات
@@ -73,25 +64,74 @@ async def start_command(update: Update, context: CallbackContext) -> int:
                 user_info = db_manager.get_user_info(user.id)
             
             # التحقق من وجود معلومات المستخدم وأنه مسجل
-            if not user_info or not user_info.get('is_registered', False):
-                logger.info(f"User {user.id} not registered according to DB_MANAGER. Redirecting to registration.")
-                try:
-                    from .registration import start_registration
-                    await start_registration(update, context)
-                    return REGISTRATION_NAME
-                except ImportError as e:
-                    logger.error(f"Error importing start_registration: {e}")
+            if user_info:
+                # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
+                full_name = user_info.get('full_name')
+                email = user_info.get('email')
+                phone = user_info.get('phone')
+                grade = user_info.get('grade')
+                
+                # التحقق من الاسم (موجود وطوله أكبر من 3 أحرف)
+                has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
+                
+                # التحقق من البريد الإلكتروني (موجود)
+                has_email = email not in [None, 'None', '']
+                
+                # التحقق من رقم الجوال (موجود)
+                has_phone = phone not in [None, 'None', '']
+                
+                # التحقق من الصف الدراسي (موجود وليس فارغاً)
+                has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
+                
+                # اعتبار المستخدم مسجلاً فقط إذا كانت جميع المعلومات الأساسية موجودة
+                is_registered = all([has_full_name, has_email, has_phone, has_grade])
+                
+                logger.info(f"User {user.id} registration status: {is_registered}")
+                logger.info(f"Details: Name: {has_full_name}, Email: {has_email}, Phone: {has_phone}, Grade: {has_grade}")
         except Exception as e:
             logger.error(f"Error checking registration status with DB_MANAGER: {e}")
+            is_registered = False  # في حالة حدوث خطأ، نفترض أن المستخدم غير مسجل
     
-    if DB_MANAGER:
-        DB_MANAGER.register_or_update_user(
-            user_id=user.id,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            username=user.username,
-            language_code=user.language_code
-        )
+    # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
+    if not is_registered:
+        logger.info(f"User {user.id} not registered. Redirecting to registration.")
+        try:
+            # محاولة استيراد وحدة التسجيل بطرق مختلفة
+            try:
+                from .registration import start_registration
+            except ImportError:
+                try:
+                    from handlers.registration import start_registration
+                except ImportError:
+                    # محاولة استيراد مطلق
+                    from registration import start_registration
+            
+            # توجيه المستخدم لإكمال التسجيل
+            await start_registration(update, context)
+            return REGISTRATION_NAME
+        except ImportError as e:
+            logger.error(f"Error importing start_registration: {e}")
+            # حتى في حالة فشل الاستيراد، نرسل رسالة للمستخدم تطلب منه التسجيل
+            await safe_send_message(
+                context.bot,
+                chat_id,
+                text="⚠️ يجب عليك التسجيل أولاً لاستخدام البوت. يرجى استخدام الأمر /register للتسجيل."
+            )
+            return END
+    
+    # تحديث معلومات المستخدم الأساسية في قاعدة البيانات
+    if db_manager:
+        try:
+            if hasattr(db_manager, 'register_or_update_user'):
+                db_manager.register_or_update_user(
+                    user_id=user.id,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    username=user.username,
+                    language_code=user.language_code
+                )
+        except Exception as e:
+            logger.error(f"Error updating user basic info: {e}")
     else:
         logger.warning("DB_MANAGER not available, skipping user registration.")
 
@@ -114,6 +154,57 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     user = update.effective_user
     state_to_return = MAIN_MENU 
+    
+    # التحقق من حالة تسجيل المستخدم قبل السماح بالوصول إلى أي ميزة
+    is_registered = False
+    db_manager = context.bot_data.get("DB_MANAGER")
+    
+    if db_manager and hasattr(db_manager, 'get_user_info'):
+        try:
+            user_info = db_manager.get_user_info(user.id)
+            if user_info:
+                # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
+                full_name = user_info.get('full_name')
+                email = user_info.get('email')
+                phone = user_info.get('phone')
+                grade = user_info.get('grade')
+                
+                has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
+                has_email = email not in [None, 'None', '']
+                has_phone = phone not in [None, 'None', '']
+                has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
+                
+                is_registered = all([has_full_name, has_email, has_phone, has_grade])
+                logger.info(f"User {user.id} registration status in main_menu_callback: {is_registered}")
+        except Exception as e:
+            logger.error(f"Error checking registration status in main_menu_callback: {e}")
+    
+    # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
+    if not is_registered and query:
+        logger.info(f"User {user.id} not registered. Redirecting to registration from main_menu_callback.")
+        try:
+            # محاولة استيراد وحدة التسجيل بطرق مختلفة
+            try:
+                from .registration import start_registration
+            except ImportError:
+                try:
+                    from handlers.registration import start_registration
+                except ImportError:
+                    from registration import start_registration
+            
+            # توجيه المستخدم لإكمال التسجيل
+            await query.answer("يجب عليك التسجيل أولاً")
+            await start_registration(update, context)
+            return REGISTRATION_NAME
+        except ImportError as e:
+            logger.error(f"Error importing start_registration in main_menu_callback: {e}")
+            await query.answer("يجب عليك التسجيل أولاً")
+            await safe_send_message(
+                context.bot,
+                query.message.chat_id,
+                text="⚠️ يجب عليك التسجيل أولاً لاستخدام البوت. يرجى استخدام الأمر /start للتسجيل."
+            )
+            return END
 
     if query:
         await query.answer()
