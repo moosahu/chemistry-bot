@@ -310,3 +310,6 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     
     logger.debug(f"[DEBUG] main_menu_callback attempting to return state: {state_to_return}")
     return state_to_return
+
+# إضافة alias للتوافق مع الكود القديم
+start_handler = start_command
