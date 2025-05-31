@@ -87,4 +87,4 @@ API_TIMEOUT = 15 # Timeout in seconds for API requests
 LEADERBOARD_LIMIT = 10
 
 logger.info("Configuration loaded.")
-
+REGISTRATION_NAME = "نموذج التسجيل"
