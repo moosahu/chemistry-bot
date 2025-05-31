@@ -1131,13 +1131,13 @@ registration_handler = ConversationHandler(
 
 # معالج أمر تعديل المعلومات
 edit_info_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(handle_edit_info_request, pattern="^edit_my_info$")],
+    entry_points=[CallbackQueryHandler(handle_edit_info_request, pattern=r'^edit_my_info$')],
     states={
-        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern="^(edit_|main_menu)")],
+        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern=r'^(edit_\w+|main_menu)$')],
         EDIT_USER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_name_input)],
         EDIT_USER_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_email_input)],
         EDIT_USER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_phone_input)],
-        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade_selection, pattern="^grade_")]
+        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade_selection, pattern=r'^grade_')]
     },
     fallbacks=[
         CommandHandler("cancel", cancel_registration),
@@ -1158,10 +1158,10 @@ def setup_registration_handlers(application: Application):
     # تسجيل أمر /start بشكل منفصل
     application.add_handler(CommandHandler("start", start_command))
     
-    # تسجيل محادثة التسجيل
-    application.add_handler(registration_handler)
-    
-    # تسجيل محادثة تعديل المعلومات بشكل منفصل ومستقل
+    # تسجيل محادثة تعديل المعلومات أولاً (مهم جداً للأولوية)
     application.add_handler(edit_info_handler)
+    
+    # تسجيل محادثة التسجيل بعد محادثة تعديل المعلومات
+    application.add_handler(registration_handler)
     
     logger.info("تم إعداد معالجات التسجيل وتعديل المعلومات")
