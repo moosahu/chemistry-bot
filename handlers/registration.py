@@ -20,6 +20,9 @@ from telegram.ext import (
     Application
 )
 
+# استيراد وحدة إشعارات التسجيل
+from handlers.admin_tools.registration_notification import notify_admin_on_registration
+
 # تعريف الدوال المساعدة مباشرة في بداية الملف (خارج أي كتلة try/except)
 async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
     """إرسال رسالة بشكل آمن مع معالجة الأخطاء"""
@@ -416,27 +419,28 @@ async def check_registration_status(update: Update, context: CallbackContext, db
         logger.info(f"المستخدم {user_id} غير مسجل، توجيهه لإكمال التسجيل")
         await start_registration(update, context)
         return False
-    
-    return True
+    else:
+        logger.info(f"المستخدم {user_id} مسجل بالفعل")
+        return True
 
+# بدء عملية التسجيل
 async def start_registration(update: Update, context: CallbackContext) -> int:
-    """بدء عملية التسجيل الإلزامي للمستخدم"""
+    """بدء محادثة التسجيل الإلزامي"""
     user = update.effective_user
     chat_id = update.effective_chat.id
     
-    welcome_text = f"مرحباً {user.first_name}! 👋\n\n" \
-                  "لاستخدام بوت الاختبارات، يرجى إكمال التسجيل أولاً.\n" \
-                  "الخطوة الأولى: أدخل اسمك الكامل:"
+    # إرسال رسالة ترحيبية وبدء جمع المعلومات
+    await safe_send_message(
+        context.bot,
+        chat_id,
+        text="👋 مرحباً بك في بوت الاختبارات!\n\n"
+             "للاستفادة من جميع ميزات البوت، يرجى إكمال عملية التسجيل أولاً.\n\n"
+             "الخطوة الأولى: أدخل اسمك الكامل:"
+    )
     
-    # حفظ بعض معلومات المستخدم الأساسية في user_data
-    context.user_data['registration_data'] = {
-        'user_id': user.id,
-        'username': user.username,
-        'telegram_first_name': user.first_name,
-        'telegram_last_name': user.last_name
-    }
+    # تهيئة بيانات التسجيل المؤقتة
+    context.user_data['registration_data'] = {}
     
-    await safe_send_message(context.bot, chat_id, text=welcome_text)
     return REGISTRATION_NAME
 
 # معالجة إدخال الاسم
@@ -462,8 +466,7 @@ async def handle_name_input(update: Update, context: CallbackContext) -> int:
     await safe_send_message(
         context.bot,
         chat_id,
-        text=f"شكراً {name}! 👍\n\n"
-             "الخطوة الثانية: أدخل بريدك الإلكتروني:"
+        text="الخطوة الثانية: أدخل بريدك الإلكتروني:"
     )
     return REGISTRATION_EMAIL
 
@@ -613,6 +616,13 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
         )
         
         if success:
+            # إرسال إشعار للمدير عن المستخدم الجديد
+            try:
+                await notify_admin_on_registration(user_id, user_data, context)
+                logger.info(f"تم طلب إرسال إشعار للمدير عن المستخدم الجديد {user_id}")
+            except Exception as e:
+                logger.error(f"خطأ في طلب إرسال إشعار للمدير عن المستخدم الجديد {user_id}: {e}")
+            
             # إرسال رسالة نجاح التسجيل
             await query.answer("تم التسجيل بنجاح!")
             await safe_edit_message_text(
@@ -1056,7 +1066,7 @@ async def handle_edit_grade_selection(update: Update, context: CallbackContext) 
         return EDIT_USER_INFO_MENU
     else:
         # إرسال رسالة فشل التحديث
-        await query.answer("حدث خطأ في التحديث")
+        await query.answer("حدث خطأ في تحديث الصف الدراسي")
         await safe_edit_message_text(
             context.bot,
             chat_id,
@@ -1065,49 +1075,91 @@ async def handle_edit_grade_selection(update: Update, context: CallbackContext) 
         )
         return ConversationHandler.END
 
-# تعريف محادثة التسجيل
-registration_conv_handler = ConversationHandler(
-    entry_points=[
-        CommandHandler("register", start_registration)
-        # أمر start تمت إزالته من هنا وسيتم التعامل معه بشكل منفصل
-    ],
+# معالجة إلغاء التسجيل أو التعديل
+async def cancel_registration(update: Update, context: CallbackContext) -> int:
+    """إلغاء عملية التسجيل أو التعديل"""
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    
+    await safe_send_message(
+        context.bot,
+        chat_id,
+        text="تم إلغاء العملية."
+    )
+    
+    # مسح بيانات التسجيل المؤقتة
+    if 'registration_data' in context.user_data:
+        del context.user_data['registration_data']
+    
+    # العودة إلى القائمة الرئيسية
+    from handlers.common import main_menu_callback
+    await main_menu_callback(update, context)
+    return ConversationHandler.END
+
+# معالجة الرسائل غير المتوقعة
+async def unexpected_message(update: Update, context: CallbackContext) -> None:
+    """معالجة الرسائل غير المتوقعة أثناء التسجيل"""
+    chat_id = update.effective_chat.id
+    await safe_send_message(
+        context.bot,
+        chat_id,
+        text="رسالة غير متوقعة. يرجى اتباع التعليمات أو استخدام الأزرار."
+    )
+
+# إنشاء معالج محادثة التسجيل
+registration_handler = ConversationHandler(
+    entry_points=[CommandHandler("start", start_command)],
     states={
         REGISTRATION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name_input)],
         REGISTRATION_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_input)],
         REGISTRATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_input)],
-        REGISTRATION_GRADE: [CallbackQueryHandler(handle_grade_selection, pattern=r'^grade_')],
-        REGISTRATION_CONFIRM: [CallbackQueryHandler(handle_registration_confirmation, pattern=r'^(confirm_registration|edit_\w+)$')]
-    },
-    fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
-    name="registration_conversation",
-    persistent=False
-)
-
-# تعريف محادثة تعديل المعلومات
-edit_info_conv_handler = ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(handle_edit_info_request, pattern=r'^edit_my_info$')
-    ],
-    states={
-        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern=r'^(edit_\w+|main_menu)$')],
+        REGISTRATION_GRADE: [CallbackQueryHandler(handle_grade_selection, pattern="^grade_")],
+        REGISTRATION_CONFIRM: [CallbackQueryHandler(handle_registration_confirmation, pattern="^(confirm_registration|edit_)")],
+        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern="^(edit_|main_menu)")],
         EDIT_USER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_name_input)],
         EDIT_USER_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_email_input)],
         EDIT_USER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_phone_input)],
-        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade_selection, pattern=r'^grade_')]
+        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade_selection, pattern="^grade_")]
     },
-    fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
-    name="edit_info_conversation",
-    persistent=False
+    fallbacks=[
+        CommandHandler("cancel", cancel_registration),
+        MessageHandler(filters.COMMAND, unexpected_message),
+        MessageHandler(filters.TEXT, unexpected_message)
+    ],
+    map_to_parent={
+        # العودة إلى القائمة الرئيسية
+        MAIN_MENU: MAIN_MENU,
+        # إنهاء المحادثة
+        END: END
+    }
 )
 
-# تسجيل الدوال في التطبيق
-def register_handlers(application: Application):
-    """تسجيل معالجات الرسائل والأوامر في التطبيق"""
-    # تسجيل أمر /start بشكل منفصل
-    application.add_handler(CommandHandler("start", start_command))
-    
-    # تسجيل محادثة التسجيل
-    application.add_handler(registration_conv_handler)
-    
-    # تسجيل محادثة تعديل المعلومات
-    application.add_handler(edit_info_conv_handler)
+# معالج أمر تعديل المعلومات
+edit_info_handler = ConversationHandler(
+    entry_points=[CallbackQueryHandler(handle_edit_info_request, pattern="^edit_my_info$")],
+    states={
+        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern="^(edit_|main_menu)")],
+        EDIT_USER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_name_input)],
+        EDIT_USER_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_email_input)],
+        EDIT_USER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_phone_input)],
+        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade_selection, pattern="^grade_")]
+    },
+    fallbacks=[
+        CommandHandler("cancel", cancel_registration),
+        MessageHandler(filters.COMMAND, unexpected_message),
+        MessageHandler(filters.TEXT, unexpected_message)
+    ],
+    map_to_parent={
+        # العودة إلى القائمة الرئيسية
+        MAIN_MENU: MAIN_MENU,
+        # إنهاء المحادثة
+        END: END
+    }
+)
+
+# دالة إعداد المعالجات
+def setup_registration_handlers(application: Application):
+    """إعداد معالجات التسجيل وتعديل المعلومات"""
+    application.add_handler(registration_handler)
+    application.add_handler(edit_info_handler)
+    logger.info("تم إعداد معالجات التسجيل وتعديل المعلومات")
