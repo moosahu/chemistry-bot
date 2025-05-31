@@ -9,7 +9,7 @@
 import os
 import logging
 import pandas as pd
-import psycopg2  # إضافة استيراد مكتبة psycopg2
+import psycopg2
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
@@ -115,7 +115,7 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
         output_dir = os.path.join(script_dir, "exports")
         os.makedirs(output_dir, exist_ok=True)
         
-        # الاستعلام عن بيانات المستخدمين المسجلين فقط
+        # الاستعلام عن بيانات المستخدمين المسجلين فقط - تم تعديله ليتوافق مع هيكل الجدول الفعلي
         query = """
         SELECT 
             user_id as "معرف المستخدم",
@@ -124,13 +124,13 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
             last_name as "الاسم الأخير",
             full_name as "الاسم الكامل",
             email as "البريد الإلكتروني",
-            phone_number as "رقم الجوال",
+            phone as "رقم الجوال",
             grade as "الصف الدراسي",
             is_registered as "مسجل",
             is_admin as "مدير",
             language_code as "رمز اللغة",
-            first_seen_date as "تاريخ أول ظهور",
-            last_active_date as "تاريخ آخر نشاط",
+            first_seen_timestamp as "تاريخ أول ظهور",
+            last_active_timestamp as "تاريخ آخر نشاط",
             last_interaction_date as "تاريخ آخر تفاعل"
         FROM users
         WHERE is_registered = TRUE
