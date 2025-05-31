@@ -3,22 +3,18 @@
 
 """
 أداة تصدير بيانات المستخدمين إلى ملف إكسل - خاصة بالمدير فقط
-هذا الملف يضيف أمر /export_users للبوت ليتمكن المدير من تصدير بيانات المستخدمين إلى ملف إكسل
+هذا الملف يحتوي على دالة export_users_command التي تتيح للمدير تصدير بيانات المستخدمين إلى ملف إكسل
 """
 
 import os
 import logging
+import pandas as pd
+from datetime import datetime
+from sqlalchemy import text
 from telegram import Update
-from telegram.ext import (
-    CallbackContext,
-    CommandHandler,
-    Application
-)
+from telegram.ext import CallbackContext
 
-# استيراد أداة التصدير
-from admin_tools.export_users_to_excel import export_users_to_excel
-
-# تكوين التسجيل
+# إعداد التسجيل
 logger = logging.getLogger(__name__)
 
 async def export_users_command(update: Update, context: CallbackContext):
@@ -48,7 +44,7 @@ async def export_users_command(update: Update, context: CallbackContext):
         )
         
         # تصدير بيانات المستخدمين إلى ملف إكسل
-        excel_path = export_users_to_excel(admin_user_id=user_id)
+        excel_path = await export_users_to_excel(admin_user_id=user_id)
         
         if not excel_path or not os.path.exists(excel_path):
             logger.error(f"فشل تصدير بيانات المستخدمين للمدير {user_id}")
@@ -118,18 +114,99 @@ async def check_admin_rights(user_id, context):
         logger.error(f"خطأ أثناء التحقق من صلاحيات المدير للمستخدم {user_id}: {e}")
         return False
 
-def register_admin_handlers(application: Application):
+async def export_users_to_excel(output_dir=None, admin_user_id=None):
     """
-    تسجيل معالجات الأوامر الإدارية
+    تصدير بيانات المستخدمين المسجلين إلى ملف إكسل
     
     المعلمات:
-        application (Application): تطبيق البوت
+        output_dir (str): مسار المجلد لحفظ ملف الإكسل. إذا كان None، سيتم استخدام المجلد الحالي.
+        admin_user_id (int): معرف المستخدم المدير الذي طلب التصدير. سيتم تضمينه في اسم الملف.
+    
+    العائد:
+        str: المسار الكامل لملف الإكسل المُصدَّر
     """
     try:
-        # تسجيل أمر تصدير بيانات المستخدمين
-        export_handler = CommandHandler("export_users", export_users_command)
-        application.add_handler(export_handler)
+        # إنشاء مجلد للتصدير إذا لم يكن موجوداً
+        if output_dir is None:
+            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
         
-        logger.info("تم تسجيل معالجات الأوامر الإدارية بنجاح")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # الحصول على محرك قاعدة البيانات من مدير قاعدة البيانات
+        from database.manager_definition import DatabaseManager
+        db_manager = DatabaseManager()
+        
+        if not db_manager:
+            logger.error("فشل الاتصال بقاعدة البيانات. تأكد من صحة معلومات الاتصال.")
+            return None
+        
+        # استعلام SQL لاستخراج بيانات المستخدمين المسجلين فقط
+        query = """
+        SELECT 
+            user_id AS "معرف المستخدم",
+            username AS "اسم المستخدم",
+            first_name AS "الاسم الأول",
+            last_name AS "الاسم الأخير",
+            full_name AS "الاسم الكامل",
+            email AS "البريد الإلكتروني",
+            phone AS "رقم الجوال",
+            grade AS "الصف الدراسي",
+            is_registered AS "مسجل",
+            is_admin AS "مدير",
+            language_code AS "رمز اللغة",
+            first_seen_timestamp AS "تاريخ أول ظهور",
+            last_active_timestamp AS "تاريخ آخر نشاط",
+            last_interaction_date AS "تاريخ آخر تفاعل"
+        FROM 
+            users
+        WHERE 
+            is_registered = TRUE
+        ORDER BY 
+            last_interaction_date DESC
+        """
+        
+        # تنفيذ الاستعلام وتحويل النتائج إلى DataFrame
+        result = await db_manager.fetch_all(query)
+        df = pd.DataFrame(result)
+        
+        # معالجة الحقول الزمنية لإزالة معلومات المنطقة الزمنية
+        datetime_columns = [
+            "تاريخ أول ظهور", 
+            "تاريخ آخر نشاط", 
+            "تاريخ آخر تفاعل"
+        ]
+        
+        for col in datetime_columns:
+            if col in df.columns and not df[col].empty:
+                # تحويل الحقول الزمنية إلى قيم بدون منطقة زمنية
+                df[col] = df[col].dt.tz_localize(None)
+        
+        # إنشاء اسم الملف مع الطابع الزمني ومعرف المدير
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        admin_suffix = f"_by_admin_{admin_user_id}" if admin_user_id else ""
+        excel_filename = f"users_data_{timestamp}{admin_suffix}.xlsx"
+        excel_path = os.path.join(output_dir, excel_filename)
+        
+        # تصدير البيانات إلى ملف إكسل
+        logger.info(f"جاري تصدير البيانات إلى ملف إكسل: {excel_path}")
+        
+        # إنشاء كاتب إكسل
+        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+            # كتابة البيانات
+            df.to_excel(writer, sheet_name='بيانات المستخدمين', index=False)
+            
+            # الحصول على ورقة العمل لتنسيقها
+            workbook = writer.book
+            worksheet = writer.sheets['بيانات المستخدمين']
+            
+            # ضبط عرض الأعمدة تلقائياً
+            for i, column in enumerate(df.columns):
+                column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+                worksheet.column_dimensions[chr(65 + i)].width = column_width
+        
+        logger.info(f"تم تصدير بيانات المستخدمين بنجاح إلى: {excel_path}")
+        return excel_path
+    
     except Exception as e:
-        logger.error(f"خطأ أثناء تسجيل معالجات الأوامر الإدارية: {e}")
+        logger.error(f"حدث خطأ أثناء تصدير بيانات المستخدمين: {e}")
+        return None
