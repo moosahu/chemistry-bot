@@ -1108,18 +1108,13 @@ async def unexpected_message(update: Update, context: CallbackContext) -> None:
 
 # إنشاء معالج محادثة التسجيل
 registration_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start_command)],
+    entry_points=[CommandHandler("register", start_registration)],
     states={
         REGISTRATION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name_input)],
         REGISTRATION_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_input)],
         REGISTRATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_input)],
         REGISTRATION_GRADE: [CallbackQueryHandler(handle_grade_selection, pattern="^grade_")],
-        REGISTRATION_CONFIRM: [CallbackQueryHandler(handle_registration_confirmation, pattern="^(confirm_registration|edit_)")],
-        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern="^(edit_|main_menu)")],
-        EDIT_USER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_name_input)],
-        EDIT_USER_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_email_input)],
-        EDIT_USER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_phone_input)],
-        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade_selection, pattern="^grade_")]
+        REGISTRATION_CONFIRM: [CallbackQueryHandler(handle_registration_confirmation, pattern="^(confirm_registration|edit_)")]
     },
     fallbacks=[
         CommandHandler("cancel", cancel_registration),
@@ -1160,6 +1155,13 @@ edit_info_handler = ConversationHandler(
 # دالة إعداد المعالجات
 def setup_registration_handlers(application: Application):
     """إعداد معالجات التسجيل وتعديل المعلومات"""
+    # تسجيل أمر /start بشكل منفصل
+    application.add_handler(CommandHandler("start", start_command))
+    
+    # تسجيل محادثة التسجيل
     application.add_handler(registration_handler)
+    
+    # تسجيل محادثة تعديل المعلومات بشكل منفصل ومستقل
     application.add_handler(edit_info_handler)
+    
     logger.info("تم إعداد معالجات التسجيل وتعديل المعلومات")
