@@ -8,7 +8,6 @@
 
 import logging
 import re
-from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CallbackContext,
@@ -16,8 +15,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
-    filters,
-    Application
+    filters
 )
 
 # تعريف الدوال المساعدة مباشرة في بداية الملف (خارج أي كتلة try/except)
@@ -87,13 +85,13 @@ except ImportError as e:
 REGISTRATION_NAME = 20
 REGISTRATION_EMAIL = 21
 REGISTRATION_PHONE = 22
-REGISTRATION_GRADE = 24
-REGISTRATION_CONFIRM = 25
-EDIT_USER_INFO_MENU = 26
-EDIT_USER_NAME = 27
-EDIT_USER_EMAIL = 28
-EDIT_USER_PHONE = 29
-EDIT_USER_GRADE = 30
+REGISTRATION_GRADE = 23
+REGISTRATION_CONFIRM = 24
+EDIT_USER_INFO_MENU = 25
+EDIT_USER_NAME = 26
+EDIT_USER_EMAIL = 27
+EDIT_USER_PHONE = 28
+EDIT_USER_GRADE = 29
 
 # التحقق من صحة البريد الإلكتروني
 def is_valid_email(email):
@@ -268,62 +266,7 @@ def get_user_info(db_manager, user_id):
         logger.error(f"خطأ في الحصول على معلومات المستخدم {user_id}: {e}")
         return None
 
-# دالة معالجة أمر /start
-async def start_command(update: Update, context: CallbackContext) -> None:
-    """معالجة أمر /start بشكل منفصل عن محادثة التسجيل"""
-    user = update.effective_user
-    user_id = user.id
-    chat_id = update.effective_chat.id
-    
-    # الحصول على مدير قاعدة البيانات
-    db_manager = context.bot_data.get("DB_MANAGER")
-    if not db_manager:
-        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في start_command للمستخدم {user_id}")
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ حدث خطأ في الوصول إلى قاعدة البيانات. يرجى المحاولة مرة أخرى لاحقاً."
-        )
-        return
-    
-    # التحقق من حالة تسجيل المستخدم
-    user_info = get_user_info(db_manager, user_id)
-    
-    # التحقق من وجود المعلومات الأساسية وصحتها
-    has_basic_info = False
-    if user_info:
-        # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
-        full_name = user_info.get('full_name')
-        email = user_info.get('email')
-        phone = user_info.get('phone')
-        grade = user_info.get('grade')
-        
-        # التحقق من الاسم (موجود وطوله أكبر من 3 أحرف)
-        has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
-        
-        # التحقق من البريد الإلكتروني (موجود وصحيح)
-        has_email = email not in [None, 'None', ''] and is_valid_email(str(email).strip())
-        
-        # التحقق من رقم الجوال (موجود وصحيح)
-        has_phone = phone not in [None, 'None', ''] and is_valid_phone(str(phone).strip())
-        
-        # التحقق من الصف الدراسي (موجود وليس فارغاً)
-        has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
-        
-        has_basic_info = all([has_full_name, has_email, has_phone, has_grade])
-        
-        logger.info(f"المستخدم {user_id} لديه معلومات أساسية صحيحة: {has_basic_info}")
-    
-    # إذا كان المستخدم مسجلاً (لديه جميع المعلومات الأساسية)، عرض القائمة الرئيسية
-    if has_basic_info:
-        logger.info(f"المستخدم {user_id} مسجل بالفعل، عرض القائمة الرئيسية")
-        from handlers.common import main_menu_callback
-        await main_menu_callback(update, context)
-    else:
-        # إذا لم يكن المستخدم مسجلاً، بدء عملية التسجيل
-        logger.info(f"المستخدم {user_id} غير مسجل، بدء عملية التسجيل")
-        await start_registration(update, context)
-
+# التحقق من حالة تسجيل المستخدم
 async def check_registration_status(update: Update, context: CallbackContext, db_manager=None):
     """
     التحقق من حالة تسجيل المستخدم وتوجيهه لإكمال التسجيل إذا لم يكن مسجلاً
@@ -339,64 +282,19 @@ async def check_registration_status(update: Update, context: CallbackContext, db
         db_manager = context.bot_data.get("DB_MANAGER")
         if not db_manager:
             logger.error(f"لا يمكن الوصول إلى DB_MANAGER في check_registration_status للمستخدم {user_id}")
-            # تغيير هنا: لا نفترض أن المستخدم مسجل في حالة عدم وجود مدير قاعدة بيانات
-            # بدلاً من ذلك، نطلب منه التسجيل
-            await start_registration(update, context)
-            return False
+            return True  # نفترض أن المستخدم مسجل في حالة عدم وجود مدير قاعدة بيانات
     
     # التحقق من حالة تسجيل المستخدم
     user_info = get_user_info(db_manager, user_id)
     
     # طباعة معلومات التسجيل للتشخيص
-    logger.info(f"التحقق من حالة تسجيل المستخدم {user_id}")
-    
-    # التحقق من وجود المعلومات الأساسية وصحتها
-    has_basic_info = False
     if user_info:
         logger.info(f"معلومات المستخدم {user_id}: is_registered = {user_info.get('is_registered')}, نوع: {type(user_info.get('is_registered'))}")
-        
-        # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
-        full_name = user_info.get('full_name')
-        email = user_info.get('email')
-        phone = user_info.get('phone')
-        grade = user_info.get('grade')
-        
-        # التحقق من الاسم (موجود وطوله أكبر من 3 أحرف)
-        has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
-        
-        # التحقق من البريد الإلكتروني (موجود وصحيح)
-        has_email = email not in [None, 'None', ''] and is_valid_email(str(email).strip())
-        
-        # التحقق من رقم الجوال (موجود وصحيح)
-        has_phone = phone not in [None, 'None', ''] and is_valid_phone(str(phone).strip())
-        
-        # التحقق من الصف الدراسي (موجود وليس فارغاً)
-        has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
-        
-        has_basic_info = all([has_full_name, has_email, has_phone, has_grade])
-        
-        logger.info(f"المستخدم {user_id} لديه معلومات أساسية صحيحة: {has_basic_info}")
-        logger.info(f"تفاصيل: الاسم: {has_full_name} ({full_name}), البريد: {has_email} ({email}), الجوال: {has_phone} ({phone}), الصف: {has_grade} ({grade})")
-        
-        # إذا كان لديه معلومات أساسية ولكن is_registered ليست True، نقوم بتحديثها
-        if has_basic_info and not user_info.get('is_registered'):
-            logger.info(f"تحديث حالة التسجيل للمستخدم {user_id} لأن لديه معلومات أساسية")
-            save_user_info(db_manager, user_id, is_registered=True)
-            # إعادة استرجاع المعلومات بعد التحديث
-            user_info = get_user_info(db_manager, user_id)
-    else:
-        logger.info(f"لم يتم العثور على معلومات للمستخدم {user_id}")
     
     # التحقق من حالة التسجيل بشكل أكثر دقة
     is_registered = False
-    
-    # تغيير هنا: نتحقق أولاً من وجود المعلومات الأساسية
-    if has_basic_info:
-        # إذا كانت جميع المعلومات الأساسية موجودة، نعتبر المستخدم مسجلاً
-        is_registered = True
-        logger.info(f"اعتبار المستخدم {user_id} مسجلاً لأن لديه جميع المعلومات الأساسية")
-    elif user_info:
-        # إذا كانت المعلومات الأساسية غير مكتملة، نتحقق من قيمة is_registered
+    if user_info:
+        # تحويل قيمة is_registered إلى قيمة منطقية بغض النظر عن نوعها
         reg_value = user_info.get('is_registered')
         if reg_value is not None:
             # تحويل القيمة إلى منطقية بشكل صريح
@@ -409,8 +307,6 @@ async def check_registration_status(update: Update, context: CallbackContext, db
             else:
                 is_registered = bool(reg_value)
     
-    logger.info(f"نتيجة التحقق من تسجيل المستخدم {user_id}: {is_registered}")
-    
     # إذا لم يكن هناك معلومات للمستخدم أو لم يكمل التسجيل
     if not is_registered:
         logger.info(f"المستخدم {user_id} غير مسجل، توجيهه لإكمال التسجيل")
@@ -419,6 +315,7 @@ async def check_registration_status(update: Update, context: CallbackContext, db
     
     return True
 
+# بدء عملية التسجيل
 async def start_registration(update: Update, context: CallbackContext) -> int:
     """بدء عملية التسجيل الإلزامي للمستخدم"""
     user = update.effective_user
@@ -448,11 +345,7 @@ async def handle_name_input(update: Update, context: CallbackContext) -> int:
     
     # التحقق من صحة الاسم
     if len(name) < 3:
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ الاسم قصير جداً. يرجى إدخال اسمك الكامل (3 أحرف على الأقل):"
-        )
+        await safe_send_message(context.bot, chat_id, text="الاسم قصير جداً. يرجى إدخال اسمك الكامل:")
         return REGISTRATION_NAME
     
     # حفظ الاسم في بيانات المستخدم المؤقتة
@@ -460,10 +353,9 @@ async def handle_name_input(update: Update, context: CallbackContext) -> int:
     
     # طلب البريد الإلكتروني
     await safe_send_message(
-        context.bot,
-        chat_id,
-        text=f"شكراً {name}! 👍\n\n"
-             "الخطوة الثانية: أدخل بريدك الإلكتروني:"
+        context.bot, 
+        chat_id, 
+        text=f"شكراً {name}!\n\nالخطوة الثانية: أدخل بريدك الإلكتروني:"
     )
     return REGISTRATION_EMAIL
 
@@ -477,9 +369,9 @@ async def handle_email_input(update: Update, context: CallbackContext) -> int:
     # التحقق من صحة البريد الإلكتروني
     if not is_valid_email(email):
         await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ البريد الإلكتروني غير صحيح. يرجى إدخال بريد إلكتروني صالح:"
+            context.bot, 
+            chat_id, 
+            text="البريد الإلكتروني غير صحيح. يرجى إدخال بريد إلكتروني صالح:"
         )
         return REGISTRATION_EMAIL
     
@@ -488,9 +380,9 @@ async def handle_email_input(update: Update, context: CallbackContext) -> int:
     
     # طلب رقم الجوال
     await safe_send_message(
-        context.bot,
-        chat_id,
-        text="الخطوة الثالثة: أدخل رقم جوالك (مثال: 05xxxxxxxx):"
+        context.bot, 
+        chat_id, 
+        text="الخطوة الثالثة: أدخل رقم جوالك (مثال: 05xxxxxxxx أو +966xxxxxxxxx):"
     )
     return REGISTRATION_PHONE
 
@@ -504,26 +396,19 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
     # التحقق من صحة رقم الجوال
     if not is_valid_phone(phone):
         await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ رقم الجوال غير صحيح. يرجى إدخال رقم جوال سعودي صالح (يبدأ بـ 05 أو +966 أو 00966):"
+            context.bot, 
+            chat_id, 
+            text="رقم الجوال غير صحيح. يرجى إدخال رقم جوال صالح (مثال: 05xxxxxxxx أو +966xxxxxxxxx):"
         )
         return REGISTRATION_PHONE
     
     # حفظ رقم الجوال في بيانات المستخدم المؤقتة
     context.user_data['registration_data']['phone'] = phone
     
-    # إرسال رسالة إعلامية
-    await safe_send_message(
-        context.bot,
-        chat_id,
-        text="تم التحقق من رقم الجوال بنجاح! ✅"
-    )
-    
     # طلب اختيار الصف الدراسي
     await safe_send_message(
-        context.bot,
-        chat_id,
+        context.bot, 
+        chat_id, 
         text="الخطوة الرابعة: اختر الصف الدراسي:",
         reply_markup=create_grade_keyboard()
     )
@@ -533,39 +418,163 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
 async def handle_grade_selection(update: Update, context: CallbackContext) -> int:
     """معالجة اختيار الصف الدراسي من المستخدم"""
     query = update.callback_query
-    user = query.from_user
-    chat_id = query.message.chat_id
+    await query.answer()
     
-    # استخراج الصف الدراسي من callback_data
+    user = update.effective_user
+    chat_id = update.effective_chat.id
     grade_data = query.data
     
-    # تحديد نص الصف الدراسي بناءً على callback_data
-    if grade_data == "grade_university":
-        grade_text = "طالب جامعي"
-    elif grade_data == "grade_teacher":
-        grade_text = "معلم"
-    elif grade_data == "grade_other":
-        grade_text = "أخرى"
-    elif grade_data.startswith("grade_secondary_"):
-        grade_num = grade_data.split("_")[-1]
-        grade_text = f"ثانوي {grade_num}"
-    else:
-        grade_text = "غير محدد"
+    # استخراج الصف الدراسي من البيانات
+    if grade_data.startswith("grade_"):
+        grade_type = grade_data.split("_")[1]
+        
+        if grade_type in ["secondary"]:
+            grade_number = grade_data.split("_")[2]
+            grade_text = f"الصف {grade_number} الثانوي"
+        elif grade_type == "university":
+            grade_text = "طالب جامعي"
+        elif grade_type == "teacher":
+            grade_text = "معلم"
+        elif grade_type == "other":
+            grade_text = "أخرى"
+        else:
+            grade_text = "غير محدد"
+        
+        # حفظ الصف الدراسي في بيانات المستخدم المؤقتة
+        context.user_data['registration_data']['grade'] = grade_text
+        
+        # عرض ملخص المعلومات للتأكيد
+        registration_data = context.user_data['registration_data']
+        confirmation_text = "مراجعة معلومات التسجيل:\n\n" \
+                           f"الاسم: {registration_data.get('full_name')}\n" \
+                           f"البريد الإلكتروني: {registration_data.get('email')}\n" \
+                           f"رقم الجوال: {registration_data.get('phone')}\n" \
+                           f"الصف الدراسي: {grade_text}\n\n" \
+                           "هل المعلومات صحيحة؟"
+        
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=confirmation_text,
+            reply_markup=create_confirmation_keyboard()
+        )
+        return REGISTRATION_CONFIRM
     
-    # حفظ الصف الدراسي في بيانات المستخدم المؤقتة
-    context.user_data['registration_data']['grade'] = grade_text
-    
-    # إعداد نص تأكيد المعلومات
-    user_data = context.user_data['registration_data']
-    confirmation_text = "مراجعة المعلومات:\n\n" \
-                        f"الاسم: {user_data.get('full_name')}\n" \
-                        f"البريد الإلكتروني: {user_data.get('email')}\n" \
-                        f"رقم الجوال: {user_data.get('phone')}\n" \
-                        f"الصف الدراسي: {grade_text}\n\n" \
-                        "هل المعلومات صحيحة؟"
-    
-    # إرسال رسالة تأكيد المعلومات
+    # في حالة حدوث خطأ
+    await safe_edit_message_text(
+        context.bot,
+        chat_id,
+        query.message.message_id,
+        text="حدث خطأ في اختيار الصف الدراسي. يرجى المحاولة مرة أخرى:",
+        reply_markup=create_grade_keyboard()
+    )
+    return REGISTRATION_GRADE
+
+# معالجة تأكيد التسجيل
+async def handle_registration_confirmation(update: Update, context: CallbackContext) -> int:
+    """معالجة تأكيد معلومات التسجيل"""
+    query = update.callback_query
     await query.answer()
+    
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    action = query.data
+    
+    if action == "confirm_registration":
+        # حفظ معلومات التسجيل في قاعدة البيانات
+        registration_data = context.user_data['registration_data']
+        db_manager = context.bot_data.get("DB_MANAGER")
+        
+        if db_manager:
+            # تحديث معلومات المستخدم في قاعدة البيانات
+            success = save_user_info(
+                db_manager=db_manager,
+                user_id=user.id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                username=user.username,
+                language_code=user.language_code,
+                full_name=registration_data.get('full_name'),
+                email=registration_data.get('email'),
+                phone=registration_data.get('phone'),
+                grade=registration_data.get('grade'),
+                is_registered=True
+            )
+            
+            if success:
+                logger.info(f"تم تسجيل المستخدم {user.id} بنجاح")
+            else:
+                logger.error(f"فشل تسجيل المستخدم {user.id}")
+        else:
+            logger.error(f"لا يمكن الوصول إلى DB_MANAGER في handle_registration_confirmation للمستخدم {user.id}")
+        
+        # إظهار رسالة نجاح التسجيل
+        success_text = f"تم التسجيل بنجاح! 🎉\n\nمرحباً بك {registration_data.get('full_name')} في بوت الاختبارات.\n\nيمكنك الآن استخدام جميع ميزات البوت."
+        
+        # إنشاء لوحة مفاتيح القائمة الرئيسية
+        keyboard = create_main_menu_keyboard(user.id, db_manager)
+        
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=success_text,
+            reply_markup=keyboard
+        )
+        
+        # تنظيف بيانات التسجيل المؤقتة
+        if 'registration_data' in context.user_data:
+            del context.user_data['registration_data']
+        
+        return MAIN_MENU
+    
+    elif action == "edit_name":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى إدخال اسمك الكامل مرة أخرى:"
+        )
+        return REGISTRATION_NAME
+    
+    elif action == "edit_email":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى إدخال بريدك الإلكتروني مرة أخرى:"
+        )
+        return REGISTRATION_EMAIL
+    
+    elif action == "edit_phone":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى إدخال رقم جوالك مرة أخرى (مثال: 05xxxxxxxx أو +966xxxxxxxxx):"
+        )
+        return REGISTRATION_PHONE
+    
+    elif action == "edit_grade":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى اختيار الصف الدراسي مرة أخرى:",
+            reply_markup=create_grade_keyboard()
+        )
+        return REGISTRATION_GRADE
+    
+    # في حالة حدوث خطأ
+    registration_data = context.user_data.get('registration_data', {})
+    confirmation_text = "مراجعة معلومات التسجيل:\n\n" \
+                       f"الاسم: {registration_data.get('full_name', 'غير محدد')}\n" \
+                       f"البريد الإلكتروني: {registration_data.get('email', 'غير محدد')}\n" \
+                       f"رقم الجوال: {registration_data.get('phone', 'غير محدد')}\n" \
+                       f"الصف الدراسي: {registration_data.get('grade', 'غير محدد')}\n\n" \
+                       "هل المعلومات صحيحة؟"
+    
     await safe_edit_message_text(
         context.bot,
         chat_id,
@@ -575,156 +584,134 @@ async def handle_grade_selection(update: Update, context: CallbackContext) -> in
     )
     return REGISTRATION_CONFIRM
 
-# معالجة تأكيد التسجيل
-async def handle_registration_confirmation(update: Update, context: CallbackContext) -> int:
-    """معالجة تأكيد معلومات التسجيل من المستخدم"""
+# بدء تعديل معلومات المستخدم
+async def start_edit_user_info(update: Update, context: CallbackContext) -> int:
+    """بدء عملية تعديل معلومات المستخدم"""
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    
+    # الحصول على معلومات المستخدم من قاعدة البيانات
+    db_manager = context.bot_data.get("DB_MANAGER")
+    user_info = get_user_info(db_manager, user.id)
+    
+    if not user_info:
+        user_info = {
+            'full_name': 'غير محدد',
+            'email': 'غير محدد',
+            'phone': 'غير محدد',
+            'grade': 'غير محدد'
+        }
+    
+    # حفظ معلومات المستخدم الحالية في user_data
+    context.user_data['edit_user_info'] = user_info
+    
+    # عرض معلومات المستخدم الحالية
+    info_text = "معلوماتك الحالية:\n\n" \
+               f"الاسم: {user_info.get('full_name', 'غير محدد')}\n" \
+               f"البريد الإلكتروني: {user_info.get('email', 'غير محدد')}\n" \
+               f"رقم الجوال: {user_info.get('phone', 'غير محدد')}\n" \
+               f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
+               "اختر المعلومات التي ترغب في تعديلها:"
+    
+    # التحقق مما إذا كان الاستدعاء من زر inline button أو من أمر نصي
+    if update.callback_query:
+        # إذا كان من زر، نستخدم edit_message_text لتعديل الرسالة الحالية
+        query = update.callback_query
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=info_text,
+            reply_markup=create_edit_info_keyboard()
+        )
+    else:
+        # إذا كان من أمر نصي، نستخدم send_message لإرسال رسالة جديدة
+        await safe_send_message(
+            context.bot,
+            chat_id,
+            text=info_text,
+            reply_markup=create_edit_info_keyboard()
+    )
+    return EDIT_USER_INFO_MENU
+
+# معالجة اختيارات تعديل المعلومات
+async def handle_edit_info_selection(update: Update, context: CallbackContext) -> int:
+    """معالجة اختيارات تعديل معلومات المستخدم"""
     query = update.callback_query
-    user = query.from_user
-    chat_id = query.message.chat_id
-    user_id = user.id
+    await query.answer()
     
-    # استخراج نوع التأكيد من callback_data
-    confirmation_type = query.data
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+    action = query.data
     
-    if confirmation_type == "confirm_registration":
-        # الحصول على مدير قاعدة البيانات
-        db_manager = context.bot_data.get("DB_MANAGER")
-        if not db_manager:
-            logger.error(f"لا يمكن الوصول إلى DB_MANAGER في handle_registration_confirmation للمستخدم {user_id}")
-            await query.answer("حدث خطأ في الوصول إلى قاعدة البيانات")
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="⚠️ حدث خطأ في الوصول إلى قاعدة البيانات. يرجى المحاولة مرة أخرى لاحقاً."
-            )
-            return ConversationHandler.END
+    if action == "edit_name":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى إدخال اسمك الكامل الجديد:"
+        )
+        return EDIT_USER_NAME
+    
+    elif action == "edit_email":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى إدخال بريدك الإلكتروني الجديد:"
+        )
+        return EDIT_USER_EMAIL
+    
+    elif action == "edit_phone":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى إدخال رقم جوالك الجديد (مثال: 05xxxxxxxx أو +966xxxxxxxxx):"
+        )
+        return EDIT_USER_PHONE
+    
+    elif action == "edit_grade":
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text="يرجى اختيار الصف الدراسي الجديد:",
+            reply_markup=create_grade_keyboard()
+        )
+        return EDIT_USER_GRADE
+    
+    elif action == "main_menu":
+        # إعادة توجيه المستخدم إلى القائمة الرئيسية
+        menu_text = "القائمة الرئيسية:"
+        keyboard = create_main_menu_keyboard(user.id)
         
-        # حفظ معلومات التسجيل
-        user_data = context.user_data['registration_data']
-        success = save_user_info(
-            db_manager,
-            user_id,
-            full_name=user_data.get('full_name'),
-            email=user_data.get('email'),
-            phone=user_data.get('phone'),
-            grade=user_data.get('grade'),
-            is_registered=True
+        await safe_edit_message_text(
+            context.bot,
+            chat_id,
+            query.message.message_id,
+            text=menu_text,
+            reply_markup=keyboard
         )
         
-        if success:
-            # إرسال رسالة نجاح التسجيل
-            await query.answer("تم التسجيل بنجاح!")
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="✅ تم تسجيلك بنجاح!\n\n"
-                     "يمكنك الآن استخدام جميع ميزات البوت. اختر من القائمة أدناه:"
-            )
-            
-            # عرض القائمة الرئيسية
+        # استدعاء دالة القائمة الرئيسية من handlers.common
+        try:
             from handlers.common import main_menu_callback
-            await main_menu_callback(update, context)
-            return MAIN_MENU
-        else:
-            # إرسال رسالة فشل التسجيل
-            await query.answer("حدث خطأ في التسجيل")
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="⚠️ حدث خطأ في حفظ معلومات التسجيل. يرجى المحاولة مرة أخرى لاحقاً."
-            )
-            return ConversationHandler.END
-    elif confirmation_type.startswith("edit_"):
-        # استخراج نوع التعديل من callback_data
-        edit_type = confirmation_type.replace("edit_", "")
-        
-        # توجيه المستخدم لتعديل المعلومات المطلوبة
-        if edit_type == "name":
-            await query.answer("تعديل الاسم")
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="أدخل اسمك الكامل الجديد:"
-            )
-            return REGISTRATION_NAME
-        elif edit_type == "email":
-            await query.answer("تعديل البريد الإلكتروني")
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="أدخل بريدك الإلكتروني الجديد:"
-            )
-            return REGISTRATION_EMAIL
-        elif edit_type == "phone":
-            await query.answer("تعديل رقم الجوال")
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="أدخل رقم جوالك الجديد (مثال: 05xxxxxxxx):"
-            )
-            return REGISTRATION_PHONE
-        elif edit_type == "grade":
-            await query.answer("تعديل الصف الدراسي")
-            await safe_edit_message_text(
-                context.bot,
-                chat_id,
-                query.message.message_id,
-                text="اختر الصف الدراسي الجديد:",
-                reply_markup=create_grade_keyboard()
-            )
-            return REGISTRATION_GRADE
+            # تعديل هنا: إرجاع END بدلاً من استدعاء main_menu_callback
+            return END
+        except ImportError:
+            # تعديل هنا: إرجاع END بدلاً من MAIN_MENU
+            return END
     
-    # في حالة عدم التعرف على نوع التأكيد
-    await query.answer()
-    return REGISTRATION_CONFIRM
-
-# معالجة طلب تعديل المعلومات
-async def handle_edit_info_request(update: Update, context: CallbackContext) -> int:
-    """معالجة طلب تعديل معلومات المستخدم"""
-    query = update.callback_query
-    user = query.from_user
-    chat_id = query.message.chat_id
-    user_id = user.id
-    
-    # الحصول على مدير قاعدة البيانات
-    db_manager = context.bot_data.get("DB_MANAGER")
-    if not db_manager:
-        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في handle_edit_info_request للمستخدم {user_id}")
-        await query.answer("حدث خطأ في الوصول إلى قاعدة البيانات")
-        return ConversationHandler.END
-    
-    # الحصول على معلومات المستخدم
-    user_info = get_user_info(db_manager, user_id)
-    if not user_info:
-        logger.error(f"لم يتم العثور على معلومات للمستخدم {user_id} في handle_edit_info_request")
-        await query.answer("لم يتم العثور على معلوماتك")
-        return ConversationHandler.END
-    
-    # حفظ معلومات المستخدم في context للاستخدام لاحقاً
-    context.user_data['registration_data'] = {
-        'user_id': user_id,
-        'full_name': user_info.get('full_name'),
-        'email': user_info.get('email'),
-        'phone': user_info.get('phone'),
-        'grade': user_info.get('grade')
-    }
-    
-    # إعداد نص معلومات المستخدم
+    # في حالة حدوث خطأ
+    user_info = context.user_data.get('edit_user_info', {})
     info_text = "معلوماتك الحالية:\n\n" \
-                f"الاسم: {user_info.get('full_name')}\n" \
-                f"البريد الإلكتروني: {user_info.get('email')}\n" \
-                f"رقم الجوال: {user_info.get('phone')}\n" \
-                f"الصف الدراسي: {user_info.get('grade')}\n\n" \
-                "اختر المعلومات التي ترغب في تعديلها:"
+               f"الاسم: {user_info.get('full_name', 'غير محدد')}\n" \
+               f"البريد الإلكتروني: {user_info.get('email', 'غير محدد')}\n" \
+               f"رقم الجوال: {user_info.get('phone', 'غير محدد')}\n" \
+               f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
+               "اختر المعلومات التي ترغب في تعديلها:"
     
-    # إرسال رسالة تعديل المعلومات
-    await query.answer()
     await safe_edit_message_text(
         context.bot,
         chat_id,
@@ -734,318 +721,212 @@ async def handle_edit_info_request(update: Update, context: CallbackContext) -> 
     )
     return EDIT_USER_INFO_MENU
 
-# معالجة اختيار نوع التعديل
-async def handle_edit_info_selection(update: Update, context: CallbackContext) -> int:
-    """معالجة اختيار نوع تعديل المعلومات"""
-    query = update.callback_query
-    user = query.from_user
-    chat_id = query.message.chat_id
-    
-    # استخراج نوع التعديل من callback_data
-    field = query.data.replace("edit_", "")
-    
-    if field == "name":
-        # تعديل الاسم
-        await query.answer("تعديل الاسم")
-        await safe_edit_message_text(
-            context.bot,
-            chat_id,
-            query.message.message_id,
-            text="أدخل اسمك الكامل الجديد:"
-        )
-        return EDIT_USER_NAME
-    elif field == "email":
-        # تعديل البريد الإلكتروني
-        await query.answer("تعديل البريد الإلكتروني")
-        await safe_edit_message_text(
-            context.bot,
-            chat_id,
-            query.message.message_id,
-            text="أدخل بريدك الإلكتروني الجديد:"
-        )
-        return EDIT_USER_EMAIL
-    elif field == "phone":
-        # تعديل رقم الجوال
-        await query.answer("تعديل رقم الجوال")
-        await safe_edit_message_text(
-            context.bot,
-            chat_id,
-            query.message.message_id,
-            text="أدخل رقم جوالك الجديد (مثال: 05xxxxxxxx):"
-        )
-        return EDIT_USER_PHONE
-    elif field == "grade":
-        # تعديل الصف الدراسي
-        await query.answer("تعديل الصف الدراسي")
-        await safe_edit_message_text(
-            context.bot,
-            chat_id,
-            query.message.message_id,
-            text="يرجى اختيار الصف الدراسي الجديد:",
-            reply_markup=create_grade_keyboard()
-        )
-        return EDIT_USER_GRADE
-    elif field == "main_menu":
-        # العودة إلى القائمة الرئيسية
-        from handlers.common import main_menu_callback
-        await main_menu_callback(update, context)
-        return ConversationHandler.END
-    else:
-        # إذا لم يتم التعرف على نوع التعديل، نعود إلى قائمة تعديل المعلومات
-        user_info = context.user_data.get('registration_data', {})
-        info_text = "معلوماتك الحالية:\n\n" \
-                    f"الاسم: {user_info.get('full_name')}\n" \
-                    f"البريد الإلكتروني: {user_info.get('email')}\n" \
-                    f"رقم الجوال: {user_info.get('phone')}\n" \
-                    f"الصف الدراسي: {user_info.get('grade')}\n\n" \
-                    "اختر المعلومات التي ترغب في تعديلها:"
-        
-        await query.answer("خيار غير صالح")
-        await safe_edit_message_text(
-            context.bot,
-            chat_id,
-            query.message.message_id,
-            text=info_text,
-            reply_markup=create_edit_info_keyboard()
-        )
-        return EDIT_USER_INFO_MENU
-
-# معالجة إدخال الاسم الجديد
-async def handle_edit_name_input(update: Update, context: CallbackContext) -> int:
-    """معالجة إدخال الاسم الجديد"""
+# معالجة تعديل الاسم
+async def handle_edit_name(update: Update, context: CallbackContext) -> int:
+    """معالجة تعديل اسم المستخدم"""
     user = update.effective_user
     chat_id = update.effective_chat.id
-    user_id = user.id
     name = update.message.text.strip()
     
     # التحقق من صحة الاسم
     if len(name) < 3:
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ الاسم قصير جداً. يرجى إدخال اسمك الكامل (3 أحرف على الأقل):"
-        )
+        await safe_send_message(context.bot, chat_id, text="الاسم قصير جداً. يرجى إدخال اسمك الكامل:")
         return EDIT_USER_NAME
     
     # تحديث الاسم في بيانات المستخدم المؤقتة
-    context.user_data['registration_data']['full_name'] = name
+    user_info = context.user_data.get('edit_user_info', {})
+    user_info['full_name'] = name
+    context.user_data['edit_user_info'] = user_info
     
-    # الحصول على مدير قاعدة البيانات
+    # تحديث معلومات المستخدم في قاعدة البيانات
     db_manager = context.bot_data.get("DB_MANAGER")
-    if not db_manager:
-        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في handle_edit_name_input للمستخدم {user_id}")
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ حدث خطأ في الوصول إلى قاعدة البيانات. يرجى المحاولة مرة أخرى لاحقاً."
+    if db_manager:
+        success = save_user_info(
+            db_manager=db_manager,
+            user_id=user.id,
+            full_name=name,
+            is_registered=True
         )
-        return ConversationHandler.END
-    
-    # حفظ الاسم الجديد في قاعدة البيانات
-    success = save_user_info(db_manager, user_id, full_name=name)
-    
-    if success:
-        # إعداد نص معلومات المستخدم المحدثة
-        user_info = context.user_data.get('registration_data', {})
-        info_text = "تم تحديث الاسم بنجاح! ✅\n\n" \
-                    "معلوماتك الحالية:\n\n" \
-                    f"الاسم: {user_info.get('full_name')}\n" \
-                    f"البريد الإلكتروني: {user_info.get('email')}\n" \
-                    f"رقم الجوال: {user_info.get('phone')}\n" \
-                    f"الصف الدراسي: {user_info.get('grade')}\n\n" \
-                    "هل ترغب في تعديل معلومات أخرى؟"
         
-        # إرسال رسالة نجاح التحديث
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text=info_text,
-            reply_markup=create_edit_info_keyboard()
-        )
-        return EDIT_USER_INFO_MENU
-    else:
-        # إرسال رسالة فشل التحديث
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ حدث خطأ في تحديث الاسم. يرجى المحاولة مرة أخرى لاحقاً."
-        )
-        return ConversationHandler.END
+        if success:
+            logger.info(f"تم تحديث اسم المستخدم {user.id} إلى {name}")
+        else:
+            logger.error(f"فشل تحديث اسم المستخدم {user.id}")
+    
+    # عرض معلومات المستخدم المحدثة
+    info_text = "تم تحديث معلوماتك بنجاح!\n\n" \
+               f"الاسم: {name}\n" \
+               f"البريد الإلكتروني: {user_info.get('email', 'غير محدد')}\n" \
+               f"رقم الجوال: {user_info.get('phone', 'غير محدد')}\n" \
+               f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
+               "هل ترغب في تعديل معلومات أخرى؟"
+    
+    await safe_send_message(
+        context.bot,
+        chat_id,
+        text=info_text,
+        reply_markup=create_edit_info_keyboard()
+    )
+    return EDIT_USER_INFO_MENU
 
-# معالجة إدخال البريد الإلكتروني الجديد
-async def handle_edit_email_input(update: Update, context: CallbackContext) -> int:
-    """معالجة إدخال البريد الإلكتروني الجديد"""
+# معالجة تعديل البريد الإلكتروني
+async def handle_edit_email(update: Update, context: CallbackContext) -> int:
+    """معالجة تعديل البريد الإلكتروني للمستخدم"""
     user = update.effective_user
     chat_id = update.effective_chat.id
-    user_id = user.id
     email = update.message.text.strip()
     
     # التحقق من صحة البريد الإلكتروني
     if not is_valid_email(email):
         await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ البريد الإلكتروني غير صحيح. يرجى إدخال بريد إلكتروني صالح:"
+            context.bot, 
+            chat_id, 
+            text="البريد الإلكتروني غير صحيح. يرجى إدخال بريد إلكتروني صالح:"
         )
         return EDIT_USER_EMAIL
     
     # تحديث البريد الإلكتروني في بيانات المستخدم المؤقتة
-    context.user_data['registration_data']['email'] = email
+    user_info = context.user_data.get('edit_user_info', {})
+    user_info['email'] = email
+    context.user_data['edit_user_info'] = user_info
     
-    # الحصول على مدير قاعدة البيانات
+    # تحديث معلومات المستخدم في قاعدة البيانات
     db_manager = context.bot_data.get("DB_MANAGER")
-    if not db_manager:
-        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في handle_edit_email_input للمستخدم {user_id}")
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ حدث خطأ في الوصول إلى قاعدة البيانات. يرجى المحاولة مرة أخرى لاحقاً."
+    if db_manager:
+        success = save_user_info(
+            db_manager=db_manager,
+            user_id=user.id,
+            email=email,
+            is_registered=True
         )
-        return ConversationHandler.END
-    
-    # حفظ البريد الإلكتروني الجديد في قاعدة البيانات
-    success = save_user_info(db_manager, user_id, email=email)
-    
-    if success:
-        # إعداد نص معلومات المستخدم المحدثة
-        user_info = context.user_data.get('registration_data', {})
-        info_text = "تم تحديث البريد الإلكتروني بنجاح! ✅\n\n" \
-                    "معلوماتك الحالية:\n\n" \
-                    f"الاسم: {user_info.get('full_name')}\n" \
-                    f"البريد الإلكتروني: {user_info.get('email')}\n" \
-                    f"رقم الجوال: {user_info.get('phone')}\n" \
-                    f"الصف الدراسي: {user_info.get('grade')}\n\n" \
-                    "هل ترغب في تعديل معلومات أخرى؟"
         
-        # إرسال رسالة نجاح التحديث
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text=info_text,
-            reply_markup=create_edit_info_keyboard()
-        )
-        return EDIT_USER_INFO_MENU
-    else:
-        # إرسال رسالة فشل التحديث
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ حدث خطأ في تحديث البريد الإلكتروني. يرجى المحاولة مرة أخرى لاحقاً."
-        )
-        return ConversationHandler.END
+        if success:
+            logger.info(f"تم تحديث البريد الإلكتروني للمستخدم {user.id} إلى {email}")
+        else:
+            logger.error(f"فشل تحديث البريد الإلكتروني للمستخدم {user.id}")
+    
+    # عرض معلومات المستخدم المحدثة
+    info_text = "تم تحديث معلوماتك بنجاح!\n\n" \
+               f"الاسم: {user_info.get('full_name', 'غير محدد')}\n" \
+               f"البريد الإلكتروني: {email}\n" \
+               f"رقم الجوال: {user_info.get('phone', 'غير محدد')}\n" \
+               f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
+               "هل ترغب في تعديل معلومات أخرى؟"
+    
+    await safe_send_message(
+        context.bot,
+        chat_id,
+        text=info_text,
+        reply_markup=create_edit_info_keyboard()
+    )
+    return EDIT_USER_INFO_MENU
 
-# معالجة إدخال رقم الجوال الجديد
-async def handle_edit_phone_input(update: Update, context: CallbackContext) -> int:
-    """معالجة إدخال رقم الجوال الجديد"""
+# معالجة تعديل رقم الجوال
+async def handle_edit_phone(update: Update, context: CallbackContext) -> int:
+    """معالجة تعديل رقم الجوال للمستخدم"""
     user = update.effective_user
     chat_id = update.effective_chat.id
-    user_id = user.id
     phone = update.message.text.strip()
     
     # التحقق من صحة رقم الجوال
     if not is_valid_phone(phone):
         await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ رقم الجوال غير صحيح. يرجى إدخال رقم جوال سعودي صالح (يبدأ بـ 05 أو +966 أو 00966):"
+            context.bot, 
+            chat_id, 
+            text="رقم الجوال غير صحيح. يرجى إدخال رقم جوال صالح (مثال: 05xxxxxxxx أو +966xxxxxxxxx):"
         )
         return EDIT_USER_PHONE
     
     # تحديث رقم الجوال في بيانات المستخدم المؤقتة
-    context.user_data['registration_data']['phone'] = phone
+    user_info = context.user_data.get('edit_user_info', {})
+    user_info['phone'] = phone
+    context.user_data['edit_user_info'] = user_info
     
-    # الحصول على مدير قاعدة البيانات
+    # تحديث معلومات المستخدم في قاعدة البيانات
     db_manager = context.bot_data.get("DB_MANAGER")
-    if not db_manager:
-        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في handle_edit_phone_input للمستخدم {user_id}")
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ حدث خطأ في الوصول إلى قاعدة البيانات. يرجى المحاولة مرة أخرى لاحقاً."
+    if db_manager:
+        success = save_user_info(
+            db_manager=db_manager,
+            user_id=user.id,
+            phone=phone,
+            is_registered=True
         )
-        return ConversationHandler.END
-    
-    # حفظ رقم الجوال الجديد في قاعدة البيانات
-    success = save_user_info(db_manager, user_id, phone=phone)
-    
-    if success:
-        # إعداد نص معلومات المستخدم المحدثة
-        user_info = context.user_data.get('registration_data', {})
-        info_text = "تم تحديث رقم الجوال بنجاح! ✅\n\n" \
-                    "معلوماتك الحالية:\n\n" \
-                    f"الاسم: {user_info.get('full_name')}\n" \
-                    f"البريد الإلكتروني: {user_info.get('email')}\n" \
-                    f"رقم الجوال: {user_info.get('phone')}\n" \
-                    f"الصف الدراسي: {user_info.get('grade')}\n\n" \
-                    "هل ترغب في تعديل معلومات أخرى؟"
         
-        # إرسال رسالة نجاح التحديث
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text=info_text,
-            reply_markup=create_edit_info_keyboard()
-        )
-        return EDIT_USER_INFO_MENU
-    else:
-        # إرسال رسالة فشل التحديث
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text="⚠️ حدث خطأ في تحديث رقم الجوال. يرجى المحاولة مرة أخرى لاحقاً."
-        )
-        return ConversationHandler.END
-
-# معالجة اختيار الصف الدراسي الجديد
-async def handle_edit_grade_selection(update: Update, context: CallbackContext) -> int:
-    """معالجة اختيار الصف الدراسي الجديد"""
-    query = update.callback_query
-    user = query.from_user
-    chat_id = query.message.chat_id
-    user_id = user.id
+        if success:
+            logger.info(f"تم تحديث رقم الجوال للمستخدم {user.id} إلى {phone}")
+        else:
+            logger.error(f"فشل تحديث رقم الجوال للمستخدم {user.id}")
     
-    # استخراج الصف الدراسي من callback_data
+    # عرض معلومات المستخدم المحدثة
+    info_text = "تم تحديث معلوماتك بنجاح!\n\n" \
+               f"الاسم: {user_info.get('full_name', 'غير محدد')}\n" \
+               f"البريد الإلكتروني: {user_info.get('email', 'غير محدد')}\n" \
+               f"رقم الجوال: {phone}\n" \
+               f"الصف الدراسي: {user_info.get('grade', 'غير محدد')}\n\n" \
+               "هل ترغب في تعديل معلومات أخرى؟"
+    
+    await safe_send_message(
+        context.bot,
+        chat_id,
+        text=info_text,
+        reply_markup=create_edit_info_keyboard()
+    )
+    return EDIT_USER_INFO_MENU
+
+# معالجة تعديل الصف الدراسي
+async def handle_edit_grade(update: Update, context: CallbackContext) -> int:
+    """معالجة تعديل الصف الدراسي للمستخدم"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = update.effective_user
+    chat_id = update.effective_chat.id
     grade_data = query.data
     
-    # تحديد نص الصف الدراسي بناءً على callback_data
-    if grade_data == "grade_university":
-        grade_text = "طالب جامعي"
-    elif grade_data == "grade_teacher":
-        grade_text = "معلم"
-    elif grade_data == "grade_other":
-        grade_text = "أخرى"
-    elif grade_data.startswith("grade_secondary_"):
-        grade_num = grade_data.split("_")[-1]
-        grade_text = f"ثانوي {grade_num}"
-    else:
-        grade_text = "غير محدد"
-    
-    # تحديث الصف الدراسي في بيانات المستخدم المؤقتة
-    context.user_data['registration_data']['grade'] = grade_text
-    
-    # الحصول على مدير قاعدة البيانات
-    db_manager = context.bot_data.get("DB_MANAGER")
-    if not db_manager:
-        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في handle_edit_grade_selection للمستخدم {user_id}")
-        await query.answer("حدث خطأ في الوصول إلى قاعدة البيانات")
-        return ConversationHandler.END
-    
-    # حفظ الصف الدراسي الجديد في قاعدة البيانات
-    success = save_user_info(db_manager, user_id, grade=grade_text)
-    
-    if success:
-        # إعداد نص معلومات المستخدم المحدثة
-        user_info = context.user_data.get('registration_data', {})
-        info_text = "تم تحديث الصف الدراسي بنجاح! ✅\n\n" \
-                    "معلوماتك الحالية:\n\n" \
-                    f"الاسم: {user_info.get('full_name')}\n" \
-                    f"البريد الإلكتروني: {user_info.get('email')}\n" \
-                    f"رقم الجوال: {user_info.get('phone')}\n" \
-                    f"الصف الدراسي: {user_info.get('grade')}\n\n" \
-                    "هل ترغب في تعديل معلومات أخرى؟"
+    # استخراج الصف الدراسي من البيانات
+    if grade_data.startswith("grade_"):
+        grade_type = grade_data.split("_")[1]
         
-        # إرسال رسالة نجاح التحديث
-        await query.answer("تم تحديث الصف الدراسي")
+        if grade_type in ["secondary"]:
+            grade_number = grade_data.split("_")[2]
+            grade_text = f"الصف {grade_number} الثانوي"
+        elif grade_type == "university":
+            grade_text = "طالب جامعي"
+        elif grade_type == "teacher":
+            grade_text = "معلم"
+        elif grade_type == "other":
+            grade_text = "أخرى"
+        else:
+            grade_text = "غير محدد"
+        
+        # تحديث الصف الدراسي في بيانات المستخدم المؤقتة
+        user_info = context.user_data.get('edit_user_info', {})
+        user_info['grade'] = grade_text
+        context.user_data['edit_user_info'] = user_info
+        
+        # تحديث معلومات المستخدم في قاعدة البيانات
+        db_manager = context.bot_data.get("DB_MANAGER")
+        if db_manager:
+            success = save_user_info(
+                db_manager=db_manager,
+                user_id=user.id,
+                grade=grade_text,
+                is_registered=True
+            )
+            
+            if success:
+                logger.info(f"تم تحديث الصف الدراسي للمستخدم {user.id} إلى {grade_text}")
+            else:
+                logger.error(f"فشل تحديث الصف الدراسي للمستخدم {user.id}")
+        
+        # عرض معلومات المستخدم المحدثة
+        info_text = "تم تحديث معلوماتك بنجاح!\n\n" \
+                   f"الاسم: {user_info.get('full_name', 'غير محدد')}\n" \
+                   f"البريد الإلكتروني: {user_info.get('email', 'غير محدد')}\n" \
+                   f"رقم الجوال: {user_info.get('phone', 'غير محدد')}\n" \
+                   f"الصف الدراسي: {grade_text}\n\n" \
+                   "هل ترغب في تعديل معلومات أخرى؟"
+        
         await safe_edit_message_text(
             context.bot,
             chat_id,
@@ -1054,60 +935,49 @@ async def handle_edit_grade_selection(update: Update, context: CallbackContext) 
             reply_markup=create_edit_info_keyboard()
         )
         return EDIT_USER_INFO_MENU
-    else:
-        # إرسال رسالة فشل التحديث
-        await query.answer("حدث خطأ في التحديث")
-        await safe_edit_message_text(
-            context.bot,
-            chat_id,
-            query.message.message_id,
-            text="⚠️ حدث خطأ في تحديث الصف الدراسي. يرجى المحاولة مرة أخرى لاحقاً."
-        )
-        return ConversationHandler.END
+    
+    # في حالة حدوث خطأ
+    await safe_edit_message_text(
+        context.bot,
+        chat_id,
+        query.message.message_id,
+        text="حدث خطأ في اختيار الصف الدراسي. يرجى المحاولة مرة أخرى:",
+        reply_markup=create_grade_keyboard()
+    )
+    return EDIT_USER_GRADE
 
-# تعريف محادثة التسجيل
+# إنشاء محادثة التسجيل
 registration_conv_handler = ConversationHandler(
     entry_points=[
-        CommandHandler("register", start_registration)
-        # أمر start تمت إزالته من هنا وسيتم التعامل معه بشكل منفصل
+        CommandHandler("register", start_registration),
+        CommandHandler("start", start_registration)
     ],
     states={
         REGISTRATION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name_input)],
         REGISTRATION_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_input)],
         REGISTRATION_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone_input)],
-        REGISTRATION_GRADE: [CallbackQueryHandler(handle_grade_selection, pattern=r'^grade_')],
-        REGISTRATION_CONFIRM: [CallbackQueryHandler(handle_registration_confirmation, pattern=r'^(confirm_registration|edit_\w+)$')]
+        REGISTRATION_GRADE: [CallbackQueryHandler(handle_grade_selection, pattern=r"^grade_")],
+        REGISTRATION_CONFIRM: [CallbackQueryHandler(handle_registration_confirmation)]
     },
-    fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
+    fallbacks=[CommandHandler("cancel", lambda u, c: END)],
     name="registration_conversation",
     persistent=False
 )
 
-# تعريف محادثة تعديل المعلومات
+# إنشاء محادثة تعديل المعلومات
 edit_info_conv_handler = ConversationHandler(
     entry_points=[
-        CallbackQueryHandler(handle_edit_info_request, pattern=r'^edit_my_info$')
+        CommandHandler("edit_info", start_edit_user_info),
+        CallbackQueryHandler(start_edit_user_info, pattern=r"^edit_my_info$")
     ],
     states={
-        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern=r'^(edit_\w+|main_menu)$')],
-        EDIT_USER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_name_input)],
-        EDIT_USER_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_email_input)],
-        EDIT_USER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_phone_input)],
-        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade_selection, pattern=r'^grade_')]
+        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection)],
+        EDIT_USER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_name)],
+        EDIT_USER_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_email)],
+        EDIT_USER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_phone)],
+        EDIT_USER_GRADE: [CallbackQueryHandler(handle_edit_grade, pattern=r"^grade_")]
     },
-    fallbacks=[CommandHandler("cancel", lambda update, context: ConversationHandler.END)],
+    fallbacks=[CommandHandler("cancel", lambda u, c: END)],
     name="edit_info_conversation",
     persistent=False
 )
-
-# تسجيل الدوال في التطبيق
-def register_handlers(application: Application):
-    """تسجيل معالجات الرسائل والأوامر في التطبيق"""
-    # تسجيل أمر /start بشكل منفصل
-    application.add_handler(CommandHandler("start", start_command))
-    
-    # تسجيل محادثة التسجيل
-    application.add_handler(registration_conv_handler)
-    
-    # تسجيل محادثة تعديل المعلومات
-    application.add_handler(edit_info_conv_handler)
