@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Common handlers like /start and main menu navigation (Corrected v6 - Fixed registration persistence)."""
+"""Common handlers like /start and main menu navigation (Corrected v5 - Fixed safe_edit_message_text call)."""
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -92,74 +92,62 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# دالة التحقق من حالة تسجيل المستخدم - تعتمد فقط على قاعدة البيانات
-def check_user_registration(user_id, db_manager):
-    """
-    التحقق من حالة تسجيل المستخدم باستخدام قاعدة البيانات فقط
-    
-    المعلمات:
-        user_id: معرف المستخدم
-        db_manager: مدير قاعدة البيانات
-        
-    يعيد:
-        bool: True إذا كان المستخدم مسجلاً، False إذا لم يكن مسجلاً
-    """
-    if not db_manager:
-        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في check_user_registration للمستخدم {user_id}")
-        return False
-        
-    try:
-        # محاولة الحصول على معلومات المستخدم من قاعدة البيانات
-        user_info = None
-        if hasattr(db_manager, 'get_user_info'):
-            user_info = db_manager.get_user_info(user_id)
-        
-        # التحقق من وجود معلومات المستخدم وأنه مسجل
-        if user_info:
-            # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
-            full_name = user_info.get('full_name')
-            email = user_info.get('email')
-            phone = user_info.get('phone')
-            grade = user_info.get('grade')
-            
-            # التحقق من الاسم (موجود وطوله أكبر من 3 أحرف)
-            has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
-            
-            # التحقق من البريد الإلكتروني (موجود)
-            has_email = email not in [None, 'None', '']
-            
-            # التحقق من رقم الجوال (موجود)
-            has_phone = phone not in [None, 'None', '']
-            
-            # التحقق من الصف الدراسي (موجود وليس فارغاً)
-            has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
-            
-            # اعتبار المستخدم مسجلاً فقط إذا كانت جميع المعلومات الأساسية موجودة
-            is_registered = all([has_full_name, has_email, has_phone, has_grade])
-            
-            logger.info(f"User {user_id} registration status from DB: {is_registered}")
-            logger.info(f"Details: Name: {has_full_name}, Email: {has_email}, Phone: {has_phone}, Grade: {has_grade}")
-            
-            return is_registered
-    except Exception as e:
-        logger.error(f"Error checking registration status with DB_MANAGER: {e}")
-        
-    return False
-
 async def start_command(update: Update, context: CallbackContext) -> int:
     """Handles the /start command. Registers user and shows the main menu."""
     user = update.effective_user
     chat_id = update.effective_chat.id
     logger.info(f"User {user.id} ({user.username or user.first_name}) started the bot in chat {chat_id}.")
 
+    # التحقق من حالة تسجيل المستخدم - تعديل منطق التحقق لجعله أكثر صرامة
+    is_registered = False
+    
     # الحصول على مدير قاعدة البيانات من context
     db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
     
-    # التحقق من حالة تسجيل المستخدم - اعتماداً فقط على قاعدة البيانات
-    is_registered = check_user_registration(user.id, db_manager)
+    # التحقق من حالة التسجيل باستخدام DB_MANAGER
+    if db_manager:
+        try:
+            # محاولة الحصول على معلومات المستخدم من قاعدة البيانات
+            user_info = None
+            if hasattr(db_manager, 'get_user_info'):
+                user_info = db_manager.get_user_info(user.id)
+            
+            # التحقق من وجود معلومات المستخدم وأنه مسجل
+            if user_info:
+                # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
+                full_name = user_info.get('full_name')
+                email = user_info.get('email')
+                phone = user_info.get('phone')
+                grade = user_info.get('grade')
+                
+                # التحقق من الاسم (موجود وطوله أكبر من 3 أحرف)
+                has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
+                
+                # التحقق من البريد الإلكتروني (موجود)
+                has_email = email not in [None, 'None', '']
+                
+                # التحقق من رقم الجوال (موجود)
+                has_phone = phone not in [None, 'None', '']
+                
+                # التحقق من الصف الدراسي (موجود وليس فارغاً)
+                has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
+                
+                # اعتبار المستخدم مسجلاً فقط إذا كانت جميع المعلومات الأساسية موجودة
+                is_registered = all([has_full_name, has_email, has_phone, has_grade])
+                
+                logger.info(f"User {user.id} registration status: {is_registered}")
+                logger.info(f"Details: Name: {has_full_name}, Email: {has_email}, Phone: {has_phone}, Grade: {has_grade}")
+        except Exception as e:
+            logger.error(f"Error checking registration status with DB_MANAGER: {e}")
+            is_registered = False  # في حالة حدوث خطأ، نفترض أن المستخدم غير مسجل
     
-    # تخزين حالة التسجيل في context.user_data للاستخدام المستقبلي خلال الجلسة الحالية فقط
-    context.user_data['is_registered'] = is_registered
+    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً (أكثر دقة وتحديثاً)
+    is_registered_in_context = context.user_data.get('is_registered', False)
+    
+    # إذا كان المستخدم مسجلاً في context.user_data، نعتبره مسجلاً بغض النظر عن نتيجة التحقق من قاعدة البيانات
+    if is_registered_in_context:
+        is_registered = True
+        logger.info(f"User {user.id} is marked as registered in context.user_data")
     
     # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
     if not is_registered:
@@ -208,6 +196,7 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     if is_registered:
         welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
                        "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
+        db_m = context.bot_data.get("DB_MANAGER", DB_MANAGER) # Get from context or use global fallback
         keyboard = create_main_menu_keyboard(user.id)
         # Clear any existing quiz logic from user_data to ensure a fresh start
         if "current_quiz_logic" in context.user_data:
@@ -240,14 +229,37 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     user = update.effective_user
     state_to_return = MAIN_MENU 
     
-    # الحصول على مدير قاعدة البيانات من context
-    db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
+    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً (أكثر دقة وتحديثاً)
+    is_registered = context.user_data.get('is_registered', False)
     
-    # التحقق من حالة التسجيل - اعتماداً فقط على قاعدة البيانات
-    is_registered = check_user_registration(user.id, db_manager)
-    
-    # تخزين حالة التسجيل في context.user_data للاستخدام المستقبلي خلال الجلسة الحالية فقط
-    context.user_data['is_registered'] = is_registered
+    # إذا لم تكن حالة التسجيل موجودة في context.user_data، نتحقق من قاعدة البيانات
+    if not is_registered:
+        db_manager = context.bot_data.get("DB_MANAGER")
+        
+        if db_manager and hasattr(db_manager, 'get_user_info'):
+            try:
+                user_info = db_manager.get_user_info(user.id)
+                if user_info:
+                    # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
+                    full_name = user_info.get('full_name')
+                    email = user_info.get('email')
+                    phone = user_info.get('phone')
+                    grade = user_info.get('grade')
+                    
+                    has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
+                    has_email = email not in [None, 'None', '']
+                    has_phone = phone not in [None, 'None', '']
+                    has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
+                    
+                    is_registered = all([has_full_name, has_email, has_phone, has_grade])
+                    
+                    # تخزين حالة التسجيل في context.user_data للاستخدام المستقبلي
+                    if is_registered:
+                        context.user_data['is_registered'] = True
+                    
+                    logger.info(f"User {user.id} registration status in main_menu_callback: {is_registered}")
+            except Exception as e:
+                logger.error(f"Error checking registration status in main_menu_callback: {e}")
     
     # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
     if not is_registered and query:
@@ -291,6 +303,7 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         elif data == "menu_stats": 
             state_to_return = STATS_MENU
         elif data == "about_bot":  # Handle new About Bot button
+            db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)  # استخدام DB_MANAGER العالمي كقيمة افتراضية
             about_text_content = None
             
             if db_manager:
