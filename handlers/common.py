@@ -127,7 +127,6 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     logger.debug(f"[DEBUG] main_menu_callback attempting to return state: {state_to_return}")
     
     return state_to_return
-
         # توجيه المستخدم لإكمال التسجيل
         await start_registration(update, context)
         return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
