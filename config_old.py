@@ -49,19 +49,6 @@ SELECT_COURSE_FOR_UNIT_QUIZ, SELECT_UNIT_FOR_COURSE = range(12) # Extended range
 
 ADMIN_STATS_MENU = 12 # Added for admin stats menu (placeholder if not used directly by conv handler)
 
-# --- Registration States ---
-# تعريف ثوابت حالات التسجيل
-REGISTRATION_NAME = 20
-REGISTRATION_EMAIL = 21
-REGISTRATION_PHONE = 22
-REGISTRATION_GRADE = 24
-REGISTRATION_CONFIRM = 25
-EDIT_USER_INFO_MENU = 26
-EDIT_USER_NAME = 27
-EDIT_USER_EMAIL = 28
-EDIT_USER_PHONE = 29
-EDIT_USER_GRADE = 30
-
 # Fallback state
 END = ConversationHandler.END
 
@@ -100,3 +87,4 @@ API_TIMEOUT = 15 # Timeout in seconds for API requests
 LEADERBOARD_LIMIT = 10
 
 logger.info("Configuration loaded.")
+
