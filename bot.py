@@ -34,7 +34,7 @@ try:
         MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END,
         REGISTRATION_NAME, REGISTRATION_EMAIL, REGISTRATION_PHONE, REGISTRATION_GRADE, REGISTRATION_CONFIRM,
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_PHONE, EDIT_USER_GRADE,
-        TOKEN, DB_URL, ADMIN_USER_IDS, QUIZ_TIMEOUT_MINUTES, QUIZ_QUESTION_COUNT,
+        TELEGRAM_BOT_TOKEN, DATABASE_URL, ADMIN_USER_IDS, QUIZ_TIMEOUT_MINUTES, QUIZ_QUESTION_COUNT,
         initialize_db_manager, post_initialize_db_manager
     )
     
@@ -140,10 +140,10 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 def main() -> None:
     """النقطة الرئيسية لتشغيل البوت"""
     # إنشاء تطبيق البوت
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     # تهيئة مدير قاعدة البيانات
-    db_manager = initialize_db_manager(DB_URL)
+    db_manager = initialize_db_manager(DATABASE_URL)
     application.bot_data["DB_MANAGER"] = db_manager
     
     # إجراءات ما بعد التهيئة
