@@ -34,9 +34,18 @@ try:
         MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END,
         REGISTRATION_NAME, REGISTRATION_EMAIL, REGISTRATION_PHONE, REGISTRATION_GRADE, REGISTRATION_CONFIRM,
         EDIT_USER_INFO_MENU, EDIT_USER_NAME, EDIT_USER_EMAIL, EDIT_USER_PHONE, EDIT_USER_GRADE,
-        TELEGRAM_BOT_TOKEN, DATABASE_URL,
-        initialize_db_manager, post_initialize_db_manager
+        TELEGRAM_BOT_TOKEN, DATABASE_URL
     )
+    
+    # استيراد DatabaseManager من manager_definition.py
+    try:
+        from database.manager_definition import DatabaseManager
+    except ImportError:
+        try:
+            from manager_definition import DatabaseManager
+        except ImportError:
+            logger.error("فشل في استيراد DatabaseManager من database.manager_definition أو manager_definition")
+            sys.exit(1)
     
     # استيراد معالجات المحادثة من الوحدات المختلفة
     try:
@@ -143,11 +152,11 @@ def main() -> None:
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     # تهيئة مدير قاعدة البيانات
-    db_manager = initialize_db_manager(DATABASE_URL)
+    db_manager = DatabaseManager(DATABASE_URL)
     application.bot_data["DB_MANAGER"] = db_manager
     
     # إجراءات ما بعد التهيئة
-    post_initialize_db_manager(application.bot_data)
+    logger.info("تم تهيئة مدير قاعدة البيانات بنجاح")
     
     # إضافة معالج الأخطاء
     application.add_error_handler(error_handler)
