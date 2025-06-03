@@ -98,8 +98,8 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     chat_id = update.effective_chat.id
     logger.info(f"User {user.id} ({user.username or user.first_name}) started the bot in chat {chat_id}.")
 
-    # التحقق من حالة تسجيل المستخدم - تعديل منطق التحقق لجعله أكثر صرامة
-    is_registered = False
+    # اعتبار المستخدم مسجلاً افتراضياً إذا كان لديه اسم في قاعدة البيانات
+    is_registered = True
     
     # الحصول على مدير قاعدة البيانات من context
     db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
@@ -112,42 +112,20 @@ async def start_command(update: Update, context: CallbackContext) -> int:
             if hasattr(db_manager, 'get_user_info'):
                 user_info = db_manager.get_user_info(user.id)
             
-            # التحقق من وجود معلومات المستخدم وأنه مسجل
-            if user_info:
-                # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
-                full_name = user_info.get('full_name')
-                email = user_info.get('email')
-                phone = user_info.get('phone')
-                grade = user_info.get('grade')
-                
-                # التحقق من الاسم (موجود وطوله أكبر من 3 أحرف)
-                has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
-                
-                # التحقق من البريد الإلكتروني (موجود)
-                has_email = email not in [None, 'None', '']
-                
-                # التحقق من رقم الجوال (موجود)
-                has_phone = phone not in [None, 'None', '']
-                
-                # التحقق من الصف الدراسي (موجود وليس فارغاً)
-                has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
-                
-                # اعتبار المستخدم مسجلاً فقط إذا كانت جميع المعلومات الأساسية موجودة
-                is_registered = all([has_full_name, has_email, has_phone, has_grade])
-                
-                logger.info(f"User {user.id} registration status: {is_registered}")
-                logger.info(f"Details: Name: {has_full_name}, Email: {has_email}, Phone: {has_phone}, Grade: {has_grade}")
+            # التحقق من وجود معلومات المستخدم
+            if not user_info or not user_info.get('full_name'):
+                # إذا لم يكن هناك معلومات أو لم يكن هناك اسم، نعتبر المستخدم غير مسجل
+                is_registered = False
+                logger.info(f"User {user.id} not registered (no user_info or full_name).")
+            else:
+                # تخزين معلومات المستخدم في context.user_data
+                context.user_data['registration_data'] = user_info
+                context.user_data['is_registered'] = True
+                logger.info(f"User {user.id} is registered with name: {user_info.get('full_name')}")
         except Exception as e:
             logger.error(f"Error checking registration status with DB_MANAGER: {e}")
-            is_registered = False  # في حالة حدوث خطأ، نفترض أن المستخدم غير مسجل
-    
-    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً (أكثر دقة وتحديثاً)
-    is_registered_in_context = context.user_data.get('is_registered', False)
-    
-    # إذا كان المستخدم مسجلاً في context.user_data، نعتبره مسجلاً بغض النظر عن نتيجة التحقق من قاعدة البيانات
-    if is_registered_in_context:
-        is_registered = True
-        logger.info(f"User {user.id} is marked as registered in context.user_data")
+            # في حالة حدوث خطأ، نفترض أن المستخدم غير مسجل
+            is_registered = False
     
     # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
     if not is_registered:
@@ -194,7 +172,12 @@ async def start_command(update: Update, context: CallbackContext) -> int:
 
     # عرض القائمة الرئيسية فقط للمستخدمين المسجلين
     if is_registered:
-        welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
+        # الحصول على اسم المستخدم من قاعدة البيانات إذا كان متاحاً
+        user_name = user.first_name
+        if context.user_data.get('registration_data', {}).get('full_name'):
+            user_name = context.user_data['registration_data']['full_name']
+        
+        welcome_text = f"أهلاً بك يا {user_name} في بوت كيمياء تحصيلي! 👋\n\n" \
                        "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
         db_m = context.bot_data.get("DB_MANAGER", DB_MANAGER) # Get from context or use global fallback
         keyboard = create_main_menu_keyboard(user.id)
@@ -229,37 +212,32 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     user = update.effective_user
     state_to_return = MAIN_MENU 
     
-    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً (أكثر دقة وتحديثاً)
-    is_registered = context.user_data.get('is_registered', False)
+    # اعتبار المستخدم مسجلاً افتراضياً إذا كان لديه اسم في قاعدة البيانات
+    is_registered = True
     
-    # إذا لم تكن حالة التسجيل موجودة في context.user_data، نتحقق من قاعدة البيانات
-    if not is_registered:
+    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً
+    if context.user_data.get('is_registered', False):
+        is_registered = True
+    else:
+        # إذا لم تكن حالة التسجيل موجودة في context.user_data، نتحقق من قاعدة البيانات
         db_manager = context.bot_data.get("DB_MANAGER")
         
         if db_manager and hasattr(db_manager, 'get_user_info'):
             try:
                 user_info = db_manager.get_user_info(user.id)
-                if user_info:
-                    # التحقق من أن جميع المعلومات الأساسية موجودة وصحيحة
-                    full_name = user_info.get('full_name')
-                    email = user_info.get('email')
-                    phone = user_info.get('phone')
-                    grade = user_info.get('grade')
-                    
-                    has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
-                    has_email = email not in [None, 'None', '']
-                    has_phone = phone not in [None, 'None', '']
-                    has_grade = grade not in [None, 'None', ''] and len(str(grade).strip()) > 0
-                    
-                    is_registered = all([has_full_name, has_email, has_phone, has_grade])
-                    
-                    # تخزين حالة التسجيل في context.user_data للاستخدام المستقبلي
-                    if is_registered:
-                        context.user_data['is_registered'] = True
-                    
-                    logger.info(f"User {user.id} registration status in main_menu_callback: {is_registered}")
+                if not user_info or not user_info.get('full_name'):
+                    # إذا لم يكن هناك معلومات أو لم يكن هناك اسم، نعتبر المستخدم غير مسجل
+                    is_registered = False
+                    logger.info(f"User {user.id} not registered (no user_info or full_name) in main_menu_callback.")
+                else:
+                    # تخزين معلومات المستخدم في context.user_data
+                    context.user_data['registration_data'] = user_info
+                    context.user_data['is_registered'] = True
+                    logger.info(f"User {user.id} is registered with name: {user_info.get('full_name')} in main_menu_callback")
             except Exception as e:
                 logger.error(f"Error checking registration status in main_menu_callback: {e}")
+                # في حالة حدوث خطأ، نفترض أن المستخدم غير مسجل
+                is_registered = False
     
     # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
     if not is_registered and query:
@@ -325,80 +303,64 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
                 [InlineKeyboardButton("🔙 الرجوع إلى القائمة الرئيسية", callback_data="main_menu")]
             ])
             
-            if query and query.message:  # Ensure query.message is not None
-                try:
-                    await safe_edit_message_text(
-                        bot=context.bot,
-                        chat_id=query.message.chat_id,
-                        message_id=query.message.message_id,
-                        text=about_text_content,
-                        reply_markup=about_keyboard,
-                        parse_mode="Markdown"
-                    )
-                except Exception as e:
-                    logger.error(f"Error in about_bot handler: {e}")
-                    # محاولة إرسال رسالة جديدة إذا فشل تعديل الرسالة
-                    try:
-                        await safe_send_message(
-                            bot=context.bot,
-                            chat_id=query.message.chat_id,
-                            text=about_text_content,
-                            reply_markup=about_keyboard,
-                            parse_mode="Markdown"
-                        )
-                    except Exception as e2:
-                        logger.error(f"Error sending new message in about_bot handler: {e2}")
+            try:
+                # محاولة تعديل الرسالة الحالية
+                await safe_edit_message_text(
+                    context.bot,
+                    query.message.chat_id,
+                    query.message.message_id,
+                    text=about_text_content,
+                    reply_markup=about_keyboard,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Error editing message for about_bot: {e}")
+                # في حالة فشل تعديل الرسالة، نرسل رسالة جديدة
+                await safe_send_message(
+                    context.bot,
+                    query.message.chat_id,
+                    text=about_text_content,
+                    reply_markup=about_keyboard,
+                    parse_mode="Markdown"
+                )
             
-            return MAIN_MENU  # البقاء في حالة MAIN_MENU، سيتم معالجة التفاعل التالي (زر العودة) بواسطة نفس الدالة
-        elif data == "main_menu": 
-            state_to_return = MAIN_MENU
+            return MAIN_MENU
+        elif data == "main_menu":  # Return to main menu
+            # الحصول على اسم المستخدم من قاعدة البيانات إذا كان متاحاً
+            user_name = user.first_name
+            if context.user_data.get('registration_data', {}).get('full_name'):
+                user_name = context.user_data['registration_data']['full_name']
+            
+            welcome_text = f"أهلاً بك يا {user_name} في بوت كيمياء تحصيلي! 👋\n\n" \
+                        "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
+            
+            keyboard = create_main_menu_keyboard(user.id)
+            
+            try:
+                # محاولة تعديل الرسالة الحالية
+                await safe_edit_message_text(
+                    context.bot,
+                    query.message.chat_id,
+                    query.message.message_id,
+                    text=welcome_text,
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Error editing message for main_menu: {e}")
+                # في حالة فشل تعديل الرسالة، نرسل رسالة جديدة
+                await safe_send_message(
+                    context.bot,
+                    query.message.chat_id,
+                    text=welcome_text,
+                    reply_markup=keyboard
+                )
+            
+            return MAIN_MENU
         else:
             logger.warning(f"Unknown main menu callback data: '{data}' in main_menu_callback")
-            state_to_return = MAIN_MENU 
-
-    if state_to_return == MAIN_MENU:
-        menu_text = "القائمة الرئيسية:"
-        keyboard = create_main_menu_keyboard(user.id)
-        if query and query.message:  # Ensure query.message exists
-            try:
-                await safe_edit_message_text(
-                    bot=context.bot,
-                    chat_id=query.message.chat_id,
-                    message_id=query.message.message_id,
-                    text=menu_text,
-                    reply_markup=keyboard
-                )
-            except Exception as e:
-                logger.error(f"Error editing message in main_menu_callback: {e}")
-                # محاولة إرسال رسالة جديدة إذا فشل تعديل الرسالة
-                try:
-                    await safe_send_message(
-                        bot=context.bot,
-                        chat_id=query.message.chat_id,
-                        text=menu_text,
-                        reply_markup=keyboard
-                    )
-                except Exception as e2:
-                    logger.error(f"Error sending new message in main_menu_callback: {e2}")
-        elif update.effective_chat:
-            try:
-                await safe_send_message(
-                    bot=context.bot,
-                    chat_id=update.effective_chat.id,
-                    text=menu_text,
-                    reply_markup=keyboard
-                )
-            except Exception as e:
-                logger.error(f"Error sending message in main_menu_callback: {e}")
     
     logger.debug(f"[DEBUG] main_menu_callback attempting to return state: {state_to_return}")
     return state_to_return
-
-# تسجيل الدوال في التطبيق
-def register_handlers(application):
-    """Register handlers with the application."""
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^main_menu$"))
 
 # إضافة alias للتوافق مع الكود القديم
 start_handler = start_command
