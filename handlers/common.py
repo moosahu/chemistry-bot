@@ -128,7 +128,6 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     
     return state_to_return
 
-        
         # توجيه المستخدم لإكمال التسجيل
         await start_registration(update, context)
         return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
