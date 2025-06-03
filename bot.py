@@ -236,25 +236,36 @@ def main() -> None:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.", exc_info=True)
         exit(1)
 
-    # تعديل ترتيب إضافة المعالجات لإعطاء الأولوية لمعالجات التسجيل
+    # إضافة معالجات التسجيل أولاً قبل أي معالج آخر
     try:
-        from handlers.registration import registration_conv_handler, edit_info_conv_handler
+        # استيراد معالجات التسجيل
+        from registration import registration_conv_handler, edit_info_conv_handler
         
-        # إضافة معالج التسجيل أولاً قبل أي معالج آخر
+        # إضافة معالج التسجيل أولاً
         application.add_handler(registration_conv_handler)
         logger.info("Registration conversation handler added successfully.")
         
-        # إضافة معالج تعديل المعلومات بعد معالج التسجيل
+        # إضافة معالج تعديل المعلومات
         application.add_handler(edit_info_conv_handler)
         logger.info("Edit info conversation handler added successfully.")
     except ImportError as e:
-        logger.error(f"Error importing registration handlers: {e}. Registration features will not be available.")
+        # محاولة استيراد من المسار الكامل
+        try:
+            from handlers.registration import registration_conv_handler, edit_info_conv_handler
+            
+            # إضافة معالج التسجيل أولاً
+            application.add_handler(registration_conv_handler)
+            logger.info("Registration conversation handler added successfully from handlers.registration.")
+            
+            # إضافة معالج تعديل المعلومات
+            application.add_handler(edit_info_conv_handler)
+            logger.info("Edit info conversation handler added successfully from handlers.registration.")
+        except ImportError as e2:
+            logger.error(f"Error importing registration handlers: {e2}. Registration features will not be available.")
 
-    # Handler registration logic uses 'new_admin_tools_loaded' which is set at import time.
-    # This determines if the *code* for admin tools is available to be registered.
-    # The actual readiness of DB_MANAGER at runtime is checked within the admin handlers themselves.
+    # إضافة باقي المعالجات بعد معالجات التسجيل
     if new_admin_tools_loaded:
-        # تأكد من أن أمر start لا يتعارض مع معالج التسجيل
+        # تجنب إضافة معالج start لتجنب التعارض مع معالج التسجيل
         application.add_handler(CommandHandler("about", admin_about_command))
         application.add_handler(CommandHandler("help", admin_help_command))
         logger.info("New admin tools command handlers (about, help) added.")
@@ -288,7 +299,7 @@ def main() -> None:
     else:
         logger.warning("New Admin Statistics (V4/V7/V8) handlers were not imported, skipping their addition.")
 
-    # تأكد من أن معالج القائمة الرئيسية لا يتعارض مع معالجات التسجيل
+    # إضافة معالج القائمة الرئيسية بعد معالجات التسجيل
     logger.info("Adding global main_menu_callback handler...")
     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
