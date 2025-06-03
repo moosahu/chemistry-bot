@@ -79,14 +79,12 @@ def check_user_registration_directly(user_id, db_manager):
         logger.error(f"Error checking registration status for user {user_id}: {e}")
         return False  # افتراض أن المستخدم غير مسجل في حالة حدوث خطأ
 
-async def main_menu_callback(update: Update, context: CallbackContext) -> int:
-    """معالجة استدعاءات القائمة الرئيسية"""
-    # تعريف المتغير data بشكل افتراضي لتجنب UnboundLocalError
-    data = "main_menu"  # قيمة افتراضية
-    
+async def start_command(update: Update, context: CallbackContext) -> int:
+    """Handle the /start command."""
     user = update.effective_user
+    chat_id = update.effective_chat.id
     
-    # التحقق من حالة تسجيل المستخدم قبل معالجة الاستدعاء
+    # التحقق من حالة تسجيل المستخدم
     is_registered = False
     
     # التحقق من حالة التسجيل المخزنة في context.user_data أولاً
@@ -101,35 +99,28 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         if is_registered:
             context.user_data['is_registered'] = True
     
-    query = update.callback_query
-    if query:
-        # استخراج البيانات من callback_query
-        data = query.data
-        await query.answer()
-    
-    # تعيين القيمة الافتراضية لحالة الإرجاع
-    state_to_return = MAIN_MENU
-    
-    # سجل معلومات الاستدعاء
-    logger.info(f"Main menu callback: User {user.id} chose \t'{data}'.")
-    
-    # معالجة الاستدعاءات المختلفة
-    if data == "main_menu" and context.user_data.get("current_quiz_logic"):
-        # إذا كان المستخدم في اختبار، قم بتنظيف بيانات الاختبار
-        logger.info(f"[QuizCleanup] Cleaning up quiz session data for user {user.id}, chat {update.effective_chat.id}. Reason: main_menu_callback")
-        cleanup_quiz_session_data(context, user.id, update.effective_chat.id)
-        logger.info(f"[QuizCleanup] Finished cleaning quiz session data for user {user.id}, chat {update.effective_chat.id}.")
-    
-    # معالجة الاستدعاءات الأخرى
-    # ...
-    
-    # سجل محاولة إرجاع الحالة
-    logger.debug(f"[DEBUG] main_menu_callback attempting to return state: {state_to_return}")
-    
-    return state_to_return
+    # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
+    if not is_registered:
+        logger.info(f"User {user.id} not registered. Redirecting to registration from start_command.")
+        try:
+            from .registration import start_registration
+        except ImportError:
+            try:
+                from handlers.registration import start_registration
+            except ImportError:
+                try:
+                    from registration import start_registration
+                except ImportError as e:
+                    logger.error(f"Error importing start_registration in start_command: {e}")
+                    await safe_send_message(
+                        context.bot,
+                        chat_id,
+                        text="⚠️ حدث خطأ في الوصول إلى صفحة التسجيل. يرجى المحاولة مرة أخرى لاحقاً."
+                    )
+                    return END
+        
         # توجيه المستخدم لإكمال التسجيل
         await start_registration(update, context)
-    
         return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
 
     if DB_MANAGER:
@@ -159,6 +150,9 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
 
 async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     """Handles callbacks from the main menu keyboard or returns to the main menu."""
+    # تعريف المتغير data بشكل افتراضي لتجنب UnboundLocalError
+    data = "main_menu"  # قيمة افتراضية
+    
     query = update.callback_query
     user = update.effective_user
     state_to_return = MAIN_MENU 
@@ -205,12 +199,10 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         return REGISTRATION_NAME
 
     if query:
-                # استخراج البيانات من callback_query
+        # استخراج البيانات من callback_query
         data = query.data
-
         await query.answer()
-        data = query.data
-        logger.info(f"Main menu callback: User {user.id} chose 	'{data}'.") 
+        logger.info(f"Main menu callback: User {user.id} chose \t'{data}'.") 
 
         if data == "start_quiz":
             logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Transitioning to QUIZ_MENU state for quiz handler.")
@@ -283,6 +275,17 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         return END # Explicitly end any active conversation if 'main_menu' is chosen after a quiz
         
     return state_to_return
+
+# Function to clean up quiz session data - placeholder implementation
+def cleanup_quiz_session_data(context, user_id, chat_id):
+    """Clean up quiz session data."""
+    logger.info(f"Cleaning up quiz session data for user {user_id}, chat {chat_id}")
+    if "current_quiz_logic" in context.user_data:
+        del context.user_data["current_quiz_logic"]
+    if "quiz_instance_id" in context.user_data:
+        del context.user_data["quiz_instance_id"]
+    # Add any other cleanup needed
+    logger.debug(f"Popped dynamic key: last_quiz_interaction_message_id_{user_id}")
 
 start_handler = CommandHandler('start', start_command)
 # This handler will catch 'main_menu' from quiz results or other places
