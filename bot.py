@@ -236,12 +236,17 @@ def main() -> None:
         logger.critical(f"Error building Telegram Application: {app_exc}. Bot cannot start.", exc_info=True)
         exit(1)
 
-    # إضافة محادثات التسجيل الإلزامي وتعديل المعلومات
+    # تعديل ترتيب إضافة المعالجات لإعطاء الأولوية لمعالجات التسجيل
     try:
         from handlers.registration import registration_conv_handler, edit_info_conv_handler
+        
+        # إضافة معالج التسجيل أولاً قبل أي معالج آخر
         application.add_handler(registration_conv_handler)
+        logger.info("Registration conversation handler added successfully.")
+        
+        # إضافة معالج تعديل المعلومات بعد معالج التسجيل
         application.add_handler(edit_info_conv_handler)
-        logger.info("Registration and edit info conversation handlers added successfully.")
+        logger.info("Edit info conversation handler added successfully.")
     except ImportError as e:
         logger.error(f"Error importing registration handlers: {e}. Registration features will not be available.")
 
@@ -249,13 +254,13 @@ def main() -> None:
     # This determines if the *code* for admin tools is available to be registered.
     # The actual readiness of DB_MANAGER at runtime is checked within the admin handlers themselves.
     if new_admin_tools_loaded:
-        application.add_handler(CommandHandler("start", admin_start_command))
+        # تأكد من أن أمر start لا يتعارض مع معالج التسجيل
         application.add_handler(CommandHandler("about", admin_about_command))
         application.add_handler(CommandHandler("help", admin_help_command))
-        logger.info("New admin tools command handlers (start, about, help) added.")
+        logger.info("New admin tools command handlers (about, help) added.")
     else:
-        application.add_handler(CommandHandler("start", start_handler))
-        logger.info("Common start_handler (from handlers.common) added as new admin tools were not loaded at import.")
+        # لا نضيف معالج start هنا لأنه تمت إضافته بالفعل في معالج التسجيل
+        logger.info("Common start_handler is already handled by registration_conv_handler.")
 
     if quiz_conv_handler:
         application.add_handler(quiz_conv_handler)
@@ -283,6 +288,7 @@ def main() -> None:
     else:
         logger.warning("New Admin Statistics (V4/V7/V8) handlers were not imported, skipping their addition.")
 
+    # تأكد من أن معالج القائمة الرئيسية لا يتعارض مع معالجات التسجيل
     logger.info("Adding global main_menu_callback handler...")
     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
@@ -331,21 +337,17 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_back_to_start_callback, pattern=r"^admin_back_to_start$"))
         application.add_handler(CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$"))
         
-        # تسجيل أمر تصدير بيانات المستخدمين مباشرة
-        try:
-            application.add_handler(CommandHandler("export_users", export_users_command))
-            logger.info("User data export command handler registered successfully.")
-        except Exception as export_exc:
-            logger.error(f"Error registering user data export command handler: {export_exc}. Export feature will not be available.")
+        # Add export users command handler
+        application.add_handler(CommandHandler("export_users", export_users_command))
+        logger.info("User data export command handler registered successfully.")
         
         logger.info("New admin tools (edit/broadcast) ConversationHandlers and CallbackQueryHandlers added.")
-    else:
-        logger.warning("New admin tools (edit/broadcast) were not loaded at import, skipping their ConversationHandlers.")
-
+    
+    # Add error handler
     application.add_error_handler(error_handler)
+    
     logger.info("Bot application configured. Starting polling...")
     application.run_polling()
 
 if __name__ == '__main__':
     main()
-
