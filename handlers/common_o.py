@@ -43,7 +43,7 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# دالة للتحقق من حالة التسجيل مباشرة من قاعدة البيانات
+# دالة جديدة للتحقق من حالة التسجيل مباشرة من قاعدة البيانات
 def check_user_registration_directly(user_id, db_manager):
     """التحقق من حالة تسجيل المستخدم مباشرة من قاعدة البيانات"""
     try:
