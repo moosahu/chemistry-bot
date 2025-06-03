@@ -95,8 +95,9 @@ try:
     except ImportError:
         from handlers.stats import stats_conv_handler
     
-    # استيراد معالجات أدوات الإدارة
+    # استيراد معالجات أدوات الإدارة - تعديل مسار الاستيراد
     try:
+        # محاولة استيراد من المسار المباشر أولاً
         from admin_new_tools import (
             admin_show_tools_menu_callback,
             admin_back_to_start_callback,
@@ -113,23 +114,50 @@ try:
             BROADCAST_MESSAGE_TEXT,
             BROADCAST_CONFIRM
         )
-    except ImportError:
-        from handlers.admin_tools.admin_new_tools import (
-            admin_show_tools_menu_callback,
-            admin_back_to_start_callback,
-            admin_edit_specific_message_callback,
-            admin_edit_other_messages_menu_callback,
-            admin_broadcast_start_callback,
-            admin_broadcast_confirm_callback,
-            admin_broadcast_cancel_callback,
-            received_new_message_text,
-            received_broadcast_text,
-            cancel_edit_command,
-            cancel_broadcast_command,
-            EDIT_MESSAGE_TEXT,
-            BROADCAST_MESSAGE_TEXT,
-            BROADCAST_CONFIRM
-        )
+        logger.info("تم استيراد admin_new_tools من المسار المباشر بنجاح")
+    except ImportError as e1:
+        try:
+            # محاولة استيراد من مسار handlers
+            from handlers.admin_new_tools import (
+                admin_show_tools_menu_callback,
+                admin_back_to_start_callback,
+                admin_edit_specific_message_callback,
+                admin_edit_other_messages_menu_callback,
+                admin_broadcast_start_callback,
+                admin_broadcast_confirm_callback,
+                admin_broadcast_cancel_callback,
+                received_new_message_text,
+                received_broadcast_text,
+                cancel_edit_command,
+                cancel_broadcast_command,
+                EDIT_MESSAGE_TEXT,
+                BROADCAST_MESSAGE_TEXT,
+                BROADCAST_CONFIRM
+            )
+            logger.info("تم استيراد admin_new_tools من مسار handlers بنجاح")
+        except ImportError as e2:
+            # محاولة استيراد من مسار handlers.admin_tools كملاذ أخير
+            try:
+                from handlers.admin_tools.admin_new_tools import (
+                    admin_show_tools_menu_callback,
+                    admin_back_to_start_callback,
+                    admin_edit_specific_message_callback,
+                    admin_edit_other_messages_menu_callback,
+                    admin_broadcast_start_callback,
+                    admin_broadcast_confirm_callback,
+                    admin_broadcast_cancel_callback,
+                    received_new_message_text,
+                    received_broadcast_text,
+                    cancel_edit_command,
+                    cancel_broadcast_command,
+                    EDIT_MESSAGE_TEXT,
+                    BROADCAST_MESSAGE_TEXT,
+                    BROADCAST_CONFIRM
+                )
+                logger.info("تم استيراد admin_new_tools من مسار handlers.admin_tools بنجاح")
+            except ImportError as e3:
+                logger.error(f"فشل في استيراد admin_new_tools من جميع المسارات المحتملة: {e1}, {e2}, {e3}")
+                sys.exit(1)
     
 except ImportError as e:
     logger.error(f"خطأ في استيراد الوحدات: {e}")
