@@ -43,22 +43,85 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# دالة للتحقق من حالة التسجيل مباشرة من قاعدة البيانات
+def check_user_registration_directly(user_id, db_manager):
+    """التحقق من حالة تسجيل المستخدم مباشرة من قاعدة البيانات"""
+    try:
+        if not db_manager or not hasattr(db_manager, 'get_user_info'):
+            logger.warning(f"DB_MANAGER not available or missing get_user_info method for user {user_id}")
+            return False  # افتراض أن المستخدم غير مسجل في حالة عدم وجود DB_MANAGER
+        
+        user_info = db_manager.get_user_info(user_id)
+        if not user_info:
+            logger.info(f"User {user_id} not found in database")
+            return False
+            
+        # التحقق من وجود جميع الحقول الأساسية
+        full_name = user_info.get('full_name')
+        email = user_info.get('email')
+        phone = user_info.get('phone')
+        grade = user_info.get('grade')
+        
+        # التحقق من أن جميع الحقول الأساسية موجودة وليست فارغة
+        has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
+        has_email = email not in [None, 'None', '']
+        has_phone = phone not in [None, 'None', '']
+        has_grade = grade not in [None, 'None', '']
+        
+        # اعتبار المستخدم مسجلاً فقط إذا كانت جميع الحقول الأساسية موجودة
+        is_registered = all([has_full_name, has_email, has_phone, has_grade])
+        
+        logger.info(f"User {user_id} registration check: {is_registered}")
+        logger.info(f"Details: Name: {has_full_name} ({full_name}), Email: {has_email} ({email}), Phone: {has_phone} ({phone}), Grade: {has_grade} ({grade})")
+        
+        return is_registered
+    except Exception as e:
+        logger.error(f"Error checking registration status for user {user_id}: {e}")
+        return False  # افتراض أن المستخدم غير مسجل في حالة حدوث خطأ
+
 async def start_command(update: Update, context: CallbackContext) -> int:
-    """Handles the /start command. Registers user and shows the main menu."""
+    """Handle the /start command."""
     user = update.effective_user
     chat_id = update.effective_chat.id
-    logger.info(f"User {user.id} ({user.username or user.first_name}) started the bot in chat {chat_id}.")
-
+    
     # التحقق من حالة تسجيل المستخدم
-    try:
-        from .registration import check_registration_status
-        is_registered = await check_registration_status(update, context, DB_MANAGER)
-        if not is_registered:
-            logger.info(f"User {user.id} needs to complete registration first.")
-            return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
-    except ImportError as e:
-        logger.error(f"Error importing registration module: {e}")
-        is_registered = True  # افتراض أن المستخدم مسجل في حالة عدم وجود وحدة التسجيل
+    is_registered = False
+    
+    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً
+    if context.user_data.get('is_registered', False):
+        is_registered = True
+    else:
+        # التحقق من حالة التسجيل مباشرة من قاعدة البيانات
+        db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
+        is_registered = check_user_registration_directly(user.id, db_manager)
+        
+        # تخزين حالة التسجيل في context.user_data للاستخدام المستقبلي
+        if is_registered:
+            context.user_data['is_registered'] = True
+    
+    # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
+    if not is_registered:
+        logger.info(f"User {user.id} not registered. Redirecting to registration from start_command.")
+        try:
+            from .registration import start_registration
+        except ImportError:
+            try:
+                from handlers.registration import start_registration
+            except ImportError:
+                try:
+                    from registration import start_registration
+                except ImportError as e:
+                    logger.error(f"Error importing start_registration in start_command: {e}")
+                    await safe_send_message(
+                        context.bot,
+                        chat_id,
+                        text="⚠️ حدث خطأ في الوصول إلى صفحة التسجيل. يرجى المحاولة مرة أخرى لاحقاً."
+                    )
+                    return END
+        
+        # توجيه المستخدم لإكمال التسجيل
+        await start_registration(update, context)
+        return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
 
     if DB_MANAGER:
         DB_MANAGER.register_or_update_user(
@@ -87,14 +150,59 @@ async def start_command(update: Update, context: CallbackContext) -> int:
 
 async def main_menu_callback(update: Update, context: CallbackContext) -> int:
     """Handles callbacks from the main menu keyboard or returns to the main menu."""
+    # تعريف المتغير data بشكل افتراضي لتجنب UnboundLocalError
+    data = "main_menu"  # قيمة افتراضية
+    
     query = update.callback_query
     user = update.effective_user
     state_to_return = MAIN_MENU 
+    
+    # التحقق من حالة تسجيل المستخدم قبل معالجة الاستدعاء
+    is_registered = False
+    
+    # التحقق من حالة التسجيل المخزنة في context.user_data أولاً
+    if context.user_data.get('is_registered', False):
+        is_registered = True
+    else:
+        # التحقق من حالة التسجيل مباشرة من قاعدة البيانات
+        db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
+        is_registered = check_user_registration_directly(user.id, db_manager)
+        
+        # تخزين حالة التسجيل في context.user_data للاستخدام المستقبلي
+        if is_registered:
+            context.user_data['is_registered'] = True
+    
+    # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
+    if not is_registered and query:
+        logger.info(f"User {user.id} not registered. Redirecting to registration from main_menu_callback.")
+        try:
+            from .registration import start_registration
+        except ImportError:
+            try:
+                from handlers.registration import start_registration
+            except ImportError:
+                try:
+                    from registration import start_registration
+                except ImportError as e:
+                    logger.error(f"Error importing start_registration in main_menu_callback: {e}")
+                    await query.answer("يجب عليك التسجيل أولاً")
+                    await safe_send_message(
+                        context.bot,
+                        query.message.chat_id,
+                        text="⚠️ يجب عليك التسجيل أولاً لاستخدام البوت. يرجى استخدام الأمر /start للتسجيل."
+                    )
+                    return END
+        
+        # توجيه المستخدم لإكمال التسجيل
+        await query.answer("يجب عليك التسجيل أولاً")
+        await start_registration(update, context)
+        return REGISTRATION_NAME
 
     if query:
-        await query.answer()
+        # استخراج البيانات من callback_query
         data = query.data
-        logger.info(f"Main menu callback: User {user.id} chose 	'{data}'.") 
+        await query.answer()
+        logger.info(f"Main menu callback: User {user.id} chose \t'{data}'.") 
 
         if data == "start_quiz":
             logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Transitioning to QUIZ_MENU state for quiz handler.")
@@ -168,6 +276,17 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         
     return state_to_return
 
+# Function to clean up quiz session data - placeholder implementation
+def cleanup_quiz_session_data(context, user_id, chat_id):
+    """Clean up quiz session data."""
+    logger.info(f"Cleaning up quiz session data for user {user_id}, chat {chat_id}")
+    if "current_quiz_logic" in context.user_data:
+        del context.user_data["current_quiz_logic"]
+    if "quiz_instance_id" in context.user_data:
+        del context.user_data["quiz_instance_id"]
+    # Add any other cleanup needed
+    logger.debug(f"Popped dynamic key: last_quiz_interaction_message_id_{user_id}")
+
 start_handler = CommandHandler('start', start_command)
 # This handler will catch 'main_menu' from quiz results or other places
 # It will also catch 'about_bot' now
@@ -180,5 +299,3 @@ main_menu_nav_handler = CallbackQueryHandler(main_menu_callback, pattern='^(main
 
 # The main_menu_callback here is primarily for navigating *to* the main menu
 # or handling other main menu items not covered by other conversation handlers.
-
-

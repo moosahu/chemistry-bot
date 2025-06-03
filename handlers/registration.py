@@ -75,25 +75,35 @@ logger = logging.getLogger(__name__)
 try:
     from config import (
         MAIN_MENU,
-        END
+        END,
+        REGISTRATION_NAME,
+        REGISTRATION_EMAIL,
+        REGISTRATION_PHONE,
+        REGISTRATION_GRADE,
+        REGISTRATION_CONFIRM,
+        EDIT_USER_INFO_MENU,
+        EDIT_USER_NAME,
+        EDIT_USER_EMAIL,
+        EDIT_USER_PHONE,
+        EDIT_USER_GRADE
     )
 except ImportError as e:
     logger.error(f"خطأ في استيراد الثوابت من config.py: {e}. استخدام قيم افتراضية.")
     # تعريف ثوابت افتراضية
     MAIN_MENU = 0
     END = -1
-
-# تعريف ثوابت حالات التسجيل
-REGISTRATION_NAME = 20
-REGISTRATION_EMAIL = 21
-REGISTRATION_PHONE = 22
-REGISTRATION_GRADE = 24
-REGISTRATION_CONFIRM = 25
-EDIT_USER_INFO_MENU = 26
-EDIT_USER_NAME = 27
-EDIT_USER_EMAIL = 28
-EDIT_USER_PHONE = 29
-EDIT_USER_GRADE = 30
+    
+    # تعريف ثوابت حالات التسجيل
+    REGISTRATION_NAME = 20
+    REGISTRATION_EMAIL = 21
+    REGISTRATION_PHONE = 22
+    REGISTRATION_GRADE = 24
+    REGISTRATION_CONFIRM = 25
+    EDIT_USER_INFO_MENU = 26
+    EDIT_USER_NAME = 27
+    EDIT_USER_EMAIL = 28
+    EDIT_USER_PHONE = 29
+    EDIT_USER_GRADE = 30
 
 # التحقق من صحة البريد الإلكتروني
 def is_valid_email(email):
@@ -304,7 +314,7 @@ def is_user_fully_registered(user_info):
     return all([has_full_name, has_email, has_phone, has_grade])
 
 # دالة معالجة أمر /start
-async def start_command(update: Update, context: CallbackContext) -> None:
+async def start_command(update: Update, context: CallbackContext) -> int:
     """معالجة أمر /start بشكل منفصل عن محادثة التسجيل"""
     user = update.effective_user
     user_id = user.id
@@ -333,7 +343,25 @@ async def start_command(update: Update, context: CallbackContext) -> None:
     # إذا كان المستخدم مسجلاً (لديه جميع المعلومات الأساسية)، عرض القائمة الرئيسية
     if is_registered:
         logger.info(f"المستخدم {user_id} مسجل بالفعل، عرض القائمة الرئيسية")
-        from handlers.common import main_menu_callback
+        try:
+            from handlers.common import main_menu_callback
+        except ImportError:
+            try:
+                from common import main_menu_callback
+            except ImportError as e:
+                logger.error(f"خطأ في استيراد main_menu_callback: {e}")
+                # إذا لم نتمكن من استيراد main_menu_callback، نعرض القائمة الرئيسية هنا
+                welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
+                               "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
+                keyboard = create_main_menu_keyboard(user_id, db_manager)
+                await safe_send_message(
+                    context.bot,
+                    chat_id,
+                    text=welcome_text,
+                    reply_markup=keyboard
+                )
+                return MAIN_MENU
+        
         await main_menu_callback(update, context)
     else:
         # إذا لم يكن المستخدم مسجلاً، بدء عملية التسجيل
@@ -431,6 +459,9 @@ async def handle_name_input(update: Update, context: CallbackContext) -> int:
     chat_id = update.effective_chat.id
     name = update.message.text.strip()
     
+    # تسجيل معلومات التصحيح
+    logger.debug(f"تم استلام اسم من المستخدم {user.id}: {name}")
+    
     # التحقق من صحة الاسم
     if len(name) < 3:
         await safe_send_message(
@@ -447,7 +478,7 @@ async def handle_name_input(update: Update, context: CallbackContext) -> int:
     await safe_send_message(
         context.bot,
         chat_id,
-        text=f"تم تسجيل الاسم: {name} ✅\n\n"
+        text=f"✅ تم تسجيل الاسم: {name}\n\n"
              "الخطوة الثانية: أدخل بريدك الإلكتروني:"
     )
     return REGISTRATION_EMAIL
@@ -458,6 +489,9 @@ async def handle_email_input(update: Update, context: CallbackContext) -> int:
     user = update.effective_user
     chat_id = update.effective_chat.id
     email = update.message.text.strip()
+    
+    # تسجيل معلومات التصحيح
+    logger.debug(f"تم استلام بريد إلكتروني من المستخدم {user.id}: {email}")
     
     # التحقق من صحة البريد الإلكتروني
     if not is_valid_email(email):
@@ -475,7 +509,7 @@ async def handle_email_input(update: Update, context: CallbackContext) -> int:
     await safe_send_message(
         context.bot,
         chat_id,
-        text=f"تم تسجيل البريد الإلكتروني: {email} ✅\n\n"
+        text=f"✅ تم تسجيل البريد الإلكتروني: {email}\n\n"
              "الخطوة الثالثة: أدخل رقم جوالك (مثال: 05xxxxxxxx):"
     )
     return REGISTRATION_PHONE
@@ -486,6 +520,9 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
     user = update.effective_user
     chat_id = update.effective_chat.id
     phone = update.message.text.strip()
+    
+    # تسجيل معلومات التصحيح
+    logger.debug(f"تم استلام رقم جوال من المستخدم {user.id}: {phone}")
     
     # التحقق من صحة رقم الجوال
     if not is_valid_phone(phone):
@@ -503,7 +540,7 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
     await safe_send_message(
         context.bot,
         chat_id,
-        text=f"تم تسجيل رقم الجوال: {phone} ✅\n\n"
+        text=f"✅ تم تسجيل رقم الجوال: {phone}\n\n"
              "الخطوة الرابعة: يرجى اختيار الصف الدراسي:",
         reply_markup=create_grade_keyboard()
     )
@@ -518,6 +555,9 @@ async def handle_grade_selection(update: Update, context: CallbackContext) -> in
     
     # استخراج الصف الدراسي من callback_data
     grade_data = query.data
+    
+    # تسجيل معلومات التصحيح
+    logger.debug(f"تم استلام اختيار الصف الدراسي من المستخدم {user.id}: {grade_data}")
     
     # تحديد نص الصف الدراسي بناءً على callback_data
     if grade_data == "grade_university":
@@ -565,6 +605,9 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
     
     # استخراج نوع التأكيد من callback_data
     confirmation_type = query.data
+    
+    # تسجيل معلومات التصحيح
+    logger.debug(f"تم استلام تأكيد التسجيل من المستخدم {user_id}: {confirmation_type}")
     
     if confirmation_type == "confirm_registration":
         # الحصول على مدير قاعدة البيانات
