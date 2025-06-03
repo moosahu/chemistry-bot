@@ -80,6 +80,9 @@ def check_user_registration_directly(user_id, db_manager):
         return False  # افتراض أن المستخدم غير مسجل في حالة حدوث خطأ
 
 async def start_command(update: Update, context: CallbackContext) -> int:
+        # تعريف المتغير data بشكل افتراضي لتجنب UnboundLocalError
+    data = "main_menu"  # قيمة افتراضية
+
     """Handles the /start command. Registers user and shows the main menu."""
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -200,6 +203,9 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
         return REGISTRATION_NAME
 
     if query:
+                # استخراج البيانات من callback_query
+        data = query.data
+
         await query.answer()
         data = query.data
         logger.info(f"Main menu callback: User {user.id} chose 	'{data}'.") 
