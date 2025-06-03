@@ -606,23 +606,20 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
                      "يمكنك الآن استخدام جميع ميزات البوت."
             )
             
-            # عرض القائمة الرئيسية
-            try:
-                from handlers.common import main_menu_callback
-                return await main_menu_callback(update, context)
-            except Exception as e:
-                logger.error(f"خطأ في استدعاء main_menu_callback: {e}")
-                # إنشاء رسالة القائمة الرئيسية يدوياً
-                welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
-                               "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
-                keyboard = create_main_menu_keyboard(user_id, db_manager)
-                await safe_send_message(
-                    context.bot,
-                    chat_id,
-                    text=welcome_text,
-                    reply_markup=keyboard
-                )
-                return MAIN_MENU
+            # إنهاء محادثة التسجيل
+            # ثم عرض القائمة الرئيسية بشكل منفصل
+            welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
+                           "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
+            keyboard = create_main_menu_keyboard(user_id, db_manager)
+            await safe_send_message(
+                context.bot,
+                chat_id,
+                text=welcome_text,
+                reply_markup=keyboard
+            )
+            
+            # إنهاء محادثة التسجيل
+            return ConversationHandler.END
         else:
             # إرسال رسالة فشل التسجيل
             await query.answer("حدث خطأ في التسجيل")
@@ -680,8 +677,7 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
             return REGISTRATION_GRADE
         elif field == "main_menu":
             # العودة إلى القائمة الرئيسية
-            from handlers.common import main_menu_callback
-            await main_menu_callback(update, context)
+            # إنهاء محادثة التسجيل
             return ConversationHandler.END
         else:
             # إذا لم يتم التعرف على نوع التعديل، نعود إلى قائمة تعديل المعلومات
@@ -809,8 +805,7 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         return EDIT_USER_GRADE
     elif field == "main_menu":
         # العودة إلى القائمة الرئيسية
-        from handlers.common import main_menu_callback
-        await main_menu_callback(update, context)
+        # إنهاء محادثة تعديل المعلومات
         return ConversationHandler.END
     else:
         # إذا لم يتم التعرف على نوع التعديل، نعود إلى قائمة تعديل المعلومات
@@ -1091,7 +1086,7 @@ async def handle_edit_grade_selection(update: Update, context: CallbackContext) 
 registration_conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("register", start_registration),
-        CommandHandler("start", start_registration)  # إضافة أمر start لتوجيه المستخدمين الجدد مباشرة للتسجيل
+        CommandHandler("start", start_command)  # استخدام start_command بدلاً من start_registration مباشرة
     ],
     states={
         REGISTRATION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name_input)],
