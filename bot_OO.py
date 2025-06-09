@@ -125,67 +125,31 @@ async def post_initialize_db_manager(application: Application) -> None:
     freshly initialized in application.bot_data.
     Uses global 'new_admin_tools_loaded', 'DatabaseManager', 'DATABASE_URL', 'logger'.
     """
-    logger.info("=== [DB_MANAGER] Executing post_initialize_db_manager to set DB_MANAGER in bot_data... ===")
-    
-    # Check if DB_MANAGER already exists in bot_data
-    existing_db_manager = application.bot_data.get("DB_MANAGER")
-    if existing_db_manager:
-        logger.info(f"[DB_MANAGER] Found existing DB_MANAGER in bot_data of type: {type(existing_db_manager)}")
-        try:
-            # Test if the existing DB_MANAGER is functional
-            if hasattr(existing_db_manager, 'engine') and existing_db_manager.engine:
-                logger.info("[DB_MANAGER] Existing DB_MANAGER has a valid engine. Testing connection...")
-                try:
-                    # Try a simple connection test
-                    with existing_db_manager.engine.connect() as conn:
-                        logger.info("[DB_MANAGER] Connection test successful. Keeping existing DB_MANAGER.")
-                        return  # Keep the existing DB_MANAGER
-                except Exception as conn_err:
-                    logger.warning(f"[DB_MANAGER] Connection test failed: {conn_err}. Will re-initialize DB_MANAGER.")
-            else:
-                logger.warning("[DB_MANAGER] Existing DB_MANAGER has no valid engine. Will re-initialize.")
-        except Exception as test_err:
-            logger.warning(f"[DB_MANAGER] Error testing existing DB_MANAGER: {test_err}. Will re-initialize.")
-    else:
-        logger.info("[DB_MANAGER] No existing DB_MANAGER found in bot_data. Will initialize new instance.")
+    logger.info("Executing post_initialize_db_manager to set DB_MANAGER in bot_data...")
     
     current_db_manager_in_bot_data = None # Default to None
     
     # 'new_admin_tools_loaded' is the global flag set during the initial import phase.
     if new_admin_tools_loaded: 
-        logger.info("[DB_MANAGER] Imports for new admin tools were successful. Attempting to init DB_MANAGER.")
+        logger.info("post_initialize_db_manager: Imports for new admin tools were successful. Attempting to init DB_MANAGER.")
         try:
             # Create a new instance of DatabaseManager
             # DatabaseManager class and DATABASE_URL should be in global scope from imports
-            logger.info(f"[DB_MANAGER] Creating new DatabaseManager with DATABASE_URL: {DATABASE_URL[:10]}...")
             db_manager_instance = DatabaseManager(database_url=DATABASE_URL)
             instance_engine = getattr(db_manager_instance, 'engine', None)
 
             if db_manager_instance and instance_engine is not None:
-                # Test the connection to ensure it's working
-                try:
-                    with instance_engine.connect() as conn:
-                        logger.info("[DB_MANAGER] Connection test successful for new DB_MANAGER instance.")
-                    current_db_manager_in_bot_data = db_manager_instance
-                    logger.info(f"[DB_MANAGER] DatabaseManager initialized successfully. Type: {type(current_db_manager_in_bot_data)}")
-                except Exception as conn_err:
-                    logger.error(f"[DB_MANAGER] Connection test failed for new DB_MANAGER: {conn_err}")
-                    current_db_manager_in_bot_data = None
+                current_db_manager_in_bot_data = db_manager_instance
+                logger.info(f"post_initialize_db_manager: DatabaseManager initialized/re-initialized successfully. Type: {type(current_db_manager_in_bot_data)}")
             else:
-                logger.error("[DB_MANAGER] Failed to create a valid DatabaseManager instance (or its engine is None). DB_MANAGER will be None in bot_data.")
+                logger.error("post_initialize_db_manager: Failed to create a valid DatabaseManager instance (or its engine is None). DB_MANAGER will be None in bot_data.")
         except Exception as e:
-            logger.error(f"[DB_MANAGER] Exception during DatabaseManager instantiation: {e}", exc_info=True)
+            logger.error(f"post_initialize_db_manager: Exception during DatabaseManager instantiation: {e}", exc_info=True)
     else:
-        logger.warning("[DB_MANAGER] Initial imports for new admin tools or DatabaseManager class failed. DB_MANAGER will not be initialized.")
+        logger.warning("post_initialize_db_manager: Initial imports for new admin tools or DatabaseManager class failed. DB_MANAGER will not be initialized.")
 
-    # Set the DB_MANAGER in bot_data
     application.bot_data["DB_MANAGER"] = current_db_manager_in_bot_data
-    
-    # Verify the DB_MANAGER was set correctly
-    if application.bot_data.get("DB_MANAGER") is not None:
-        logger.info(f"[DB_MANAGER] Successfully set DB_MANAGER in application.bot_data. Type: {type(application.bot_data.get('DB_MANAGER'))}")
-    else:
-        logger.critical("[DB_MANAGER] CRITICAL: Failed to set DB_MANAGER in application.bot_data. Registration and database features will not work!")
+    logger.info(f"post_initialize_db_manager: DB_MANAGER in application.bot_data is now type: {type(application.bot_data.get('DB_MANAGER'))}")
 
 async def error_handler(update: object, context: CallbackContext) -> None:
     """Log Errors caused by Updates."""
@@ -251,7 +215,7 @@ def main() -> None:
             
         # Add the post_init hook HERE
         app_builder = app_builder.post_init(post_initialize_db_manager)
-        logger.info("[DB_MANAGER] post_initialize_db_manager hook added to ApplicationBuilder.")
+        logger.info("post_initialize_db_manager hook added to ApplicationBuilder.")
 
         if job_queue:
             app_builder = app_builder.job_queue(job_queue)
@@ -335,43 +299,66 @@ def main() -> None:
     else:
         logger.warning("New Admin Statistics (V4/V7/V8) handlers were not imported, skipping their addition.")
 
-    # إضافة معالج الأخطاء
+    # إضافة معالج القائمة الرئيسية بعد معالجات التسجيل
+    logger.info("Adding global main_menu_callback handler...")
+    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
+    logger.info("Global main_menu_callback handler added.")
+
+    if new_admin_tools_loaded:
+        logger.info("Adding new admin tools (edit/broadcast) ConversationHandlers...")
+        edit_message_conv_handler = ConversationHandler(
+            entry_points=[
+                CallbackQueryHandler(admin_edit_specific_message_callback, pattern=r"^admin_edit_specific_msg_")
+            ],
+            states={
+                EDIT_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, received_new_message_text)],
+            },
+            fallbacks=[
+                CommandHandler("cancel_edit", cancel_edit_command),
+                CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"),
+                CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$")
+            ],
+            persistent=False,
+            name="edit_message_conversation"
+        )
+        application.add_handler(edit_message_conv_handler)
+
+        broadcast_conv_handler = ConversationHandler(
+            entry_points=[
+                CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$")
+            ],
+            states={
+                BROADCAST_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, received_broadcast_text)],
+                BROADCAST_CONFIRM: [
+                    CallbackQueryHandler(admin_broadcast_confirm_callback, pattern=r"^admin_broadcast_confirm$"),
+                    CallbackQueryHandler(admin_broadcast_cancel_callback, pattern=r"^admin_broadcast_cancel$")
+                ]
+            },
+            fallbacks=[
+                CommandHandler("cancel_broadcast", cancel_broadcast_command),
+                CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$")
+            ],
+            persistent=False,
+            name="broadcast_conversation"
+        )
+        application.add_handler(broadcast_conv_handler)
+        
+        # Add other callback query handlers for admin tools menu navigation
+        application.add_handler(CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"))
+        application.add_handler(CallbackQueryHandler(admin_back_to_start_callback, pattern=r"^admin_back_to_start$"))
+        application.add_handler(CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$"))
+        
+        # Add export users command handler
+        application.add_handler(CommandHandler("export_users", export_users_command))
+        logger.info("User data export command handler registered successfully.")
+        
+        logger.info("New admin tools (edit/broadcast) ConversationHandlers and CallbackQueryHandlers added.")
+    
+    # Add error handler
     application.add_error_handler(error_handler)
-    logger.info("Error handler added.")
-
-    # إضافة معالج الأوامر غير المعروفة
-    application.add_handler(MessageHandler(filters.COMMAND, lambda u, c: safe_send_message(c.bot, u.effective_chat.id, "أمر غير معروف. استخدم /start للبدء.")))
-    logger.info("Unknown command handler added.")
-
-    # إضافة معالج الرسائل غير المعروفة
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: safe_send_message(c.bot, u.effective_chat.id, "رسالة غير معروفة. استخدم /start للبدء.")))
-    logger.info("Unknown message handler added.")
-
-    # بدء البوت
-    logger.info("Starting polling...")
+    
+    logger.info("Bot application configured. Starting polling...")
     application.run_polling()
 
-async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
-    """إرسال رسالة بشكل آمن مع معالجة الأخطاء"""
-    try:
-        return await bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode
-        )
-    except Exception as e:
-        logger.error(f"خطأ في إرسال الرسالة: {e}")
-        try:
-            # محاولة إرسال رسالة بدون تنسيق خاص
-            return await bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=reply_markup
-            )
-        except Exception as e2:
-            logger.error(f"فشل محاولة إرسال الرسالة البديلة: {e2}")
-            return None
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
