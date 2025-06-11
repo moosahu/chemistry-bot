@@ -32,30 +32,6 @@ except ImportError as e:
         def is_user_admin(*args, **kwargs): logger.warning("Dummy DB_MANAGER.is_user_admin called"); return False
     DB_MANAGER = DummyDBManager()
 
-# دالة مساعدة لجلب رسالة الترحيب الموحدة
-def get_unified_welcome_text(db_manager, user_first_name=None):
-    """جلب رسالة الترحيب الموحدة من قاعدة البيانات أو استخدام النص الافتراضي"""
-    welcome_message_key = "welcome_new_user"  # نفس المفتاح المستخدم في admin_new_tools.py
-    # رسالة الترحيب الافتراضية المحددة من قبل المستخدم
-    default_text = "مرحباً بك في بوت الكيمياء التحصيلي! أنا هنا لمساعدتك في الاستعداد لاختباراتك. يمكنك البدء باختبار تجريبي أو اختيار وحدة معينة.\nتطوير الاستاذ حسين علي الموسى"
-    
-    text_to_use = default_text
-    if db_manager and hasattr(db_manager, 'get_system_message'):
-        try:
-            db_message = db_manager.get_system_message(welcome_message_key)
-            if db_message:  # إذا كانت الرسالة موجودة في قاعدة البيانات وليست فارغة
-                text_to_use = db_message
-        except Exception as e:
-            logger.error(f"Error getting system message '{welcome_message_key}': {e}")
-            # يتم استخدام النص الافتراضي في حالة الخطأ
-
-    # استبدال العنصر النائب إذا كان موجودًا في النص (سواء من قاعدة البيانات أو الافتراضي إذا تم تعديله ليشمله)
-    if "{user.first_name}" in text_to_use:
-        actual_user_name = user_first_name if user_first_name else "مستخدمنا العزيز"
-        text_to_use = text_to_use.replace("{user.first_name}", actual_user_name)
-    
-    return text_to_use
-
 def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard."""
     keyboard = [
@@ -152,11 +128,6 @@ async def start_command(update: Update, context: CallbackContext) -> int:
                     )
                     return END
         
-        # إرسال رسالة الترحيب الموحدة قبل بدء التسجيل
-        db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
-        welcome_text = get_unified_welcome_text(db_manager, user.first_name)
-        await safe_send_message(context.bot, chat_id, text=welcome_text)
-        
         # توجيه المستخدم لإكمال التسجيل
         await start_registration(update, context)
         return REGISTRATION_NAME  # توجيه المستخدم لإكمال التسجيل أولاً
@@ -172,9 +143,18 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     else:
         logger.warning("DB_MANAGER not available, skipping user registration.")
 
-    # استخدام رسالة الترحيب الموحدة بدلاً من النص الثابت
-    db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
-    welcome_text = get_unified_welcome_text(db_manager, user.first_name)
+    # استخدام رسالة الترحيب
+    welcome_text = "مرحباً بك في بوت الكيمياء التحصيلي! أنا هنا لمساعدتك في الاستعداد لاختباراتك. يمكنك البدء باختبار تجريبي أو اختيار وحدة معينة.\nتطوير الاستاذ حسين علي الموسى"
+    db_m = context.bot_data.get("DB_MANAGER", DB_MANAGER) # Get from context or use global fallback
+    # محاولة جلب رسالة الترحيب من قاعدة البيانات إذا كانت متوفرة
+    if db_m and hasattr(db_m, 'get_system_message'):
+        try:
+            db_welcome = db_m.get_system_message("welcome_new_user")
+            if db_welcome:
+                welcome_text = db_welcome
+        except Exception as e:
+            logger.error(f"Error getting welcome message from DB: {e}")
+    
     keyboard = create_main_menu_keyboard(user.id)
     # Clear any existing quiz logic from user_data to ensure a fresh start
     if "current_quiz_logic" in context.user_data:
@@ -292,9 +272,18 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
             state_to_return = MAIN_MENU 
 
     if state_to_return == MAIN_MENU:
-        # استخدام رسالة الترحيب الموحدة بدلاً من النص الثابت
+        # استخدام رسالة الترحيب بدلاً من "القائمة الرئيسية:"
+        menu_text = "مرحباً بك في بوت الكيمياء التحصيلي! أنا هنا لمساعدتك في الاستعداد لاختباراتك. يمكنك البدء باختبار تجريبي أو اختيار وحدة معينة.\nتطوير الاستاذ حسين علي الموسى"
+        # محاولة جلب رسالة الترحيب من قاعدة البيانات إذا كانت متوفرة
         db_manager = context.bot_data.get("DB_MANAGER", DB_MANAGER)
-        menu_text = get_unified_welcome_text(db_manager, user.first_name)
+        if db_manager and hasattr(db_manager, 'get_system_message'):
+            try:
+                db_welcome = db_manager.get_system_message("welcome_new_user")
+                if db_welcome:
+                    menu_text = db_welcome
+            except Exception as e:
+                logger.error(f"Error getting welcome message from DB: {e}")
+        
         keyboard = create_main_menu_keyboard(user.id)
         if query and query.message: # Ensure query.message exists
             # *** CORRECTED THE CALL TO safe_edit_message_text ***
