@@ -51,27 +51,14 @@ async def export_users_command(update: Update, context: ContextTypes.DEFAULT_TYP
             return
         
         # تصدير بيانات المستخدمين إلى ملف إكسل
-        result = await export_users_to_excel(db_manager, user_id)
+        excel_path = await export_users_to_excel(db_manager, user_id)
         
-        if result and isinstance(result, tuple):
-            excel_path, stats = result
-            
-            # إرسال ملف الإكسل للمستخدم مع الإحصائيات
-            caption = f"""تم استخراج بيانات المستخدمين بنجاح 📊
-
-📈 الإحصائيات:
-• إجمالي المستخدمين: {stats['total']}
-• المستخدمون النشطون: {stats['active']}
-• المستخدمون المحظورون: {stats['blocked']}
-
-📁 الملف يحتوي على ورقتين:
-• بيانات المستخدمين (مع حالة الحظر)
-• الإحصائيات التفصيلية"""
-            
+        if excel_path:
+            # إرسال ملف الإكسل للمستخدم
             await update.message.reply_document(
                 document=open(excel_path, 'rb'),
                 filename=os.path.basename(excel_path),
-                caption=caption
+                caption="تم استخراج بيانات المستخدمين بنجاح."
             )
             logger.info(f"تم تصدير بيانات المستخدمين بنجاح للمدير {user_id}")
         else:
@@ -128,75 +115,27 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
         output_dir = os.path.join(script_dir, "exports")
         os.makedirs(output_dir, exist_ok=True)
         
-        # فحص وجود جدول blocked_users أولاً
-        check_table_query = """
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = 'blocked_users'
-        );
+        # الاستعلام عن بيانات المستخدمين المسجلين فقط - تم تعديله ليتوافق مع هيكل الجدول الفعلي
+        query = """
+        SELECT 
+            user_id as "معرف المستخدم",
+            username as "اسم المستخدم",
+            first_name as "الاسم الأول",
+            last_name as "الاسم الأخير",
+            full_name as "الاسم الكامل",
+            email as "البريد الإلكتروني",
+            phone as "رقم الجوال",
+            grade as "الصف الدراسي",
+            is_registered as "مسجل",
+            is_admin as "مدير",
+            language_code as "رمز اللغة",
+            first_seen_timestamp as "تاريخ أول ظهور",
+            last_active_timestamp as "تاريخ آخر نشاط",
+            last_interaction_date as "تاريخ آخر تفاعل"
+        FROM users
+        WHERE is_registered = TRUE
+        ORDER BY user_id
         """
-        
-        connection = db_manager.engine.connect()
-        table_exists = connection.execute(text(check_table_query)).scalar()
-        
-        # الاستعلام عن بيانات المستخدمين مع معلومات الحظر
-        if table_exists:
-            logger.info("جدول blocked_users موجود، سيتم تضمين معلومات الحظر")
-            query = """
-            SELECT 
-                u.user_id as "معرف المستخدم",
-                u.username as "اسم المستخدم",
-                u.first_name as "الاسم الأول",
-                u.last_name as "الاسم الأخير",
-                u.full_name as "الاسم الكامل",
-                u.email as "البريد الإلكتروني",
-                u.phone as "رقم الجوال",
-                u.grade as "الصف الدراسي",
-                u.is_registered as "مسجل",
-                u.is_admin as "مدير",
-                u.language_code as "رمز اللغة",
-                u.first_seen_timestamp as "تاريخ أول ظهور",
-                u.last_active_timestamp as "تاريخ آخر نشاط",
-                u.last_interaction_date as "تاريخ آخر تفاعل",
-                CASE 
-                    WHEN b.user_id IS NOT NULL AND b.is_active = true THEN 'محظور'
-                    ELSE 'نشط'
-                END as "حالة الحظر",
-                COALESCE(b.reason, '-') as "سبب الحظر",
-                CASE 
-                    WHEN b.blocked_at IS NOT NULL THEN b.blocked_at::text
-                    ELSE '-'
-                END as "تاريخ الحظر"
-            FROM users u
-            LEFT JOIN blocked_users b ON u.user_id = b.user_id AND b.is_active = true
-            WHERE u.is_registered = TRUE
-            ORDER BY u.user_id
-            """
-        else:
-            logger.warning("جدول blocked_users غير موجود، سيتم عرض جميع المستخدمين كنشطين")
-            query = """
-            SELECT 
-                user_id as "معرف المستخدم",
-                username as "اسم المستخدم",
-                first_name as "الاسم الأول",
-                last_name as "الاسم الأخير",
-                full_name as "الاسم الكامل",
-                email as "البريد الإلكتروني",
-                phone as "رقم الجوال",
-                grade as "الصف الدراسي",
-                is_registered as "مسجل",
-                is_admin as "مدير",
-                language_code as "رمز اللغة",
-                first_seen_timestamp as "تاريخ أول ظهور",
-                last_active_timestamp as "تاريخ آخر نشاط",
-                last_interaction_date as "تاريخ آخر تفاعل",
-                'نشط' as "حالة الحظر",
-                '-' as "سبب الحظر",
-                '-' as "تاريخ الحظر"
-            FROM users
-            WHERE is_registered = TRUE
-            ORDER BY user_id
-            """
         
         # تنفيذ الاستعلام
         connection = db_manager.engine.connect()
@@ -240,61 +179,22 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
         # تصدير البيانات إلى ملف إكسل
         logger.info(f"جاري تصدير بيانات المستخدمين إلى ملف إكسل: {excel_path}")
         
-        # حساب الإحصائيات
-        total_users = len(df)
-        blocked_users = len(df[df["حالة الحظر"] == "محظور"]) if "حالة الحظر" in df.columns else 0
-        active_users = total_users - blocked_users
-        
-        # إنشاء DataFrame للإحصائيات
-        stats_data = {
-            "الإحصائية": [
-                "إجمالي المستخدمين المسجلين",
-                "المستخدمون النشطون", 
-                "المستخدمون المحظورون",
-                "تاريخ التصدير",
-                "المدير المصدر"
-            ],
-            "القيمة": [
-                total_users,
-                active_users,
-                blocked_users,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                admin_user_id
-            ]
-        }
-        stats_df = pd.DataFrame(stats_data)
-        
         # إنشاء كاتب إكسل
         with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-            # كتابة البيانات الرئيسية
+            # كتابة البيانات
             df.to_excel(writer, sheet_name='بيانات المستخدمين', index=False)
-            
-            # كتابة الإحصائيات
-            stats_df.to_excel(writer, sheet_name='الإحصائيات', index=False)
             
             # الحصول على ورقة العمل لتنسيقها
             workbook = writer.book
-            
-            # تنسيق ورقة البيانات الرئيسية
             worksheet = writer.sheets['بيانات المستخدمين']
+            
+            # ضبط عرض الأعمدة تلقائياً
             for i, column in enumerate(df.columns):
                 column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-                worksheet.column_dimensions[chr(65 + i)].width = min(column_width, 50)  # حد أقصى 50 حرف
-            
-            # تنسيق ورقة الإحصائيات
-            stats_worksheet = writer.sheets['الإحصائيات']
-            stats_worksheet.column_dimensions['A'].width = 30
-            stats_worksheet.column_dimensions['B'].width = 20
+                worksheet.column_dimensions[chr(65 + i)].width = column_width
         
         logger.info(f"تم تصدير بيانات المستخدمين بنجاح إلى: {excel_path}")
-        
-        # إرجاع مسار الملف والإحصائيات
-        stats = {
-            'total': total_users,
-            'active': active_users,
-            'blocked': blocked_users
-        }
-        return excel_path, stats
+        return excel_path
     
     except Exception as e:
         logger.error(f"حدث خطأ أثناء تصدير بيانات المستخدمين إلى ملف إكسل: {e}")
