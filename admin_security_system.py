@@ -83,13 +83,23 @@ class AdminSecurityManager:
         try:
             session = self.get_db_session(context)
             if not session:
-                logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
+                logger.error("لا يمكن الحصول على جلسة قاعدة البيانات للتحقق من الحظر")
                 return False
             
-            from blocked_users_schema import is_user_blocked_in_db
-            result = is_user_blocked_in_db(session, user_id)
-            session.close()
-            return result
+            try:
+                # التحقق من الحظر باستخدام SQL مباشر
+                result = session.execute(
+                    "SELECT id FROM blocked_users WHERE user_id = %s AND is_active = true",
+                    (user_id,)
+                ).fetchone()
+                
+                return result is not None
+                
+            except Exception as e:
+                logger.error(f"خطأ في التحقق من حظر المستخدم {user_id}: {e}")
+                return False
+            finally:
+                session.close()
             
         except Exception as e:
             logger.error(f"خطأ في التحقق من حظر المستخدم {user_id}: {e}")
@@ -107,16 +117,35 @@ class AdminSecurityManager:
                 logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
                 return False
             
-            from blocked_users_schema import block_user_in_db
-            success, message = block_user_in_db(session, user_id, admin_id, reason)
-            session.close()
-            
-            if success:
+            try:
+                # التحقق من وجود المستخدم محظور بالفعل باستخدام SQL مباشر
+                result = session.execute(
+                    "SELECT id FROM blocked_users WHERE user_id = %s AND is_active = true",
+                    (user_id,)
+                ).fetchone()
+                
+                if result:
+                    logger.info(f"المستخدم {user_id} محظور بالفعل")
+                    return False
+                
+                # إدراج سجل حظر جديد باستخدام SQL مباشر
+                session.execute(
+                    """INSERT INTO blocked_users 
+                       (user_id, blocked_by, reason, is_active) 
+                       VALUES (%s, %s, %s, %s)""",
+                    (user_id, admin_id, reason, True)
+                )
+                session.commit()
+                
                 logger.info(f"تم حظر المستخدم {user_id} بواسطة المدير {admin_id}")
-            else:
-                logger.warning(f"فشل حظر المستخدم {user_id}: {message}")
-            
-            return success
+                return True
+                
+            except Exception as e:
+                session.rollback()
+                logger.warning(f"فشل حظر المستخدم {user_id}: {e}")
+                return False
+            finally:
+                session.close()
             
         except Exception as e:
             logger.error(f"خطأ في حظر المستخدم {user_id}: {e}")
@@ -130,16 +159,35 @@ class AdminSecurityManager:
                 logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
                 return False
             
-            from blocked_users_schema import unblock_user_in_db
-            success, message = unblock_user_in_db(session, user_id, admin_id)
-            session.close()
-            
-            if success:
+            try:
+                # البحث عن المستخدم المحظور باستخدام SQL مباشر
+                result = session.execute(
+                    "SELECT id FROM blocked_users WHERE user_id = %s AND is_active = true",
+                    (user_id,)
+                ).fetchone()
+                
+                if not result:
+                    logger.info(f"المستخدم {user_id} غير محظور")
+                    return False
+                
+                # إلغاء الحظر باستخدام SQL مباشر
+                session.execute(
+                    """UPDATE blocked_users 
+                       SET is_active = false, unblocked_by = %s, unblocked_at = CURRENT_TIMESTAMP 
+                       WHERE user_id = %s AND is_active = true""",
+                    (admin_id, user_id)
+                )
+                session.commit()
+                
                 logger.info(f"تم إلغاء حظر المستخدم {user_id} بواسطة المدير {admin_id}")
-            else:
-                logger.warning(f"فشل إلغاء حظر المستخدم {user_id}: {message}")
-            
-            return success
+                return True
+                
+            except Exception as e:
+                session.rollback()
+                logger.warning(f"فشل إلغاء حظر المستخدم {user_id}: {e}")
+                return False
+            finally:
+                session.close()
             
         except Exception as e:
             logger.error(f"خطأ في إلغاء حظر المستخدم {user_id}: {e}")
@@ -153,10 +201,32 @@ class AdminSecurityManager:
                 logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
                 return []
             
-            from blocked_users_schema import get_blocked_users_list_from_db
-            result = get_blocked_users_list_from_db(session)
-            session.close()
-            return result
+            try:
+                # الحصول على قائمة المحظورين باستخدام SQL مباشر
+                results = session.execute(
+                    """SELECT user_id, blocked_by, blocked_at, reason 
+                       FROM blocked_users 
+                       WHERE is_active = true 
+                       ORDER BY blocked_at DESC 
+                       LIMIT 50"""
+                ).fetchall()
+                
+                blocked_list = []
+                for row in results:
+                    blocked_list.append({
+                        'user_id': row[0],
+                        'blocked_by': row[1],
+                        'blocked_at': row[2].isoformat() if row[2] else None,
+                        'reason': row[3] or "غير محدد"
+                    })
+                
+                return blocked_list
+                
+            except Exception as e:
+                logger.error(f"خطأ في الحصول على قائمة المحظورين: {e}")
+                return []
+            finally:
+                session.close()
             
         except Exception as e:
             logger.error(f"خطأ في الحصول على قائمة المحظورين: {e}")
