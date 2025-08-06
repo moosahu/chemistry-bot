@@ -22,11 +22,11 @@ from telegram.ext import (
 
 # استيراد دالة إشعارات البريد الإلكتروني
 try:
-    from registration_notification import notify_admin_on_registration
+    from handlers.admin_tools.registration_notification import notify_admin_on_registration
     EMAIL_NOTIFICATIONS_AVAILABLE = True
 except ImportError:
     EMAIL_NOTIFICATIONS_AVAILABLE = False
-    logging.warning("لم يتم العثور على وحدة registration_notification. إشعارات البريد الإلكتروني غير متاحة.")
+    logging.warning("لم يتم العثور على وحدة registration_notification في handlers.admin_tools. إشعارات البريد الإلكتروني غير متاحة.")
 
 # تعريف الدوال المساعدة مباشرة في بداية الملف (خارج أي كتلة try/except)
 async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
