@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-جدول المستخدمين المحظورين في قاعدة البيانات
+جدول المستخدمين المحظورين في قاعدة البيانات - مصحح
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -17,12 +17,12 @@ class BlockedUser(Base):
     __tablename__ = 'blocked_users'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False, unique=True, index=True)  # معرف المستخدم المحظور
-    blocked_by = Column(Integer, nullable=False)  # معرف المدير الذي حظره
+    user_id = Column(BigInteger, nullable=False, unique=True, index=True)  # معرف المستخدم المحظور (BigInteger)
+    blocked_by = Column(BigInteger, nullable=False)  # معرف المدير الذي حظره (BigInteger)
     blocked_at = Column(DateTime, default=func.now(), nullable=False)  # تاريخ الحظر
     reason = Column(Text, default="غير محدد")  # سبب الحظر
     is_active = Column(Boolean, default=True, nullable=False)  # هل الحظر نشط
-    unblocked_by = Column(Integer, nullable=True)  # معرف المدير الذي ألغى الحظر
+    unblocked_by = Column(BigInteger, nullable=True)  # معرف المدير الذي ألغى الحظر (BigInteger)
     unblocked_at = Column(DateTime, nullable=True)  # تاريخ إلغاء الحظر
     notes = Column(Text, nullable=True)  # ملاحظات إضافية
     
