@@ -127,8 +127,8 @@ class AdminSecurityManager:
                 # إدراج سجل حظر جديد
                 session.execute(
                     text("""INSERT INTO blocked_users 
-                           (user_id, blocked_by, reason, is_active) 
-                           VALUES (:user_id, :blocked_by, :reason, :is_active)"""),
+                           (user_id, blocked_by, blocked_at, reason, is_active) 
+                           VALUES (:user_id, :blocked_by, CURRENT_TIMESTAMP, :reason, :is_active)"""),
                     {
                         "user_id": user_id,
                         "blocked_by": admin_id,
