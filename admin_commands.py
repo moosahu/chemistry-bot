@@ -91,7 +91,7 @@ async def admin_menu_callback(update: Update, context: CallbackContext) -> int:
             "🚫 **حظر مستخدم**\n\n"
             "أرسل معرف المستخدم (User ID) الذي تريد حظره:\n"
             "مثال: `123456789`\n\n"
-            "يمكنك الحصول على معرف المستخدم من خلال إعادة توجيه رسالة منه أو استخدام بوت @userinfobot",
+            "💡 اكتب 'إلغاء' أو 'cancel' للتراجع",
             parse_mode='Markdown'
         )
         return BLOCK_USER_INPUT
@@ -100,11 +100,11 @@ async def admin_menu_callback(update: Update, context: CallbackContext) -> int:
         await query.edit_message_text(
             "✅ **إلغاء حظر مستخدم**\n\n"
             "أرسل معرف المستخدم (User ID) الذي تريد إلغاء حظره:\n"
-            "مثال: `123456789`",
+            "مثال: `123456789`\n\n"
+            "💡 اكتب 'إلغاء' أو 'cancel' للتراجع",
             parse_mode='Markdown'
         )
-        return UNBLOCK_USER_INPUT
-    
+        return UNBLOCK_USER_INPUT  
     elif query.data == "admin_blocked_list":
         return await show_blocked_users_list(update, context)
     
@@ -130,8 +130,20 @@ async def handle_block_user_input(update: Update, context: CallbackContext) -> i
         await update.message.reply_text("❌ نظام الحماية غير مفعل.")
         return ConversationHandler.END
     
+    user_input = update.message.text.strip()
+    
+    # التحقق من أمر الإلغاء
+    if user_input.lower() in ['cancel', 'إلغاء', 'الغاء', '/cancel']:
+        await update.message.reply_text(
+            "❌ تم إلغاء عملية الحظر.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")
+            ]])
+        )
+        return ADMIN_MAIN_MENU
+    
     try:
-        user_id_to_block = int(update.message.text.strip())
+        user_id_to_block = int(user_input)
         
         # التحقق من أن المستخدم ليس مدير
         if security_manager.is_admin(user_id_to_block):
@@ -144,7 +156,8 @@ async def handle_block_user_input(update: Update, context: CallbackContext) -> i
         await update.message.reply_text(
             f"🚫 **تأكيد الحظر**\n\n"
             f"هل أنت متأكد من حظر المستخدم `{user_id_to_block}`؟\n\n"
-            f"أرسل سبب الحظر أو اكتب 'تأكيد' للمتابعة بدون سبب:",
+            f"أرسل سبب الحظر أو اكتب 'تأكيد' للمتابعة بدون سبب:\n\n"
+            f"💡 اكتب 'إلغاء' أو 'cancel' للتراجع",
             parse_mode='Markdown'
         )
         
@@ -153,7 +166,8 @@ async def handle_block_user_input(update: Update, context: CallbackContext) -> i
     except ValueError:
         await update.message.reply_text(
             "❌ معرف المستخدم غير صحيح!\n"
-            "يجب أن يكون رقماً صحيحاً مثل: 123456789"
+            "يجب أن يكون رقماً صحيحاً مثل: 123456789\n\n"
+            "💡 اكتب 'إلغاء' أو 'cancel' للتراجع"
         )
         return BLOCK_USER_INPUT
 
@@ -171,7 +185,21 @@ async def handle_block_reason_input(update: Update, context: CallbackContext) ->
         await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
         return ConversationHandler.END
     
-    reason = update.message.text.strip()
+    user_input = update.message.text.strip()
+    
+    # التحقق من أمر الإلغاء
+    if user_input.lower() in ['cancel', 'إلغاء', 'الغاء', '/cancel']:
+        await update.message.reply_text(
+            "❌ تم إلغاء عملية الحظر.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")
+            ]])
+        )
+        # مسح البيانات المؤقتة
+        context.user_data.pop('user_to_block', None)
+        return ADMIN_MAIN_MENU
+    
+    reason = user_input
     if reason.lower() == 'تأكيد':
         reason = "غير محدد"
     
@@ -224,12 +252,25 @@ async def handle_unblock_user_input(update: Update, context: CallbackContext) ->
         await update.message.reply_text("❌ نظام الحماية غير مفعل.")
         return ConversationHandler.END
     
+    user_input = update.message.text.strip()
+    
+    # التحقق من أمر الإلغاء
+    if user_input.lower() in ['cancel', 'إلغاء', 'الغاء', '/cancel']:
+        await update.message.reply_text(
+            "❌ تم إلغاء عملية إلغاء الحظر.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")
+            ]])
+        )
+        return ADMIN_MAIN_MENU
+    
     try:
-        user_id = int(update.message.text.strip())
+        user_id = int(user_input)
     except ValueError:
         await update.message.reply_text(
             "❌ معرف المستخدم غير صحيح.\n"
-            "يجب أن يكون رقماً صحيحاً مثل: 123456789"
+            "يجب أن يكون رقماً صحيحاً مثل: 123456789\n\n"
+            "💡 اكتب 'إلغاء' أو 'cancel' للتراجع"
         )
         return UNBLOCK_USER_INPUT
     
@@ -262,7 +303,10 @@ async def handle_unblock_user_input(update: Update, context: CallbackContext) ->
         
     else:
         await update.message.reply_text(
-            f"⚠️ المستخدم {user_id} غير محظور."
+            f"⚠️ المستخدم {user_id} غير محظور.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")
+            ]])
         )
     
     return ADMIN_MAIN_MENU
