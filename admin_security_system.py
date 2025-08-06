@@ -18,6 +18,7 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
+from sqlalchemy import text
 
 # إعداد التسجيل
 logger = logging.getLogger(__name__)
@@ -89,8 +90,8 @@ class AdminSecurityManager:
             try:
                 # التحقق من الحظر باستخدام SQL مباشر
                 result = session.execute(
-                    "SELECT id FROM blocked_users WHERE user_id = %s AND is_active = true",
-                    (user_id,)
+                    text("SELECT id FROM blocked_users WHERE user_id = :user_id AND is_active = true"),
+                    {"user_id": user_id}
                 ).fetchone()
                 
                 return result is not None
