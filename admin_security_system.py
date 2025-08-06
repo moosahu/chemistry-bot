@@ -46,9 +46,30 @@ class AdminSecurityManager:
         """الحصول على جلسة قاعدة البيانات"""
         try:
             db_manager = context.bot_data.get("DB_MANAGER")
-            if db_manager and hasattr(db_manager, 'get_session'):
-                return db_manager.get_session()
+            if db_manager:
+                logger.info(f"تم العثور على DB_MANAGER من النوع: {type(db_manager)}")
+                
+                # محاولة الحصول على الجلسة بطرق مختلفة
+                if hasattr(db_manager, 'get_session'):
+                    session = db_manager.get_session()
+                    logger.info("تم الحصول على الجلسة من get_session()")
+                    return session
+                elif hasattr(db_manager, 'session'):
+                    logger.info("تم الحصول على الجلسة من session")
+                    return db_manager.session
+                elif hasattr(db_manager, 'engine'):
+                    logger.info("تم الحصول على الجلسة من engine")
+                    from sqlalchemy.orm import sessionmaker
+                    Session = sessionmaker(bind=db_manager.engine)
+                    return Session()
+                else:
+                    # طباعة جميع الخصائص المتاحة للتشخيص
+                    available_attrs = [attr for attr in dir(db_manager) if not attr.startswith('_')]
+                    logger.info(f"الخصائص المتاحة في DB_MANAGER: {available_attrs}")
+            
+            logger.warning("لم يتم العثور على DB_MANAGER أو لا يحتوي على طرق الجلسة المتوقعة")
             return None
+            
         except Exception as e:
             logger.error(f"خطأ في الحصول على جلسة قاعدة البيانات: {e}")
             return None
