@@ -17,12 +17,20 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# إعدادات البريد الإلكتروني (يجب تعديلها حسب إعدادات البريد الخاصة بك)
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-EMAIL_USERNAME = "your_email@gmail.com"  # يجب تغييره إلى بريدك الإلكتروني
-EMAIL_PASSWORD = "your_app_password"  # يجب تغييره إلى كلمة مرور التطبيق الخاصة بك
-ADMIN_EMAIL = "admin_email@example.com"  # يجب تغييره إلى بريد المدير
+# إعدادات البريد الإلكتروني - تعتمد كلياً على متغيرات البيئة
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+EMAIL_USERNAME = os.getenv("EMAIL_USERNAME")  # يجب إعداده في متغيرات البيئة
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")  # يجب إعداده في متغيرات البيئة  
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")  # يجب إعداده في متغيرات البيئة
+
+# التحقق من صحة الإعدادات
+def is_email_configured():
+    """التحقق من أن إعدادات البريد الإلكتروني تم تكوينها بشكل صحيح"""
+    return (EMAIL_USERNAME is not None and EMAIL_USERNAME.strip() != "" and
+            EMAIL_PASSWORD is not None and EMAIL_PASSWORD.strip() != "" and
+            ADMIN_EMAIL is not None and ADMIN_EMAIL.strip() != "" and
+            "@" in EMAIL_USERNAME and "@" in ADMIN_EMAIL)
 
 def send_new_user_notification(user_data):
     """
@@ -35,6 +43,13 @@ def send_new_user_notification(user_data):
         bool: True إذا تم إرسال البريد بنجاح، False خلاف ذلك
     """
     try:
+        # التحقق من تكوين إعدادات البريد الإلكتروني
+        if not is_email_configured():
+            logger.warning("إعدادات البريد الإلكتروني غير مكونة بشكل صحيح. يرجى إعداد متغيرات البيئة التالية في Render:")
+            logger.warning("- EMAIL_USERNAME: عنوان البريد الإلكتروني")
+            logger.warning("- EMAIL_PASSWORD: كلمة مرور التطبيق من Gmail")
+            logger.warning("- ADMIN_EMAIL: بريد المدير لاستقبال الإشعارات")
+            return False
         # إنشاء رسالة البريد الإلكتروني
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USERNAME

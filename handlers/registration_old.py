@@ -20,14 +20,6 @@ from telegram.ext import (
     Application
 )
 
-# استيراد دالة إشعارات البريد الإلكتروني
-try:
-    from registration_notification import notify_admin_on_registration
-    EMAIL_NOTIFICATIONS_AVAILABLE = True
-except ImportError:
-    EMAIL_NOTIFICATIONS_AVAILABLE = False
-    logging.warning("لم يتم العثور على وحدة registration_notification. إشعارات البريد الإلكتروني غير متاحة.")
-
 # تعريف الدوال المساعدة مباشرة في بداية الملف (خارج أي كتلة try/except)
 async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
     """إرسال رسالة بشكل آمن مع معالجة الأخطاء"""
@@ -855,14 +847,6 @@ async def handle_registration_confirmation(update: Update, context: CallbackCont
             # تحديث حالة التسجيل في context.user_data
             context.user_data['is_registered'] = True
             logger.info(f"[DEBUG] User {user_id} registration successful and saved to DB.")
-            
-            # إرسال إشعار بريد إلكتروني للمدير (إذا كان متاحاً)
-            if EMAIL_NOTIFICATIONS_AVAILABLE:
-                try:
-                    await notify_admin_on_registration(user_id, user_data, context)
-                    logger.info(f"تم إرسال إشعار بريد إلكتروني للمدير عن المستخدم الجديد {user_id}")
-                except Exception as e:
-                    logger.error(f"خطأ في إرسال إشعار البريد الإلكتروني للمستخدم {user_id}: {e}")
             
             # إرسال رسالة نجاح التسجيل
             await query.answer("تم التسجيل بنجاح!")
