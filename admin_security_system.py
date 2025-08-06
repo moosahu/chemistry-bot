@@ -2,13 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-نظام الحماية مع التحكم الإداري اليدوي
+نظام الحماية مع التحكم الإداري اليدوي - يستخدم قاعدة البيانات
 يسمح للمدير بحظر وإلغاء حظر المستخدمين يدوياً
 """
 
 import logging
-import json
-import os
 from datetime import datetime
 from typing import Set, Dict, List
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -25,16 +23,10 @@ from telegram.ext import (
 logger = logging.getLogger(__name__)
 
 class AdminSecurityManager:
-    """مدير الحماية مع التحكم الإداري اليدوي"""
+    """مدير الحماية مع التحكم الإداري اليدوي - يستخدم قاعدة البيانات"""
     
-    def __init__(self, admin_ids: List[int], blocked_users_file: str = "blocked_users.json"):
+    def __init__(self, admin_ids: List[int]):
         self.admin_ids = set(admin_ids)  # معرفات المدراء
-        self.blocked_users_file = blocked_users_file
-        self.blocked_users: Set[int] = set()  # المستخدمون المحظورون
-        self.blocked_users_info: Dict[int, Dict] = {}  # معلومات الحظر
-        
-        # تحميل قائمة المحظورين من الملف
-        self.load_blocked_users()
         
         # رسائل النظام
         self.messages = {
@@ -46,95 +38,108 @@ class AdminSecurityManager:
             "user_unblocked_success": "✅ تم إلغاء حظر المستخدم بنجاح.",
             "user_already_blocked": "⚠️ المستخدم محظور بالفعل.",
             "user_not_blocked": "⚠️ المستخدم غير محظور.",
-            "access_denied": "🚫 تم رفض الوصول."
+            "access_denied": "🚫 تم رفض الوصول.",
+            "database_error": "❌ خطأ في قاعدة البيانات. يرجى المحاولة لاحقاً."
         }
     
-    def load_blocked_users(self):
-        """تحميل قائمة المستخدمين المحظورين من الملف"""
+    def get_db_session(self, context: CallbackContext):
+        """الحصول على جلسة قاعدة البيانات"""
         try:
-            if os.path.exists(self.blocked_users_file):
-                with open(self.blocked_users_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.blocked_users = set(data.get('blocked_users', []))
-                    self.blocked_users_info = data.get('blocked_users_info', {})
-                    # تحويل مفاتيح معلومات الحظر إلى أرقام صحيحة
-                    self.blocked_users_info = {
-                        int(k): v for k, v in self.blocked_users_info.items()
-                    }
-                logger.info(f"تم تحميل {len(self.blocked_users)} مستخدم محظور")
+            db_manager = context.bot_data.get("DB_MANAGER")
+            if db_manager and hasattr(db_manager, 'get_session'):
+                return db_manager.get_session()
+            return None
         except Exception as e:
-            logger.error(f"خطأ في تحميل قائمة المحظورين: {e}")
-            self.blocked_users = set()
-            self.blocked_users_info = {}
-    
-    def save_blocked_users(self):
-        """حفظ قائمة المستخدمين المحظورين في الملف"""
-        try:
-            data = {
-                'blocked_users': list(self.blocked_users),
-                'blocked_users_info': {
-                    str(k): v for k, v in self.blocked_users_info.items()
-                },
-                'last_updated': datetime.now().isoformat()
-            }
-            with open(self.blocked_users_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.info("تم حفظ قائمة المحظورين")
-        except Exception as e:
-            logger.error(f"خطأ في حفظ قائمة المحظورين: {e}")
+            logger.error(f"خطأ في الحصول على جلسة قاعدة البيانات: {e}")
+            return None
     
     def is_admin(self, user_id: int) -> bool:
         """التحقق من كون المستخدم مدير"""
         return user_id in self.admin_ids
     
-    def is_user_blocked(self, user_id: int) -> bool:
+    def is_user_blocked(self, user_id: int, context: CallbackContext) -> bool:
         """التحقق من حظر المستخدم"""
-        return user_id in self.blocked_users
+        try:
+            session = self.get_db_session(context)
+            if not session:
+                logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
+                return False
+            
+            from blocked_users_schema import is_user_blocked_in_db
+            result = is_user_blocked_in_db(session, user_id)
+            session.close()
+            return result
+            
+        except Exception as e:
+            logger.error(f"خطأ في التحقق من حظر المستخدم {user_id}: {e}")
+            return False
     
-    def block_user(self, user_id: int, admin_id: int, reason: str = "غير محدد") -> bool:
+    def block_user(self, user_id: int, admin_id: int, reason: str, context: CallbackContext) -> bool:
         """حظر مستخدم (بواسطة المدير)"""
         if user_id in self.admin_ids:
             logger.warning(f"محاولة حظر مدير: {user_id}")
             return False
         
-        if user_id not in self.blocked_users:
-            self.blocked_users.add(user_id)
-            self.blocked_users_info[user_id] = {
-                'blocked_by': admin_id,
-                'blocked_at': datetime.now().isoformat(),
-                'reason': reason
-            }
-            self.save_blocked_users()
-            logger.info(f"تم حظر المستخدم {user_id} بواسطة المدير {admin_id}")
-            return True
-        return False
+        try:
+            session = self.get_db_session(context)
+            if not session:
+                logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
+                return False
+            
+            from blocked_users_schema import block_user_in_db
+            success, message = block_user_in_db(session, user_id, admin_id, reason)
+            session.close()
+            
+            if success:
+                logger.info(f"تم حظر المستخدم {user_id} بواسطة المدير {admin_id}")
+            else:
+                logger.warning(f"فشل حظر المستخدم {user_id}: {message}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"خطأ في حظر المستخدم {user_id}: {e}")
+            return False
     
-    def unblock_user(self, user_id: int, admin_id: int) -> bool:
+    def unblock_user(self, user_id: int, admin_id: int, context: CallbackContext) -> bool:
         """إلغاء حظر مستخدم (بواسطة المدير)"""
-        if user_id in self.blocked_users:
-            self.blocked_users.remove(user_id)
-            if user_id in self.blocked_users_info:
-                self.blocked_users_info[user_id]['unblocked_by'] = admin_id
-                self.blocked_users_info[user_id]['unblocked_at'] = datetime.now().isoformat()
-                # يمكن الاحتفاظ بالمعلومات للسجل أو حذفها
-                # del self.blocked_users_info[user_id]
-            self.save_blocked_users()
-            logger.info(f"تم إلغاء حظر المستخدم {user_id} بواسطة المدير {admin_id}")
-            return True
-        return False
+        try:
+            session = self.get_db_session(context)
+            if not session:
+                logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
+                return False
+            
+            from blocked_users_schema import unblock_user_in_db
+            success, message = unblock_user_in_db(session, user_id, admin_id)
+            session.close()
+            
+            if success:
+                logger.info(f"تم إلغاء حظر المستخدم {user_id} بواسطة المدير {admin_id}")
+            else:
+                logger.warning(f"فشل إلغاء حظر المستخدم {user_id}: {message}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"خطأ في إلغاء حظر المستخدم {user_id}: {e}")
+            return False
     
-    def get_blocked_users_list(self) -> List[Dict]:
+    def get_blocked_users_list(self, context: CallbackContext) -> List[Dict]:
         """الحصول على قائمة المستخدمين المحظورين مع معلوماتهم"""
-        blocked_list = []
-        for user_id in self.blocked_users:
-            info = self.blocked_users_info.get(user_id, {})
-            blocked_list.append({
-                'user_id': user_id,
-                'blocked_by': info.get('blocked_by'),
-                'blocked_at': info.get('blocked_at'),
-                'reason': info.get('reason', 'غير محدد')
-            })
-        return blocked_list
+        try:
+            session = self.get_db_session(context)
+            if not session:
+                logger.error("لا يمكن الحصول على جلسة قاعدة البيانات")
+                return []
+            
+            from blocked_users_schema import get_blocked_users_list_from_db
+            result = get_blocked_users_list_from_db(session)
+            session.close()
+            return result
+            
+        except Exception as e:
+            logger.error(f"خطأ في الحصول على قائمة المحظورين: {e}")
+            return []
     
     async def check_user_access(self, update: Update, context: CallbackContext, 
                               check_registration: bool = True) -> bool:
@@ -154,7 +159,7 @@ class AdminSecurityManager:
         chat_id = update.effective_chat.id
         
         # التحقق من الحظر أولاً
-        if self.is_user_blocked(user_id):
+        if self.is_user_blocked(user_id, context):
             logger.warning(f"[SECURITY] محاولة وصول من مستخدم محظور: {user_id}")
             try:
                 await context.bot.send_message(
@@ -169,7 +174,7 @@ class AdminSecurityManager:
         if check_registration:
             # استيراد دوال التحقق من التسجيل
             try:
-                from registration import is_user_fully_registered, get_user_info
+                from handlers.registration import is_user_fully_registered, get_user_info
                 
                 db_manager = context.bot_data.get("DB_MANAGER")
                 if not db_manager:
@@ -238,6 +243,19 @@ def initialize_admin_security(admin_ids: List[int]):
     """تهيئة مدير الحماية الإداري"""
     global admin_security_manager
     admin_security_manager = AdminSecurityManager(admin_ids)
+    
+    # إنشاء جدول المحظورين إذا لم يكن موجوداً
+    try:
+        from database.db_setup import get_engine
+        from blocked_users_schema import create_blocked_users_table
+        
+        engine = get_engine()
+        if engine:
+            create_blocked_users_table(engine)
+            logger.info("تم التحقق من جدول المستخدمين المحظورين")
+    except Exception as e:
+        logger.error(f"خطأ في إنشاء جدول المحظورين: {e}")
+    
     logger.info(f"تم تهيئة نظام الحماية الإداري مع {len(admin_ids)} مدير")
     return admin_security_manager
 
@@ -246,10 +264,10 @@ def get_admin_security_manager():
     return admin_security_manager
 
 # دوال مساعدة للاستخدام في ملفات أخرى
-def is_user_blocked(user_id: int) -> bool:
+def is_user_blocked(user_id: int, context: CallbackContext) -> bool:
     """التحقق من حظر المستخدم"""
     if admin_security_manager:
-        return admin_security_manager.is_user_blocked(user_id)
+        return admin_security_manager.is_user_blocked(user_id, context)
     return False
 
 def is_admin(user_id: int) -> bool:

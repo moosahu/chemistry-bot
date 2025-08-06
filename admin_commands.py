@@ -178,15 +178,13 @@ async def handle_block_reason_input(update: Update, context: CallbackContext) ->
     admin_id = update.effective_user.id
     
     # تنفيذ الحظر
-    if security_manager.block_user(user_to_block, admin_id, reason):
-        success_text = f"""
-✅ **تم حظر المستخدم بنجاح**
+    if security_manager.block_user(user_to_block, admin_id, reason, context):
+        success_text = f"""✅ تم حظر المستخدم بنجاح
 
-👤 **معرف المستخدم**: `{user_to_block}`
-👑 **تم الحظر بواسطة**: {update.effective_user.first_name}
-📝 **السبب**: {reason}
-⏰ **التاريخ**: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-"""
+👤 معرف المستخدم: {user_to_block}
+👑 تم الحظر بواسطة: {update.effective_user.first_name}
+📝 السبب: {reason}
+⏰ التاريخ: {datetime.now().strftime('%Y-%m-%d %H:%M')}"""
         
         # إرسال رسالة النجاح مع زر العودة
         keyboard = [[InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")]]
@@ -194,7 +192,6 @@ async def handle_block_reason_input(update: Update, context: CallbackContext) ->
         
         await update.message.reply_text(
             success_text,
-            parse_mode='Markdown',
             reply_markup=reply_markup
         )
         
@@ -212,8 +209,7 @@ async def handle_block_reason_input(update: Update, context: CallbackContext) ->
         
     else:
         await update.message.reply_text(
-            f"⚠️ المستخدم `{user_to_block}` محظور بالفعل.",
-            parse_mode='Markdown'
+            f"⚠️ المستخدم {user_to_block} محظور بالفعل."
         )
         context.user_data.pop('user_to_block', None)
     
@@ -229,84 +225,84 @@ async def handle_unblock_user_input(update: Update, context: CallbackContext) ->
         return ConversationHandler.END
     
     try:
-        user_id_to_unblock = int(update.message.text.strip())
-        admin_id = update.effective_user.id
-        
-        # تنفيذ إلغاء الحظر
-        if security_manager.unblock_user(user_id_to_unblock, admin_id):
-            success_text = f"""
-✅ **تم إلغاء حظر المستخدم بنجاح**
-
-👤 **معرف المستخدم**: `{user_id_to_unblock}`
-👑 **تم إلغاء الحظر بواسطة**: {update.effective_user.first_name}
-⏰ **التاريخ**: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-"""
-            
-            keyboard = [[InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                success_text,
-                parse_mode='Markdown',
-                reply_markup=reply_markup
-            )
-            
-            # محاولة إشعار المستخدم بإلغاء الحظر (اختياري)
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id_to_unblock,
-                    text="✅ تم إلغاء حظرك من البوت. يمكنك الآن استخدامه بشكل طبيعي."
-                )
-            except Exception as e:
-                logger.info(f"لم يتم إرسال إشعار إلغاء الحظر للمستخدم {user_id_to_unblock}: {e}")
-            
-        else:
-            await update.message.reply_text(
-                f"⚠️ المستخدم `{user_id_to_unblock}` غير محظور.",
-                parse_mode='Markdown'
-            )
-        
+        user_id = int(update.message.text.strip())
     except ValueError:
         await update.message.reply_text(
-            "❌ معرف المستخدم غير صحيح!\n"
+            "❌ معرف المستخدم غير صحيح.\n"
             "يجب أن يكون رقماً صحيحاً مثل: 123456789"
         )
         return UNBLOCK_USER_INPUT
+    
+    admin_id = update.effective_user.id
+    
+    # تنفيذ إلغاء الحظر
+    if security_manager.unblock_user(user_id, admin_id, context):
+        success_text = f"""✅ تم إلغاء حظر المستخدم بنجاح
+
+👤 معرف المستخدم: {user_id}
+👑 تم إلغاء الحظر بواسطة: {update.effective_user.first_name}
+⏰ التاريخ: {datetime.now().strftime('%Y-%m-%d %H:%M')}"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            success_text,
+            reply_markup=reply_markup
+        )
+        
+        # محاولة إشعار المستخدم بإلغاء الحظر (اختياري)
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="✅ تم إلغاء حظرك من البوت. يمكنك الآن استخدام جميع الخدمات."
+            )
+        except Exception as e:
+            logger.info(f"لم يتم إرسال إشعار إلغاء الحظر للمستخدم {user_id}: {e}")
+        
+    else:
+        await update.message.reply_text(
+            f"⚠️ المستخدم {user_id} غير محظور."
+        )
     
     return ADMIN_MAIN_MENU
 
 async def show_blocked_users_list(update: Update, context: CallbackContext) -> int:
     """عرض قائمة المستخدمين المحظورين"""
+    query = update.callback_query
+    await query.answer()
+    
     from admin_security_system import get_admin_security_manager
     security_manager = get_admin_security_manager()
     
     if not security_manager:
-        await update.callback_query.edit_message_text("❌ نظام الحماية غير مفعل.")
+        await query.edit_message_text("❌ نظام الحماية غير مفعل.")
         return ConversationHandler.END
     
-    blocked_users = security_manager.get_blocked_users_list()
+    # الحصول على قائمة المحظورين من قاعدة البيانات
+    blocked_users = security_manager.get_blocked_users_list(context)
     
     if not blocked_users:
-        text = "📋 **قائمة المستخدمين المحظورين**\n\n✅ لا يوجد مستخدمون محظورون حالياً."
+        text = "📋 قائمة المستخدمين المحظورين\n\n✅ لا يوجد مستخدمون محظورون حالياً."
     else:
-        text = f"📋 **قائمة المستخدمين المحظورين** ({len(blocked_users)} مستخدم)\n\n"
+        text = f"📋 قائمة المستخدمين المحظورين ({len(blocked_users)} مستخدم)\n\n"
         
         for i, user_info in enumerate(blocked_users[:10], 1):  # عرض أول 10 فقط
             user_id = user_info['user_id']
             reason = user_info['reason']
-            blocked_at = user_info.get('blocked_at', 'غير محدد')
+            blocked_at = user_info['blocked_at']
             
             # تنسيق التاريخ
             try:
-                if blocked_at != 'غير محدد':
-                    date_obj = datetime.fromisoformat(blocked_at.replace('Z', '+00:00'))
-                    blocked_at = date_obj.strftime('%Y-%m-%d %H:%M')
+                from datetime import datetime
+                date_obj = datetime.fromisoformat(blocked_at.replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime('%Y-%m-%d %H:%M')
             except:
-                blocked_at = 'غير محدد'
+                formatted_date = blocked_at
             
-            text += f"{i}. 👤 `{user_id}`\n"
+            text += f"{i}. 👤 {user_id}\n"
             text += f"   📝 السبب: {reason}\n"
-            text += f"   📅 التاريخ: {blocked_at}\n\n"
+            text += f"   📅 تاريخ الحظر: {formatted_date}\n\n"
         
         if len(blocked_users) > 10:
             text += f"... و {len(blocked_users) - 10} مستخدم آخر"
@@ -314,61 +310,8 @@ async def show_blocked_users_list(update: Update, context: CallbackContext) -> i
     keyboard = [[InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.callback_query.edit_message_text(
-        text,
-        parse_mode='Markdown',
-        reply_markup=reply_markup
-    )
-    
-    return ADMIN_MAIN_MENU
-
-async def show_system_stats(update: Update, context: CallbackContext) -> int:
-    """عرض إحصائيات النظام"""
-    from admin_security_system import get_admin_security_manager
-    security_manager = get_admin_security_manager()
-    
-    if not security_manager:
-        await update.callback_query.edit_message_text("❌ نظام الحماية غير مفعل.")
-        return ConversationHandler.END
-    
-    # إحصائيات الحظر
-    blocked_count = len(security_manager.blocked_users)
-    admin_count = len(security_manager.admin_ids)
-    
-    # محاولة الحصول على إحصائيات المستخدمين المسجلين
-    registered_count = "غير متاح"
-    try:
-        db_manager = context.bot_data.get("DB_MANAGER")
-        if db_manager:
-            # يمكن إضافة استعلام لحساب المستخدمين المسجلين
-            pass
-    except:
-        pass
-    
-    stats_text = f"""
-📊 **إحصائيات النظام**
-
-👥 **المستخدمون**:
-   • المسجلون: {registered_count}
-   • المحظورون: {blocked_count}
-
-👑 **الإدارة**:
-   • عدد المدراء: {admin_count}
-
-🛡️ **الحماية**:
-   • نظام الحماية: ✅ مفعل
-   • التحقق من التسجيل: ✅ مفعل
-   • الحظر اليدوي: ✅ مفعل
-
-⏰ **آخر تحديث**: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-"""
-    
-    keyboard = [[InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.callback_query.edit_message_text(
-        stats_text,
-        parse_mode='Markdown',
+    await query.edit_message_text(
+        text=text,
         reply_markup=reply_markup
     )
     
