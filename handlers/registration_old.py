@@ -71,125 +71,6 @@ async def safe_edit_message_text(bot, chat_id, message_id, text, reply_markup=No
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# نظام الحماية والتحقق من التسجيل
-class BotSecurityManager:
-    """مدير الحماية للبوت - يتحكم في الوصول للمستخدمين المسجلين فقط"""
-    
-    def __init__(self):
-        self.failed_attempts = {}  # تتبع المحاولات الفاشلة
-        self.blocked_users = set()  # المستخدمون المحظورون مؤقتاً
-        self.max_attempts = 5  # الحد الأقصى للمحاولات الفاشلة
-        
-        # رسائل النظام
-        self.messages = {
-            "not_registered": "❌ عذراً، يجب عليك إكمال التسجيل أولاً لاستخدام البوت.\n\nيرجى إدخال معلوماتك الصحيحة للمتابعة.",
-            "incomplete_registration": "⚠️ معلومات التسجيل غير مكتملة.\n\nيرجى إكمال جميع المعلومات المطلوبة للمتابعة.",
-            "registration_required": "🔒 هذه الخدمة متاحة للمستخدمين المسجلين فقط.\n\nيرجى إكمال التسجيل أولاً.",
-            "access_denied": "🚫 تم رفض الوصول. يرجى التأكد من صحة معلومات التسجيل.",
-            "too_many_attempts": "⏰ تم تجاوز الحد الأقصى للمحاولات. يرجى المحاولة لاحقاً.",
-            "user_blocked": "🚫 تم حظر حسابك مؤقتاً. تواصل مع الإدارة إذا كنت تعتقد أن هذا خطأ."
-        }
-    
-    def is_user_blocked(self, user_id: int) -> bool:
-        """التحقق من حظر المستخدم"""
-        return user_id in self.blocked_users
-    
-    def block_user(self, user_id: int):
-        """حظر مستخدم مؤقتاً"""
-        self.blocked_users.add(user_id)
-        logger.warning(f"تم حظر المستخدم {user_id} مؤقتاً")
-    
-    def unblock_user(self, user_id: int):
-        """إلغاء حظر مستخدم"""
-        self.blocked_users.discard(user_id)
-        if user_id in self.failed_attempts:
-            del self.failed_attempts[user_id]
-        logger.info(f"تم إلغاء حظر المستخدم {user_id}")
-    
-    def record_failed_attempt(self, user_id: int):
-        """تسجيل محاولة فاشلة"""
-        if user_id not in self.failed_attempts:
-            self.failed_attempts[user_id] = 0
-        
-        self.failed_attempts[user_id] += 1
-        logger.warning(f"محاولة فاشلة للمستخدم {user_id}. العدد: {self.failed_attempts[user_id]}")
-        
-        # حظر المستخدم إذا تجاوز الحد الأقصى
-        if self.failed_attempts[user_id] >= self.max_attempts:
-            self.block_user(user_id)
-    
-    def reset_failed_attempts(self, user_id: int):
-        """إعادة تعيين المحاولات الفاشلة"""
-        if user_id in self.failed_attempts:
-            del self.failed_attempts[user_id]
-    
-    async def check_user_access(self, update: Update, context: CallbackContext, db_manager=None) -> bool:
-        """
-        التحقق من صلاحية وصول المستخدم للبوت
-        
-        يعيد:
-            bool: True إذا كان المستخدم مصرح له بالوصول، False إذا كان محظوراً أو غير مسجل
-        """
-        user = update.effective_user
-        user_id = user.id
-        chat_id = update.effective_chat.id
-        
-        # التحقق من الحظر المؤقت
-        if self.is_user_blocked(user_id):
-            await safe_send_message(
-                context.bot,
-                chat_id,
-                text=self.messages["user_blocked"]
-            )
-            return False
-        
-        # التحقق من التسجيل
-        if not db_manager:
-            db_manager = context.bot_data.get("DB_MANAGER")
-        
-        if not db_manager:
-            logger.error(f"لا يمكن الوصول إلى DB_MANAGER للمستخدم {user_id}")
-            await safe_send_message(
-                context.bot,
-                chat_id,
-                text="⚠️ حدث خطأ في النظام. يرجى المحاولة لاحقاً."
-            )
-            return False
-        
-        # الحصول على معلومات المستخدم
-        user_info = get_user_info(db_manager, user_id)
-        
-        # التحقق من اكتمال التسجيل
-        if not is_user_fully_registered(user_info):
-            self.record_failed_attempt(user_id)
-            await safe_send_message(
-                context.bot,
-                chat_id,
-                text=self.messages["not_registered"]
-            )
-            return False
-        
-        # إعادة تعيين المحاولات الفاشلة عند النجاح
-        self.reset_failed_attempts(user_id)
-        
-        # تحديث آخر نشاط للمستخدم
-        save_user_info(db_manager, user_id, last_activity=datetime.now().isoformat())
-        
-        return True
-    
-    def require_registration(self, func):
-        """ديكوريتر للتحقق من التسجيل قبل تنفيذ الدالة"""
-        async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
-            if not await self.check_user_access(update, context):
-                return ConversationHandler.END
-            
-            return await func(update, context, *args, **kwargs)
-        
-        return wrapper
-
-# إنشاء مثيل مدير الحماية
-security_manager = BotSecurityManager()
-
 # تعريف ثوابت الحالات
 try:
     from config import (
@@ -432,66 +313,47 @@ def is_user_fully_registered(user_info):
     # اعتبار المستخدم مسجلاً فقط إذا كانت جميع المعلومات الأساسية موجودة
     return all([has_full_name, has_email, has_phone, has_grade])
 
-# دالة معالجة أمر /start مع نظام الحماية المحسن
+# دالة معالجة أمر /start
 async def start_command(update: Update, context: CallbackContext) -> int:
-    """معالجة أمر /start مع التحقق من الحماية والتسجيل"""
+    """معالجة أمر /start بشكل منفصل عن محادثة التسجيل"""
     user = update.effective_user
     user_id = user.id
     chat_id = update.effective_chat.id
     
-    logger.info(f"[SECURITY] بدء فحص المستخدم {user_id} - {user.first_name}")
+    logger.info(f"[DEBUG] Entering start_command for user {user_id}")
     
     # الحصول على مدير قاعدة البيانات
     db_manager = context.bot_data.get("DB_MANAGER")
     if not db_manager:
-        logger.error(f"[SECURITY] خطأ حرج: لا يمكن الوصول إلى DB_MANAGER للمستخدم {user_id}")
+        logger.error(f"لا يمكن الوصول إلى DB_MANAGER في start_command للمستخدم {user_id}")
         await safe_send_message(
             context.bot,
             chat_id,
-            text="⚠️ حدث خطأ في النظام. يرجى المحاولة مرة أخرى لاحقاً."
+            text="⚠️ حدث خطأ في الوصول إلى قاعدة البيانات. يرجى المحاولة مرة أخرى لاحقاً."
         )
-        return ConversationHandler.END
-    
-    # التحقق من الحظر المؤقت أولاً
-    if security_manager.is_user_blocked(user_id):
-        logger.warning(f"[SECURITY] محاولة وصول من مستخدم محظور: {user_id}")
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            text=security_manager.messages["user_blocked"]
-        )
-        return ConversationHandler.END
+        return ConversationHandler.END # إنهاء المحادثة في حالة الخطأ
     
     # التحقق من حالة تسجيل المستخدم
     user_info = get_user_info(db_manager, user_id)
+    
+    # التحقق من اكتمال معلومات المستخدم
     is_registered = is_user_fully_registered(user_info)
     
     # تحديث حالة التسجيل في context.user_data
     context.user_data['is_registered'] = is_registered
     
-    # إذا كان المستخدم مسجلاً بالكامل
+    # إذا كان المستخدم مسجلاً (لديه جميع المعلومات الأساسية)، عرض القائمة الرئيسية
     if is_registered:
-        logger.info(f"[SECURITY] المستخدم {user_id} مسجل ومصرح له بالوصول")
-        
-        # إعادة تعيين المحاولات الفاشلة
-        security_manager.reset_failed_attempts(user_id)
-        
-        # تحديث آخر نشاط
-        save_user_info(db_manager, user_id, last_activity=datetime.now().isoformat())
-        
-        # عرض القائمة الرئيسية
+        logger.info(f"المستخدم {user_id} مسجل بالفعل، عرض القائمة الرئيسية")
         try:
             from handlers.common import main_menu_callback
-            await main_menu_callback(update, context)
         except ImportError:
             try:
                 from common import main_menu_callback
-                await main_menu_callback(update, context)
             except ImportError as e:
                 logger.error(f"خطأ في استيراد main_menu_callback: {e}")
-                # عرض القائمة الرئيسية مباشرة
-                welcome_text = f"🔐 أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
-                               "✅ تم التحقق من هويتك بنجاح\n" \
+                # إذا لم نتمكن من استيراد main_menu_callback، نعرض القائمة الرئيسية هنا
+                welcome_text = f"أهلاً بك يا {user.first_name} في بوت كيمياء تحصيلي! 👋\n\n" \
                                "استخدم الأزرار أدناه لبدء اختبار أو استعراض المعلومات."
                 keyboard = create_main_menu_keyboard(user_id, db_manager)
                 await safe_send_message(
@@ -500,60 +362,39 @@ async def start_command(update: Update, context: CallbackContext) -> int:
                     text=welcome_text,
                     reply_markup=keyboard
                 )
+                return ConversationHandler.END # إنهاء المحادثة بعد عرض القائمة
         
-        return ConversationHandler.END
+        # استدعاء main_menu_callback لعرض القائمة الرئيسية
+        await main_menu_callback(update, context)
+        return ConversationHandler.END # إنهاء المحادثة بعد عرض القائمة
     else:
-        # المستخدم غير مسجل أو معلوماته ناقصة
-        logger.warning(f"[SECURITY] المستخدم {user_id} غير مسجل أو معلوماته ناقصة")
-        
-        # تسجيل محاولة وصول غير مصرح بها
-        security_manager.record_failed_attempt(user_id)
-        
-        # بدء عملية التسجيل
+        # إذا لم يكن المستخدم مسجلاً، بدء عملية التسجيل
+        logger.info(f"المستخدم {user_id} غير مسجل، بدء عملية التسجيل")
         return await start_registration(update, context)
 
 async def check_registration_status(update: Update, context: CallbackContext, db_manager=None):
     """
-    التحقق من حالة تسجيل المستخدم مع نظام الحماية المحسن
+    التحقق من حالة تسجيل المستخدم وتوجيهه لإكمال التسجيل إذا لم يكن مسجلاً
     
     يعيد:
-        bool: True إذا كان المستخدم مسجلاً ومصرح له، False إذا كان يحتاج للتسجيل أو محظور
+        bool: True إذا كان المستخدم مسجلاً، False إذا كان يحتاج للتسجيل
     """
     user = update.effective_user
     user_id = user.id
     
-    logger.info(f"[SECURITY] فحص حالة التسجيل للمستخدم {user_id}")
-    
-    # التحقق من الحظر المؤقت أولاً
-    if security_manager.is_user_blocked(user_id):
-        logger.warning(f"[SECURITY] المستخدم {user_id} محظور مؤقتاً")
-        await safe_send_message(
-            context.bot,
-            update.effective_chat.id,
-            text=security_manager.messages["user_blocked"]
-        )
-        return False
-    
     # التحقق من حالة التسجيل المخزنة في context.user_data أولاً
     if context.user_data.get('is_registered', False):
-        logger.info(f"[SECURITY] المستخدم {user_id} مسجل (من context.user_data)")
-        # تحديث آخر نشاط
-        if not db_manager:
-            db_manager = context.bot_data.get("DB_MANAGER")
-        if db_manager:
-            save_user_info(db_manager, user_id, last_activity=datetime.now().isoformat())
+        logger.info(f"المستخدم {user_id} مسجل بالفعل (من context.user_data)")
         return True
     
-    # الحصول على مدير قاعدة البيانات
+    # الحصول على مدير قاعدة البيانات من context أو استخدام المعطى
     if not db_manager:
         db_manager = context.bot_data.get("DB_MANAGER")
         if not db_manager:
-            logger.error(f"[SECURITY] لا يمكن الوصول إلى DB_MANAGER للمستخدم {user_id}")
-            await safe_send_message(
-                context.bot,
-                update.effective_chat.id,
-                text="⚠️ حدث خطأ في النظام. يرجى المحاولة لاحقاً."
-            )
+            logger.error(f"لا يمكن الوصول إلى DB_MANAGER في check_registration_status للمستخدم {user_id}")
+            # لا نفترض أن المستخدم مسجل في حالة عدم وجود مدير قاعدة بيانات
+            # بدلاً من ذلك، نطلب منه التسجيل
+            await start_registration(update, context)
             return False
     
     # الحصول على معلومات المستخدم من قاعدة البيانات
@@ -565,21 +406,13 @@ async def check_registration_status(update: Update, context: CallbackContext, db
     # تحديث حالة التسجيل في context.user_data
     context.user_data['is_registered'] = is_registered
     
-    # إذا لم يكن المستخدم مسجلاً، تسجيل محاولة فاشلة وتوجيهه للتسجيل
+    # إذا لم يكن المستخدم مسجلاً، توجيهه لإكمال التسجيل
     if not is_registered:
-        logger.warning(f"[SECURITY] المستخدم {user_id} غير مسجل، توجيهه للتسجيل")
-        security_manager.record_failed_attempt(user_id)
+        logger.info(f"المستخدم {user_id} غير مسجل، توجيهه لإكمال التسجيل")
         await start_registration(update, context)
         return False
     
-    logger.info(f"[SECURITY] المستخدم {user_id} مسجل ومصرح له (من قاعدة البيانات)")
-    
-    # إعادة تعيين المحاولات الفاشلة عند النجاح
-    security_manager.reset_failed_attempts(user_id)
-    
-    # تحديث آخر نشاط
-    save_user_info(db_manager, user_id, last_activity=datetime.now().isoformat())
-    
+    logger.info(f"المستخدم {user_id} مسجل بالفعل (من قاعدة البيانات)")
     return True
 
 # بدء عملية التسجيل
