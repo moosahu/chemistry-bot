@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
-نظام الحماية مع التحكم الإداري اليدوي - يستخدم قاعدة البيانات
-يسمح للمدير بحظر وإلغاء حظر المستخدمين يدوياً
+نظام الحماية مع التحكم الإداري اليدوي - النسخة النهائية
+يستخدم قاعدة البيانات مع SQL آمن ومتوافق مع SQLAlchemy
 """
 
 import logging
@@ -24,21 +23,17 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 class AdminSecurityManager:
-    """مدير الحماية مع التحكم الإداري اليدوي - يستخدم قاعدة البيانات"""
+    """مدير الحماية الإداري مع التحكم اليدوي"""
     
     def __init__(self, admin_ids: List[int]):
-        self.admin_ids = set(admin_ids)  # معرفات المدراء
+        self.admin_ids = set(admin_ids)
+        self.blocked_users = {}  # نسخة احتياطية في الذاكرة
         
         # رسائل النظام
         self.messages = {
-            "not_registered": "❌ عذراً، يجب عليك التسجيل أولاً لاستخدام البوت.\n\nاستخدم الأمر /start للتسجيل.",
-            "user_blocked": "🚫 تم حظرك من استخدام هذا البوت.\n\nإذا كنت تعتقد أن هذا خطأ، تواصل مع الإدارة.",
+            "user_blocked": "🚫 تم حظرك من استخدام البوت.\nللاستفسار، تواصل مع الإدارة.",
+            "not_registered": "📝 يجب عليك التسجيل أولاً لاستخدام البوت.\nاستخدم الأمر /start للتسجيل.",
             "admin_only": "👑 هذا الأمر متاح للمدراء فقط.",
-            "user_not_found": "❌ لم يتم العثور على المستخدم.",
-            "user_blocked_success": "✅ تم حظر المستخدم بنجاح.",
-            "user_unblocked_success": "✅ تم إلغاء حظر المستخدم بنجاح.",
-            "user_already_blocked": "⚠️ المستخدم محظور بالفعل.",
-            "user_not_blocked": "⚠️ المستخدم غير محظور.",
             "access_denied": "🚫 تم رفض الوصول.",
             "database_error": "❌ خطأ في قاعدة البيانات. يرجى المحاولة لاحقاً."
         }
@@ -88,7 +83,7 @@ class AdminSecurityManager:
                 return False
             
             try:
-                # التحقق من الحظر باستخدام SQL مباشر
+                # التحقق من الحظر باستخدام SQL آمن
                 result = session.execute(
                     text("SELECT id FROM blocked_users WHERE user_id = :user_id AND is_active = true"),
                     {"user_id": user_id}
@@ -119,22 +114,27 @@ class AdminSecurityManager:
                 return False
             
             try:
-                # التحقق من وجود المستخدم محظور بالفعل باستخدام SQL مباشر
+                # التحقق من وجود المستخدم محظور بالفعل
                 result = session.execute(
-                    "SELECT id FROM blocked_users WHERE user_id = %s AND is_active = true",
-                    (user_id,)
+                    text("SELECT id FROM blocked_users WHERE user_id = :user_id AND is_active = true"),
+                    {"user_id": user_id}
                 ).fetchone()
                 
                 if result:
                     logger.info(f"المستخدم {user_id} محظور بالفعل")
                     return False
                 
-                # إدراج سجل حظر جديد باستخدام SQL مباشر
+                # إدراج سجل حظر جديد
                 session.execute(
-                    """INSERT INTO blocked_users 
-                       (user_id, blocked_by, reason, is_active) 
-                       VALUES (%s, %s, %s, %s)""",
-                    (user_id, admin_id, reason, True)
+                    text("""INSERT INTO blocked_users 
+                           (user_id, blocked_by, reason, is_active) 
+                           VALUES (:user_id, :blocked_by, :reason, :is_active)"""),
+                    {
+                        "user_id": user_id,
+                        "blocked_by": admin_id,
+                        "reason": reason,
+                        "is_active": True
+                    }
                 )
                 session.commit()
                 
@@ -161,22 +161,22 @@ class AdminSecurityManager:
                 return False
             
             try:
-                # البحث عن المستخدم المحظور باستخدام SQL مباشر
+                # البحث عن المستخدم المحظور
                 result = session.execute(
-                    "SELECT id FROM blocked_users WHERE user_id = %s AND is_active = true",
-                    (user_id,)
+                    text("SELECT id FROM blocked_users WHERE user_id = :user_id AND is_active = true"),
+                    {"user_id": user_id}
                 ).fetchone()
                 
                 if not result:
                     logger.info(f"المستخدم {user_id} غير محظور")
                     return False
                 
-                # إلغاء الحظر باستخدام SQL مباشر
+                # إلغاء الحظر
                 session.execute(
-                    """UPDATE blocked_users 
-                       SET is_active = false, unblocked_by = %s, unblocked_at = CURRENT_TIMESTAMP 
-                       WHERE user_id = %s AND is_active = true""",
-                    (admin_id, user_id)
+                    text("""UPDATE blocked_users 
+                           SET is_active = false, unblocked_by = :admin_id, unblocked_at = CURRENT_TIMESTAMP 
+                           WHERE user_id = :user_id AND is_active = true"""),
+                    {"admin_id": admin_id, "user_id": user_id}
                 )
                 session.commit()
                 
@@ -203,13 +203,13 @@ class AdminSecurityManager:
                 return []
             
             try:
-                # الحصول على قائمة المحظورين باستخدام SQL مباشر
+                # الحصول على قائمة المحظورين
                 results = session.execute(
-                    """SELECT user_id, blocked_by, blocked_at, reason 
-                       FROM blocked_users 
-                       WHERE is_active = true 
-                       ORDER BY blocked_at DESC 
-                       LIMIT 50"""
+                    text("""SELECT user_id, blocked_by, blocked_at, reason 
+                           FROM blocked_users 
+                           WHERE is_active = true 
+                           ORDER BY blocked_at DESC 
+                           LIMIT 50""")
                 ).fetchall()
                 
                 blocked_list = []
@@ -385,4 +385,10 @@ def require_registration(func):
     if admin_security_manager:
         return admin_security_manager.require_registration_and_not_blocked(func)
     return func
+
+async def verify_user_access(update: Update, context: CallbackContext) -> bool:
+    """دالة للتحقق من الوصول (للاستخدام في ملفات أخرى)"""
+    if admin_security_manager:
+        return await admin_security_manager.check_user_access(update, context)
+    return True
 
