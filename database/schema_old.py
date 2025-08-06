@@ -69,25 +69,6 @@ def setup_database_schema():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_quiz_results_completed_at ON quiz_results(completed_at);")
             logger.debug("[Schema Setup] Checked/Created quiz_results table and indexes.")
 
-            # blocked_users table for admin security system
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS blocked_users (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL UNIQUE,
-                    blocked_by BIGINT NOT NULL,
-                    blocked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                    reason TEXT DEFAULT 'غير محدد',
-                    is_active BOOLEAN DEFAULT TRUE NOT NULL,
-                    unblocked_by BIGINT,
-                    unblocked_at TIMESTAMP WITH TIME ZONE,
-                    notes TEXT
-                );
-            """)
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_blocked_users_user_id ON blocked_users(user_id);")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_blocked_users_is_active ON blocked_users(is_active);")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_blocked_users_blocked_at ON blocked_users(blocked_at);")
-            logger.debug("[Schema Setup] Checked/Created blocked_users table and indexes.")
-
             # --- Content tables (courses, units, lessons, questions, options) are NOT managed by the bot --- 
             # --- They are managed by the separate API and its database --- 
 
