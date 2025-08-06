@@ -6,9 +6,8 @@
 تقوم هذه الأداة باستخراج جميع بيانات المستخدمين المسجلين من قاعدة البيانات وتصديرها إلى ملف إكسل
 """
 
-import os
-import sys
 import logging
+import os
 import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine, text
@@ -84,38 +83,86 @@ def export_users_to_excel(admin_user_id=None):
             logger.error("فشل الاتصال بقاعدة البيانات")
             return None
         
-        # استعلام لاستخراج بيانات المستخدمين المسجلين مع حالة الحظر
-        query = """
-        SELECT 
-            u.user_id, 
-            u.username, 
-            u.first_name, 
-            u.last_name, 
-            u.full_name,
-            u.email, 
-            u.phone, 
-            u.grade, 
-            u.is_registered,
-            u.is_admin,
-            u.language_code,
-            u.first_seen_timestamp,
-            u.last_active_timestamp,
-            u.last_interaction_date,
-            CASE 
-                WHEN b.user_id IS NOT NULL AND b.is_active = TRUE THEN 'محظور'
-                ELSE 'نشط'
-            END as blocked_status,
-            b.reason as block_reason,
-            b.blocked_at as blocked_date
-        FROM 
-            users u
-        LEFT JOIN 
-            blocked_users b ON u.user_id = b.user_id AND b.is_active = TRUE
-        WHERE 
-            u.is_registered = TRUE
-        ORDER BY 
-            u.last_interaction_date DESC
+        # التحقق من وجود جدول blocked_users أولاً
+        table_check_query = """
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'blocked_users'
+        )
         """
+        
+        # فحص وجود الجدول
+        table_exists = False
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(text(table_check_query))
+                table_exists = result.scalar()
+        except Exception as e:
+            logger.warning(f"فشل فحص وجود جدول blocked_users: {e}")
+            table_exists = False
+        
+        # استعلام مع أو بدون جدول الحظر
+        if table_exists:
+            logger.info("جدول blocked_users موجود - سيتم تضمين معلومات الحظر")
+            query = """
+            SELECT 
+                u.user_id, 
+                u.username, 
+                u.first_name, 
+                u.last_name, 
+                u.full_name,
+                u.email, 
+                u.phone, 
+                u.grade, 
+                u.is_registered,
+                u.is_admin,
+                u.language_code,
+                u.first_seen_timestamp,
+                u.last_active_timestamp,
+                u.last_interaction_date,
+                CASE 
+                    WHEN b.user_id IS NOT NULL AND b.is_active = TRUE THEN 'محظور'
+                    ELSE 'نشط'
+                END as blocked_status,
+                COALESCE(b.reason, '-') as block_reason,
+                b.blocked_at as blocked_date
+            FROM 
+                users u
+            LEFT JOIN 
+                blocked_users b ON u.user_id = b.user_id AND b.is_active = TRUE
+            WHERE 
+                u.is_registered = TRUE
+            ORDER BY 
+                u.last_interaction_date DESC
+            """
+        else:
+            logger.warning("جدول blocked_users غير موجود - سيتم إضافة أعمدة حظر فارغة")
+            query = """
+            SELECT 
+                u.user_id, 
+                u.username, 
+                u.first_name, 
+                u.last_name, 
+                u.full_name,
+                u.email, 
+                u.phone, 
+                u.grade, 
+                u.is_registered,
+                u.is_admin,
+                u.language_code,
+                u.first_seen_timestamp,
+                u.last_active_timestamp,
+                u.last_interaction_date,
+                'نشط' as blocked_status,
+                '-' as block_reason,
+                NULL as blocked_date
+            FROM 
+                users u
+            WHERE 
+                u.is_registered = TRUE
+            ORDER BY 
+                u.last_interaction_date DESC
+            """
         
         # تنفيذ الاستعلام وتحويل النتائج إلى DataFrame
         logger.info("جاري استخراج بيانات المستخدمين من قاعدة البيانات...")
