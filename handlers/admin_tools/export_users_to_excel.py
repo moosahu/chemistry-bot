@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 
 """
-أداة تصدير بيانات المستخدمين إلى ملف إكسل - خاصة بالمدير فقط
+أداة تصدير بيانات المستخدمين إلى ملف إكسل مع حالة الحظر - خاصة بالمدير فقط
 تقوم هذه الأداة باستخراج جميع بيانات المستخدمين المسجلين من قاعدة البيانات وتصديرها إلى ملف إكسل
+مع إضافة أعمدة حالة الحظر وسبب الحظر وتاريخ الحظر
 """
 
 import logging
 import os
+import sys
 import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine, text
@@ -68,7 +70,7 @@ def get_engine():
 
 def export_users_to_excel(admin_user_id=None):
     """
-    تصدير بيانات المستخدمين إلى ملف إكسل
+    تصدير بيانات المستخدمين إلى ملف إكسل مع حالة الحظر
     
     المعلمات:
         admin_user_id (int, اختياري): معرف المستخدم المدير الذي طلب التصدير
@@ -97,13 +99,14 @@ def export_users_to_excel(admin_user_id=None):
             with engine.connect() as conn:
                 result = conn.execute(text(table_check_query))
                 table_exists = result.scalar()
+                logger.info(f"فحص جدول blocked_users: {'موجود' if table_exists else 'غير موجود'}")
         except Exception as e:
             logger.warning(f"فشل فحص وجود جدول blocked_users: {e}")
             table_exists = False
         
         # استعلام مع أو بدون جدول الحظر
         if table_exists:
-            logger.info("جدول blocked_users موجود - سيتم تضمين معلومات الحظر")
+            logger.info("جدول blocked_users موجود - سيتم تضمين معلومات الحظر الحقيقية")
             query = """
             SELECT 
                 u.user_id, 
@@ -125,7 +128,10 @@ def export_users_to_excel(admin_user_id=None):
                     ELSE 'نشط'
                 END as blocked_status,
                 COALESCE(b.reason, '-') as block_reason,
-                b.blocked_at as blocked_date
+                CASE 
+                    WHEN b.blocked_at IS NOT NULL THEN b.blocked_at
+                    ELSE NULL
+                END as blocked_date
             FROM 
                 users u
             LEFT JOIN 
@@ -136,7 +142,7 @@ def export_users_to_excel(admin_user_id=None):
                 u.last_interaction_date DESC
             """
         else:
-            logger.warning("جدول blocked_users غير موجود - سيتم إضافة أعمدة حظر فارغة")
+            logger.warning("جدول blocked_users غير موجود - سيتم إضافة أعمدة حظر افتراضية")
             query = """
             SELECT 
                 u.user_id, 
@@ -166,12 +172,21 @@ def export_users_to_excel(admin_user_id=None):
         
         # تنفيذ الاستعلام وتحويل النتائج إلى DataFrame
         logger.info("جاري استخراج بيانات المستخدمين من قاعدة البيانات...")
-        df = pd.read_sql(query, engine)
+        
+        with engine.connect() as conn:
+            result = conn.execute(text(query))
+            columns = result.keys()
+            data = result.fetchall()
+            
+        # تحويل إلى DataFrame
+        df = pd.DataFrame(data, columns=columns)
         
         # تحقق من وجود بيانات
         if df.empty:
             logger.warning("لا توجد بيانات مستخدمين مسجلين في قاعدة البيانات")
             return None
+        
+        logger.info(f"تم استخراج {len(df)} مستخدم من قاعدة البيانات")
         
         # إعادة تسمية الأعمدة بالعربية لتحسين قراءة ملف الإكسل
         column_mapping = {
@@ -200,26 +215,55 @@ def export_users_to_excel(admin_user_id=None):
         df['مدير'] = df['مدير'].map({True: 'نعم', False: 'لا'})
         
         # تنسيق أعمدة الحظر - استبدال القيم الفارغة
-        df['سبب الحظر'] = df['سبب الحظر'].fillna('-')
-        df['تاريخ الحظر'] = df['تاريخ الحظر'].fillna('-')
+        if 'سبب الحظر' in df.columns:
+            df['سبب الحظر'] = df['سبب الحظر'].fillna('-')
+        if 'تاريخ الحظر' in df.columns:
+            df['تاريخ الحظر'] = df['تاريخ الحظر'].fillna('-')
+        
+        # إحصائيات سريعة
+        total_users = len(df)
+        blocked_users = len(df[df['حالة الحظر'] == 'محظور']) if 'حالة الحظر' in df.columns else 0
+        active_users = total_users - blocked_users
+        
+        logger.info(f"إحصائيات التصدير: إجمالي {total_users}, نشط {active_users}, محظور {blocked_users}")
         
         # إنشاء مجلد للتصدير إذا لم يكن موجوداً
-        export_dir = '/home/ubuntu/upload/admin_tools/exports'
+        export_dir = '/tmp/admin_exports'
         os.makedirs(export_dir, exist_ok=True)
         
         # إنشاء اسم ملف فريد باستخدام الطابع الزمني
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         admin_suffix = f"_by_admin_{admin_user_id}" if admin_user_id else ""
-        excel_filename = f"users_data_{timestamp}{admin_suffix}.xlsx"
+        excel_filename = f"users_with_blocked_status_{timestamp}{admin_suffix}.xlsx"
         excel_path = os.path.join(export_dir, excel_filename)
         
         # تصدير DataFrame إلى ملف إكسل
         logger.info(f"جاري تصدير البيانات إلى ملف إكسل: {excel_path}")
         
-        # إنشاء كاتب إكسل
+        # إنشاء كاتب إكسل مع ورقتين
         with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-            # كتابة البيانات إلى ورقة العمل
+            # كتابة البيانات إلى ورقة العمل الأولى
             df.to_excel(writer, sheet_name='بيانات المستخدمين', index=False)
+            
+            # إنشاء ورقة إحصائيات
+            stats_data = {
+                'الإحصائية': [
+                    'إجمالي المستخدمين',
+                    'المستخدمون النشطون', 
+                    'المستخدمون المحظورون',
+                    'تاريخ التصدير',
+                    'المدير المصدر'
+                ],
+                'القيمة': [
+                    total_users,
+                    active_users,
+                    blocked_users,
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    admin_user_id or 'غير محدد'
+                ]
+            }
+            stats_df = pd.DataFrame(stats_data)
+            stats_df.to_excel(writer, sheet_name='الإحصائيات', index=False)
             
             # الحصول على ورقة العمل لتطبيق التنسيق
             worksheet = writer.sheets['بيانات المستخدمين']
@@ -231,10 +275,17 @@ def export_users_to_excel(admin_user_id=None):
                     len(str(column))  # طول اسم العمود
                 ) + 2  # إضافة هامش
                 
+                # تحديد الحد الأقصى لعرض العمود
+                max_length = min(max_length, 50)
+                
                 # تحويل من وحدات البكسل إلى وحدات العرض في إكسل
-                worksheet.column_dimensions[chr(65 + i)].width = max_length
+                col_letter = chr(65 + i) if i < 26 else chr(65 + i // 26 - 1) + chr(65 + i % 26)
+                worksheet.column_dimensions[col_letter].width = max_length
         
         logger.info(f"تم تصدير بيانات المستخدمين بنجاح إلى: {excel_path}")
+        logger.info(f"الملف يحتوي على {len(df.columns)} عمود و {len(df)} صف")
+        logger.info(f"الأعمدة: {list(df.columns)}")
+        
         return excel_path
     
     except SQLAlchemyError as e:
@@ -259,3 +310,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
