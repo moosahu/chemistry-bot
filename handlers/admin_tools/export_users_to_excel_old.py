@@ -84,37 +84,29 @@ def export_users_to_excel(admin_user_id=None):
             logger.error("فشل الاتصال بقاعدة البيانات")
             return None
         
-        # استعلام لاستخراج بيانات المستخدمين المسجلين مع حالة الحظر
+        # استعلام لاستخراج بيانات المستخدمين المسجلين
         query = """
         SELECT 
-            u.user_id, 
-            u.username, 
-            u.first_name, 
-            u.last_name, 
-            u.full_name,
-            u.email, 
-            u.phone, 
-            u.grade, 
-            u.is_registered,
-            u.is_admin,
-            u.language_code,
-            u.first_seen_timestamp,
-            u.last_active_timestamp,
-            u.last_interaction_date,
-            CASE 
-                WHEN b.user_id IS NOT NULL AND b.is_active = TRUE THEN 'محظور'
-                ELSE 'نشط'
-            END as blocked_status,
-            b.reason as block_reason,
-            b.blocked_at as blocked_date
+            user_id, 
+            username, 
+            first_name, 
+            last_name, 
+            full_name,
+            email, 
+            phone, 
+            grade, 
+            is_registered,
+            is_admin,
+            language_code,
+            first_seen_timestamp,
+            last_active_timestamp,
+            last_interaction_date
         FROM 
-            users u
-        LEFT JOIN 
-            blocked_users b ON u.user_id = b.user_id AND b.is_active = TRUE
+            users
         WHERE 
-            u.is_registered = TRUE
+            is_registered = TRUE
         ORDER BY 
-            u.last_interaction_date DESC
+            last_interaction_date DESC
         """
         
         # تنفيذ الاستعلام وتحويل النتائج إلى DataFrame
@@ -141,20 +133,13 @@ def export_users_to_excel(admin_user_id=None):
             'language_code': 'رمز اللغة',
             'first_seen_timestamp': 'تاريخ أول ظهور',
             'last_active_timestamp': 'تاريخ آخر نشاط',
-            'last_interaction_date': 'تاريخ آخر تفاعل',
-            'blocked_status': 'حالة الحظر',
-            'block_reason': 'سبب الحظر',
-            'blocked_date': 'تاريخ الحظر'
+            'last_interaction_date': 'تاريخ آخر تفاعل'
         }
         df = df.rename(columns=column_mapping)
         
         # تنسيق قيم البوليان لتكون أكثر وضوحاً
         df['مسجل'] = df['مسجل'].map({True: 'نعم', False: 'لا'})
         df['مدير'] = df['مدير'].map({True: 'نعم', False: 'لا'})
-        
-        # تنسيق أعمدة الحظر - استبدال القيم الفارغة
-        df['سبب الحظر'] = df['سبب الحظر'].fillna('-')
-        df['تاريخ الحظر'] = df['تاريخ الحظر'].fillna('-')
         
         # إنشاء مجلد للتصدير إذا لم يكن موجوداً
         export_dir = '/home/ubuntu/upload/admin_tools/exports'
