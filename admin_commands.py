@@ -188,6 +188,7 @@ async def handle_block_reason_input(update: Update, context: CallbackContext) ->
 ⏰ **التاريخ**: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 """
         
+        # إرسال رسالة النجاح مع زر العودة
         keyboard = [[InlineKeyboardButton("🔙 العودة للوحة التحكم", callback_data="back_to_admin_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -206,11 +207,15 @@ async def handle_block_reason_input(update: Update, context: CallbackContext) ->
         except Exception as e:
             logger.info(f"لم يتم إرسال إشعار الحظر للمستخدم {user_to_block}: {e}")
         
+        # مسح بيانات المستخدم المؤقتة
+        context.user_data.pop('user_to_block', None)
+        
     else:
         await update.message.reply_text(
             f"⚠️ المستخدم `{user_to_block}` محظور بالفعل.",
             parse_mode='Markdown'
         )
+        context.user_data.pop('user_to_block', None)
     
     return ADMIN_MAIN_MENU
 
@@ -374,6 +379,13 @@ async def back_to_admin_menu_callback(update: Update, context: CallbackContext) 
     query = update.callback_query
     await query.answer()
     
+    from admin_security_system import get_admin_security_manager
+    security_manager = get_admin_security_manager()
+    
+    if not security_manager or not security_manager.is_admin(query.from_user.id):
+        await query.edit_message_text("❌ غير مصرح لك بالوصول.")
+        return ConversationHandler.END
+    
     admin_text = """
 👑 **لوحة التحكم الإدارية**
 
@@ -408,7 +420,8 @@ admin_conversation_handler = ConversationHandler(
     ],
     states={
         ADMIN_MAIN_MENU: [
-            CallbackQueryHandler(admin_menu_callback, pattern="^(admin_|main_menu|back_to_admin_menu)"),
+            CallbackQueryHandler(admin_menu_callback, pattern="^(admin_|main_menu)"),
+            CallbackQueryHandler(back_to_admin_menu_callback, pattern="^back_to_admin_menu$"),
         ],
         BLOCK_USER_INPUT: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_block_user_input)
