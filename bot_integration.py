@@ -59,12 +59,31 @@ def setup_reporting_system():
 async def generate_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """أمر إنشاء تقرير فوري"""
     try:
-        # التحقق من صلاحيات المدير
+        # التحقق من صلاحيات المدير بطرق متعددة
         user_id = update.effective_user.id
-        admin_id = os.getenv("ADMIN_USER_ID")
+        is_admin = False
         
-        if admin_id and str(user_id) != admin_id:
-            await update.message.reply_text("❌ هذا الأمر متاح للمدير فقط")
+        # الطريقة الأولى: متغير البيئة
+        admin_id = os.getenv("ADMIN_USER_ID")
+        if admin_id and str(user_id) == admin_id:
+            is_admin = True
+        
+        # الطريقة الثانية: قاعدة البيانات
+        if not is_admin:
+            try:
+                db_manager = context.bot_data.get("DB_MANAGER")
+                if db_manager and hasattr(db_manager, 'is_user_admin'):
+                    is_admin = db_manager.is_user_admin(user_id)
+            except:
+                pass
+        
+        # الطريقة الثالثة: قائمة المدراء المحددة مسبقاً (أضف معرفك هنا)
+        admin_list = [7640355263]  # أضف معرف المستخدم الخاص بك هنا
+        if user_id in admin_list:
+            is_admin = True
+        
+        if not is_admin:
+            await update.message.reply_text(f"❌ هذا الأمر متاح للمدير فقط\nمعرف المستخدم الخاص بك: {user_id}")
             return
         
         await update.message.reply_text("⏳ جاري إنشاء التقرير...")
@@ -85,17 +104,36 @@ async def generate_report_command(update: Update, context: ContextTypes.DEFAULT_
             
     except Exception as e:
         logger.error(f"خطأ في أمر إنشاء التقرير: {e}")
-        await update.message.reply_text("❌ حدث خطأ في إنشاء التقرير")
+        await update.message.reply_text(f"❌ حدث خطأ في إنشاء التقرير: {str(e)}")
 
 async def report_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """أمر عرض حالة نظام التقارير"""
     try:
-        # التحقق من صلاحيات المدير
+        # التحقق من صلاحيات المدير بطرق متعددة
         user_id = update.effective_user.id
-        admin_id = os.getenv("ADMIN_USER_ID")
+        is_admin = False
         
-        if admin_id and str(user_id) != admin_id:
-            await update.message.reply_text("❌ هذا الأمر متاح للمدير فقط")
+        # الطريقة الأولى: متغير البيئة
+        admin_id = os.getenv("ADMIN_USER_ID")
+        if admin_id and str(user_id) == admin_id:
+            is_admin = True
+        
+        # الطريقة الثانية: قاعدة البيانات
+        if not is_admin:
+            try:
+                db_manager = context.bot_data.get("DB_MANAGER")
+                if db_manager and hasattr(db_manager, 'is_user_admin'):
+                    is_admin = db_manager.is_user_admin(user_id)
+            except:
+                pass
+        
+        # الطريقة الثالثة: قائمة المدراء المحددة مسبقاً (أضف معرفك هنا)
+        admin_list = [7640355263]  # أضف معرف المستخدم الخاص بك هنا
+        if user_id in admin_list:
+            is_admin = True
+        
+        if not is_admin:
+            await update.message.reply_text(f"❌ هذا الأمر متاح للمدير فقط\nمعرف المستخدم الخاص بك: {user_id}")
             return
         
         # فحص حالة النظام
@@ -116,6 +154,11 @@ async def report_status_command(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             status_msg += "❌ إعدادات الإيميل: غير مكونة\n"
         
+        # معلومات المدير
+        status_msg += f"\n👤 **معلومات المدير:**\n"
+        status_msg += f"• معرف المستخدم: {user_id}\n"
+        status_msg += f"• حالة الصلاحية: {'✅ مدير' if is_admin else '❌ غير مدير'}\n"
+        
         # معلومات الجدولة
         status_msg += "\n📅 **جدولة التقارير:**\n"
         status_msg += "• التوقيت: كل يوم أحد الساعة 9:00 صباحاً\n"
@@ -130,7 +173,7 @@ async def report_status_command(update: Update, context: ContextTypes.DEFAULT_TY
         
     except Exception as e:
         logger.error(f"خطأ في أمر حالة التقارير: {e}")
-        await update.message.reply_text("❌ حدث خطأ في عرض حالة النظام")
+        await update.message.reply_text(f"❌ حدث خطأ في عرض حالة النظام: {str(e)}")
 
 def add_admin_report_commands(application, reporting_system):
     """إضافة أوامر التقارير للبوت"""
