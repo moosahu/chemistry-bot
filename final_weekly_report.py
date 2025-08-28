@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-نظام التقارير الأسبوعية المحسن والمتكامل
-يعمل مع المكتبات الموجودة فقط (pandas, matplotlib, openpyxl)
+نظام التقارير الأسبوعية النهائي والمحسن
+يعمل مع المكتبات الموجودة فقط ويتجنب مشاكل الخطوط العربية
 """
 
 import os
@@ -26,8 +26,8 @@ import json
 
 logger = logging.getLogger(__name__)
 
-class FixedWeeklyReportGenerator:
-    """مولد التقارير الأسبوعية المحسن"""
+class FinalWeeklyReportGenerator:
+    """مولد التقارير الأسبوعية النهائي والمحسن"""
     
     def __init__(self):
         """تهيئة مولد التقارير"""
@@ -36,14 +36,18 @@ class FixedWeeklyReportGenerator:
             raise ValueError("متغير DATABASE_URL غير موجود")
         
         self.engine = create_engine(self.database_url)
-        self.reports_dir = "fixed_reports"
+        self.reports_dir = "final_reports"
         self.charts_dir = os.path.join(self.reports_dir, "charts")
         
         # إنشاء المجلدات
         os.makedirs(self.reports_dir, exist_ok=True)
         os.makedirs(self.charts_dir, exist_ok=True)
         
-        logger.info(f"تم إعداد مولد التقارير المحسن - مجلد التقارير: {self.reports_dir}")
+        # إعداد matplotlib بخطوط افتراضية آمنة
+        plt.rcParams['font.family'] = ['DejaVu Sans', 'sans-serif']
+        plt.rcParams['axes.unicode_minus'] = False
+        
+        logger.info(f"تم إعداد مولد التقارير النهائي - مجلد التقارير: {self.reports_dir}")
     
     def get_comprehensive_stats(self, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """الحصول على إحصائيات شاملة"""
@@ -139,37 +143,37 @@ class FixedWeeklyReportGenerator:
                     # تحديد مستوى الأداء
                     avg_percentage = row.overall_avg_percentage or 0
                     if avg_percentage >= 90:
-                        performance_level = "ممتاز"
+                        performance_level = "Excellent"
                     elif avg_percentage >= 80:
-                        performance_level = "جيد جداً"
+                        performance_level = "Very Good"
                     elif avg_percentage >= 70:
-                        performance_level = "جيد"
+                        performance_level = "Good"
                     elif avg_percentage >= 60:
-                        performance_level = "متوسط"
+                        performance_level = "Average"
                     elif avg_percentage > 0:
-                        performance_level = "ضعيف"
+                        performance_level = "Weak"
                     else:
-                        performance_level = "لم يشارك"
+                        performance_level = "No Activity"
                     
                     # تحديد مستوى النشاط
                     total_quizzes = row.total_quizzes or 0
                     if total_quizzes >= 10:
-                        activity_level = "نشط جداً"
+                        activity_level = "Very Active"
                     elif total_quizzes >= 5:
-                        activity_level = "نشط"
+                        activity_level = "Active"
                     elif total_quizzes >= 1:
-                        activity_level = "قليل النشاط"
+                        activity_level = "Low Activity"
                     else:
-                        activity_level = "غير نشط"
+                        activity_level = "Inactive"
                     
                     # تحليل الاتجاه (مبسط)
-                    trend = "ثابت"  # يمكن تحسينه لاحقاً بتحليل أعمق
+                    trend = "Stable"  # يمكن تحسينه لاحقاً بتحليل أعمق
                     
                     users_analysis.append({
                         'user_id': row.user_id,
-                        'username': row.username or 'غير محدد',
-                        'full_name': row.full_name or f"{row.first_name or ''} {row.last_name or ''}".strip() or 'غير محدد',
-                        'grade': row.grade or 'غير محدد',
+                        'username': row.username or 'Not Set',
+                        'full_name': row.full_name or f"{row.first_name or ''} {row.last_name or ''}".strip() or 'Not Set',
+                        'grade': row.grade or 'Not Set',
                         'registration_date': row.first_seen_timestamp,
                         'last_active': row.last_active_timestamp,
                         'total_quizzes': total_quizzes,
@@ -265,17 +269,17 @@ class FixedWeeklyReportGenerator:
                     
                     # تحديد مستوى الصعوبة
                     if success_rate < 30:
-                        difficulty_level = "صعب جداً"
-                        priority = "عالية"
+                        difficulty_level = "Very Hard"
+                        priority = "High"
                     elif success_rate < 50:
-                        difficulty_level = "صعب"
-                        priority = "متوسطة"
+                        difficulty_level = "Hard"
+                        priority = "Medium"
                     elif success_rate < 70:
-                        difficulty_level = "متوسط"
-                        priority = "منخفضة"
+                        difficulty_level = "Medium"
+                        priority = "Low"
                     else:
-                        difficulty_level = "سهل"
-                        priority = "منخفضة"
+                        difficulty_level = "Easy"
+                        priority = "Low"
                     
                     difficult_questions.append({
                         'question_id': row.question_id,
@@ -362,48 +366,44 @@ class FixedWeeklyReportGenerator:
                                      time_patterns: Dict) -> Dict[str, List[str]]:
         """إنشاء توصيات ذكية"""
         recommendations = {
-            'للإدارة': [],
-            'للمعلمين': [],
-            'للمحتوى': [],
-            'للنظام': []
+            'Management': [],
+            'Teachers': [],
+            'Content': [],
+            'System': []
         }
         
         try:
             # توصيات للإدارة
             engagement_rate = general_stats.get('engagement_rate', 0)
             if engagement_rate < 50:
-                recommendations['للإدارة'].append(f"معدل المشاركة منخفض ({engagement_rate}%). يُنصح بحملة تحفيزية")
-            
-            active_users = general_stats.get('active_users_this_week', 0)
-            total_users = general_stats.get('total_registered_users', 0)
-            if total_users > 0 and active_users / total_users < 0.3:
-                recommendations['للإدارة'].append("30% فقط من المستخدمين نشطين. يُنصح بمراجعة استراتيجية التفاعل")
+                recommendations['Management'].append(f"Low engagement rate ({engagement_rate}%). Consider motivation strategies")
+            elif engagement_rate > 80:
+                recommendations['Management'].append(f"Excellent engagement rate ({engagement_rate}%). Maintain current strategies")
             
             # توصيات للمعلمين
-            weak_performers = [u for u in user_progress if u['performance_level'] in ['ضعيف', 'متوسط']]
-            if len(weak_performers) > len(user_progress) * 0.3:
-                recommendations['للمعلمين'].append(f"{len(weak_performers)} مستخدم يحتاجون مساعدة إضافية")
+            weak_users = [u for u in user_progress if u['performance_level'] == 'Weak']
+            if len(weak_users) > 0:
+                recommendations['Teachers'].append(f"{len(weak_users)} students need extra support")
             
-            # تحليل الصفوف الضعيفة
-            weak_grades = [g for g in grade_analysis if g['avg_percentage'] < 70]
-            for grade in weak_grades:
-                recommendations['للمعلمين'].append(f"الصف {grade['grade']} يحتاج تركيز إضافي (متوسط: {grade['avg_percentage']}%)")
+            excellent_users = [u for u in user_progress if u['performance_level'] == 'Excellent']
+            if len(excellent_users) > 0:
+                recommendations['Teachers'].append(f"{len(excellent_users)} excellent students can be given advanced challenges")
             
             # توصيات للمحتوى
-            very_difficult = [q for q in difficult_questions if q['success_rate'] < 30]
-            if very_difficult:
-                recommendations['للمحتوى'].append(f"{len(very_difficult)} سؤال صعب جداً يحتاج مراجعة")
+            high_priority_questions = [q for q in difficult_questions if q['review_priority'] == 'High']
+            if len(high_priority_questions) > 0:
+                recommendations['Content'].append(f"{len(high_priority_questions)} questions need urgent review")
             
             # توصيات للنظام
             avg_time = general_stats.get('avg_time_taken', 0)
             if avg_time > 300:  # أكثر من 5 دقائق
-                recommendations['للنظام'].append("متوسط وقت الإجابة مرتفع. قد تحتاج الأسئلة تبسيط")
+                recommendations['System'].append(f"Average quiz time is high ({avg_time/60:.1f} minutes). Consider shorter quizzes")
             
             # توصيات الوقت
             peak_hours = time_patterns.get('peak_hours', [])
             if peak_hours:
                 best_hour = peak_hours[0]['hour']
-                recommendations['للنظام'].append(f"أفضل وقت للنشاط: الساعة {best_hour}:00. يُنصح بجدولة المحتوى الجديد")
+                recommendations['System'].append(f"Peak activity at {best_hour}:00. Schedule new content accordingly")
             
         except Exception as e:
             logger.error(f"خطأ في إنشاء التوصيات الذكية: {e}")
@@ -412,13 +412,10 @@ class FixedWeeklyReportGenerator:
     
     def create_performance_charts(self, user_progress: List, grade_analysis: List, 
                                 time_patterns: Dict) -> Dict[str, str]:
-        """إنشاء الرسوم البيانية"""
+        """إنشاء الرسوم البيانية بخطوط آمنة"""
         chart_paths = {}
         
         try:
-            # إعداد matplotlib للعربية
-            plt.rcParams['font.family'] = ['Arial Unicode MS', 'Tahoma', 'DejaVu Sans']
-            
             # 1. توزيع مستويات الأداء
             if user_progress:
                 performance_counts = {}
@@ -433,9 +430,9 @@ class FixedWeeklyReportGenerator:
                     colors = ['#2E8B57', '#32CD32', '#FFD700', '#FF6347', '#DC143C', '#808080']
                     
                     bars = ax.bar(levels, counts, color=colors[:len(levels)])
-                    ax.set_title('توزيع مستويات الأداء', fontsize=16, fontweight='bold')
-                    ax.set_ylabel('عدد المستخدمين', fontsize=12)
-                    ax.set_xlabel('مستوى الأداء', fontsize=12)
+                    ax.set_title('Performance Level Distribution', fontsize=16, fontweight='bold')
+                    ax.set_ylabel('Number of Users', fontsize=12)
+                    ax.set_xlabel('Performance Level', fontsize=12)
                     
                     # إضافة القيم على الأعمدة
                     for bar, count in zip(bars, counts):
@@ -449,7 +446,7 @@ class FixedWeeklyReportGenerator:
                     chart_path = os.path.join(self.charts_dir, 'performance_distribution.png')
                     plt.savefig(chart_path, dpi=300, bbox_inches='tight')
                     plt.close()
-                    chart_paths['توزيع مستويات الأداء'] = chart_path
+                    chart_paths['Performance Distribution'] = chart_path
             
             # 2. مقارنة أداء الصفوف
             if grade_analysis:
@@ -458,15 +455,15 @@ class FixedWeeklyReportGenerator:
                 percentages = [g['avg_percentage'] for g in grade_analysis]
                 
                 bars = ax.bar(grades, percentages, color='#4CAF50')
-                ax.set_title('متوسط أداء الصفوف الدراسية', fontsize=16, fontweight='bold')
-                ax.set_ylabel('متوسط النسبة المئوية (%)', fontsize=12)
-                ax.set_xlabel('الصف الدراسي', fontsize=12)
+                ax.set_title('Average Grade Performance', fontsize=16, fontweight='bold')
+                ax.set_ylabel('Average Percentage (%)', fontsize=12)
+                ax.set_xlabel('Grade Level', fontsize=12)
                 ax.set_ylim(0, 100)
                 
                 # إضافة خط المتوسط العام
                 overall_avg = sum(percentages) / len(percentages) if percentages else 0
                 ax.axhline(y=overall_avg, color='red', linestyle='--', 
-                          label=f'المتوسط العام: {overall_avg:.1f}%')
+                          label=f'Overall Average: {overall_avg:.1f}%')
                 ax.legend()
                 
                 # إضافة القيم على الأعمدة
@@ -481,7 +478,7 @@ class FixedWeeklyReportGenerator:
                 chart_path = os.path.join(self.charts_dir, 'grade_performance.png')
                 plt.savefig(chart_path, dpi=300, bbox_inches='tight')
                 plt.close()
-                chart_paths['أداء الصفوف الدراسية'] = chart_path
+                chart_paths['Grade Performance'] = chart_path
             
             # 3. النشاط اليومي
             daily_activity = time_patterns.get('daily_activity', [])
@@ -493,13 +490,14 @@ class FixedWeeklyReportGenerator:
                 ax.plot(dates, counts, marker='o', linewidth=2, markersize=6, color='#2196F3')
                 ax.fill_between(dates, counts, alpha=0.3, color='#2196F3')
                 
-                ax.set_title('النشاط اليومي للاختبارات', fontsize=16, fontweight='bold')
-                ax.set_ylabel('عدد الاختبارات', fontsize=12)
-                ax.set_xlabel('التاريخ', fontsize=12)
+                ax.set_title('Daily Quiz Activity', fontsize=16, fontweight='bold')
+                ax.set_ylabel('Number of Quizzes', fontsize=12)
+                ax.set_xlabel('Date', fontsize=12)
                 
                 # تنسيق التواريخ
-                ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
-                ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+                if len(dates) > 1:
+                    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
+                    ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates)//7)))
                 
                 plt.xticks(rotation=45)
                 plt.grid(True, alpha=0.3)
@@ -508,15 +506,15 @@ class FixedWeeklyReportGenerator:
                 chart_path = os.path.join(self.charts_dir, 'daily_activity.png')
                 plt.savefig(chart_path, dpi=300, bbox_inches='tight')
                 plt.close()
-                chart_paths['النشاط اليومي'] = chart_path
+                chart_paths['Daily Activity'] = chart_path
             
         except Exception as e:
             logger.error(f"خطأ في إنشاء الرسوم البيانية: {e}")
         
         return chart_paths
     
-    def create_fixed_excel_report(self, start_date: datetime, end_date: datetime) -> str:
-        """إنشاء تقرير Excel محسن"""
+    def create_final_excel_report(self, start_date: datetime, end_date: datetime) -> str:
+        """إنشاء تقرير Excel نهائي ومحسن"""
         try:
             # جمع البيانات
             general_stats = self.get_comprehensive_stats(start_date, end_date)
@@ -532,247 +530,217 @@ class FixedWeeklyReportGenerator:
             chart_paths = self.create_performance_charts(user_progress, grade_analysis, time_patterns)
             
             # إنشاء ملف Excel
-            report_filename = f"fixed_weekly_report_{start_date.strftime('%Y-%m-%d')}.xlsx"
+            report_filename = f"final_weekly_report_{start_date.strftime('%Y-%m-%d')}.xlsx"
             report_path = os.path.join(self.reports_dir, report_filename)
             
             with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
                 # 1. الملخص التنفيذي
                 executive_summary = pd.DataFrame([
-                    ['إجمالي المستخدمين المسجلين', general_stats.get('total_registered_users', 0)],
-                    ['المستخدمين النشطين هذا الأسبوع', general_stats.get('active_users_this_week', 0)],
-                    ['المستخدمين الجدد', general_stats.get('new_users_this_week', 0)],
-                    ['معدل المشاركة (%)', general_stats.get('engagement_rate', 0)],
-                    ['إجمالي الاختبارات', general_stats.get('total_quizzes_this_week', 0)],
-                    ['متوسط الدرجات (%)', general_stats.get('avg_percentage_this_week', 0)],
-                    ['إجمالي الأسئلة المجابة', general_stats.get('total_questions_this_week', 0)],
-                    ['متوسط الوقت (ثانية)', general_stats.get('avg_time_taken', 0)]
-                ], columns=['المؤشر', 'القيمة'])
+                    ['Total Registered Users', general_stats.get('total_registered_users', 0)],
+                    ['Active Users This Week', general_stats.get('active_users_this_week', 0)],
+                    ['New Users This Week', general_stats.get('new_users_this_week', 0)],
+                    ['Engagement Rate (%)', general_stats.get('engagement_rate', 0)],
+                    ['Total Quizzes This Week', general_stats.get('total_quizzes_this_week', 0)],
+                    ['Average Score (%)', general_stats.get('avg_percentage_this_week', 0)],
+                    ['Total Questions Answered', general_stats.get('total_questions_this_week', 0)],
+                    ['Average Time (seconds)', general_stats.get('avg_time_taken', 0)]
+                ], columns=['Metric', 'Value'])
                 
-                executive_summary.to_excel(writer, sheet_name='الملخص التنفيذي', index=False)
+                executive_summary.to_excel(writer, sheet_name='Executive Summary', index=False)
                 
                 # 2. تقدم المستخدمين
                 if user_progress:
                     users_df = pd.DataFrame(user_progress)
-                    users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
+                    users_df.to_excel(writer, sheet_name='User Progress', index=False)
                 
                 # 3. أداء الصفوف
                 if grade_analysis:
                     grades_df = pd.DataFrame(grade_analysis)
-                    grades_df.to_excel(writer, sheet_name='أداء الصفوف', index=False)
+                    grades_df.to_excel(writer, sheet_name='Grade Performance', index=False)
                 
                 # 4. الأسئلة الصعبة
                 if difficult_questions:
                     questions_df = pd.DataFrame(difficult_questions)
-                    questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
+                    questions_df.to_excel(writer, sheet_name='Difficult Questions', index=False)
                 
                 # 5. أنماط النشاط
-                if time_patterns.get('daily_activity'):
-                    daily_df = pd.DataFrame(time_patterns['daily_activity'])
-                    daily_df.to_excel(writer, sheet_name='النشاط اليومي', index=False)
-                
-                if time_patterns.get('peak_hours'):
-                    hourly_df = pd.DataFrame(time_patterns['peak_hours'])
-                    hourly_df.to_excel(writer, sheet_name='ساعات الذروة', index=False)
+                daily_activity = time_patterns.get('daily_activity', [])
+                if daily_activity:
+                    activity_df = pd.DataFrame(daily_activity)
+                    activity_df.to_excel(writer, sheet_name='Activity Patterns', index=False)
                 
                 # 6. التوصيات الذكية
                 recommendations_data = []
                 for category, recs in smart_recommendations.items():
                     for rec in recs:
-                        recommendations_data.append([category, rec])
+                        recommendations_data.append({'Category': category, 'Recommendation': rec})
                 
                 if recommendations_data:
-                    recommendations_df = pd.DataFrame(recommendations_data, columns=['الفئة', 'التوصية'])
-                    recommendations_df.to_excel(writer, sheet_name='التوصيات الذكية', index=False)
+                    recommendations_df = pd.DataFrame(recommendations_data)
+                    recommendations_df.to_excel(writer, sheet_name='Smart Recommendations', index=False)
+                
+                # 7. معلومات الرسوم البيانية
+                if chart_paths:
+                    charts_df = pd.DataFrame([
+                        {'Chart Name': name, 'File Path': path} 
+                        for name, path in chart_paths.items()
+                    ])
+                    charts_df.to_excel(writer, sheet_name='Charts Info', index=False)
             
-            logger.info(f"تم إنشاء التقرير المحسن: {report_path}")
+            logger.info(f"تم إنشاء التقرير النهائي بنجاح: {report_path}")
             return report_path
             
         except Exception as e:
-            logger.error(f"خطأ في إنشاء تقرير Excel المحسن: {e}")
-            return None
+            logger.error(f"خطأ في إنشاء تقرير Excel النهائي: {e}")
+            raise
+
+
+class FinalWeeklyReportScheduler:
+    """جدولة التقارير الأسبوعية النهائية"""
     
-    def send_email_report(self, report_path: str, chart_paths: Dict[str, str], 
-                         start_date: datetime, end_date: datetime) -> bool:
+    def __init__(self):
+        """تهيئة جدولة التقارير"""
+        self.report_generator = FinalWeeklyReportGenerator()
+        self.email_username = os.getenv('EMAIL_USERNAME')
+        self.email_password = os.getenv('EMAIL_PASSWORD')
+        self.admin_email = os.getenv('ADMIN_EMAIL')
+        self.scheduler_thread = None
+        self.running = False
+        
+        if not all([self.email_username, self.email_password, self.admin_email]):
+            logger.warning("إعدادات الإيميل غير مكتملة - لن يتم إرسال التقارير")
+        
+        logger.info("تم إعداد جدولة التقارير النهائية")
+    
+    def send_email_report(self, report_path: str, start_date: datetime, end_date: datetime) -> bool:
         """إرسال التقرير بالإيميل"""
         try:
-            # إعدادات الإيميل
-            smtp_server = "smtp.gmail.com"
-            smtp_port = 587
-            sender_email = os.getenv('EMAIL_USERNAME')
-            sender_password = os.getenv('EMAIL_PASSWORD')
-            admin_email = os.getenv('ADMIN_EMAIL')
-            
-            if not all([sender_email, sender_password, admin_email]):
+            if not all([self.email_username, self.email_password, self.admin_email]):
                 logger.error("إعدادات الإيميل غير مكتملة")
                 return False
             
             # إنشاء الرسالة
             msg = MIMEMultipart()
-            msg['From'] = sender_email
-            msg['To'] = admin_email
-            msg['Subject'] = f"التقرير الأسبوعي المحسن - {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}"
+            msg['From'] = self.email_username
+            msg['To'] = self.admin_email
+            msg['Subject'] = f"Weekly Report - {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
             
-            # محتوى الرسالة
+            # نص الرسالة
             body = f"""
-مرحباً،
+Dear Admin,
 
-إليك التقرير الأسبوعي المحسن لبوت الكيمياء التعليمي.
+Please find attached the comprehensive weekly report for the period:
+From: {start_date.strftime('%Y-%m-%d')}
+To: {end_date.strftime('%Y-%m-%d')}
 
-📊 فترة التقرير: {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}
+This report includes:
+- Executive summary with key metrics
+- Detailed user progress analysis
+- Grade-level performance comparison
+- Difficult questions analysis
+- Activity patterns and timing insights
+- Smart recommendations for improvement
 
-📋 محتوى التقرير:
-• الملخص التنفيذي مع المؤشرات الرئيسية
-• تحليل مفصل لتقدم كل مستخدم
-• أداء الصفوف الدراسية مع المقارنات
-• الأسئلة الصعبة التي تحتاج مراجعة
-• أنماط النشاط والأوقات المثلى
-• توصيات ذكية للتحسين
-
-📈 الرسوم البيانية المرفقة:
-{chr(10).join([f"• {name}" for name in chart_paths.keys()])}
-
-مع أطيب التحيات،
-نظام التقارير المحسن
+Best regards,
+Chemistry Bot Reporting System
             """
             
-            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            msg.attach(MIMEText(body, 'plain'))
             
-            # إرفاق ملف Excel
-            if report_path and os.path.exists(report_path):
+            # إرفاق ملف التقرير
+            if os.path.exists(report_path):
                 with open(report_path, "rb") as attachment:
                     part = MIMEBase('application', 'octet-stream')
                     part.set_payload(attachment.read())
-                    encoders.encode_base64(part)
-                    part.add_header(
-                        'Content-Disposition',
-                        f'attachment; filename= {os.path.basename(report_path)}'
-                    )
-                    msg.attach(part)
-            
-            # إرفاق الرسوم البيانية
-            for chart_name, chart_path in chart_paths.items():
-                if os.path.exists(chart_path):
-                    with open(chart_path, "rb") as attachment:
-                        part = MIMEBase('application', 'octet-stream')
-                        part.set_payload(attachment.read())
-                        encoders.encode_base64(part)
-                        part.add_header(
-                            'Content-Disposition',
-                            f'attachment; filename= {chart_name}.png'
-                        )
-                        msg.attach(part)
+                
+                encoders.encode_base64(part)
+                part.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename= {os.path.basename(report_path)}'
+                )
+                msg.attach(part)
             
             # إرسال الإيميل
-            server = smtplib.SMTP(smtp_server, smtp_port)
+            server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
-            server.login(sender_email, sender_password)
+            server.login(self.email_username, self.email_password)
             text = msg.as_string()
-            server.sendmail(sender_email, admin_email, text)
+            server.sendmail(self.email_username, self.admin_email, text)
             server.quit()
             
-            logger.info(f"تم إرسال التقرير المحسن بنجاح إلى {admin_email}")
+            logger.info(f"تم إرسال التقرير بنجاح إلى {self.admin_email}")
             return True
             
         except Exception as e:
-            logger.error(f"خطأ في إرسال التقرير المحسن: {e}")
+            logger.error(f"خطأ في إرسال التقرير بالإيميل: {e}")
             return False
     
-    def generate_and_send_fixed_report(self) -> bool:
-        """إنشاء وإرسال التقرير المحسن"""
+    def generate_and_send_weekly_report(self):
+        """إنشاء وإرسال التقرير الأسبوعي"""
         try:
             # تحديد فترة الأسبوع الماضي
-            today = datetime.now()
-            end_date = today - timedelta(days=today.weekday() + 1)  # نهاية الأسبوع الماضي
-            start_date = end_date - timedelta(days=6)  # بداية الأسبوع الماضي
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=7)
             
-            # تعديل الأوقات
-            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-            
-            logger.info(f"إنشاء التقرير المحسن للفترة: {start_date} إلى {end_date}")
+            logger.info(f"بدء إنشاء التقرير الأسبوعي للفترة: {start_date} إلى {end_date}")
             
             # إنشاء التقرير
-            report_path = self.create_fixed_excel_report(start_date, end_date)
-            if not report_path:
-                logger.error("فشل في إنشاء التقرير المحسن")
-                return False
-            
-            # إنشاء الرسوم البيانية
-            user_progress = self.get_user_progress_analysis(start_date, end_date)
-            grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
-            time_patterns = self.get_time_patterns_analysis(start_date, end_date)
-            chart_paths = self.create_performance_charts(user_progress, grade_analysis, time_patterns)
+            report_path = self.report_generator.create_final_excel_report(start_date, end_date)
             
             # إرسال التقرير
-            success = self.send_email_report(report_path, chart_paths, start_date, end_date)
-            
-            if success:
-                logger.info("تم إنشاء وإرسال التقرير المحسن بنجاح")
+            if self.send_email_report(report_path, start_date, end_date):
+                logger.info("تم إنشاء وإرسال التقرير الأسبوعي بنجاح")
             else:
-                logger.error("فشل في إرسال التقرير المحسن")
-            
-            return success
-            
+                logger.error("فشل في إرسال التقرير الأسبوعي")
+                
         except Exception as e:
-            logger.error(f"خطأ في إنشاء وإرسال التقرير المحسن: {e}")
-            return False
-
-class FixedWeeklyReportScheduler:
-    """جدولة التقارير الأسبوعية المحسنة"""
-    
-    def __init__(self, report_generator: FixedWeeklyReportGenerator):
-        self.report_generator = report_generator
-        self.scheduler_thread = None
-        self.running = False
+            logger.error(f"خطأ في إنشاء التقرير الأسبوعي: {e}")
     
     def start_scheduler(self):
         """بدء جدولة التقارير"""
         try:
-            # جدولة التقرير الأسبوعي (كل يوم أحد الساعة 9:00 صباحاً)
-            schedule.every().sunday.at("09:00").do(self._run_weekly_report)
+            # جدولة التقرير كل يوم أحد الساعة 9 صباحاً
+            schedule.every().sunday.at("09:00").do(self.generate_and_send_weekly_report)
             
             self.running = True
-            self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
+            
+            def run_scheduler():
+                while self.running:
+                    schedule.run_pending()
+                    time.sleep(60)  # فحص كل دقيقة
+            
+            self.scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
             self.scheduler_thread.start()
             
-            logger.info("تم بدء جدولة التقارير المحسنة - كل يوم أحد الساعة 9:00 صباحاً")
+            logger.info("تم بدء جدولة التقارير الأسبوعية - كل يوم أحد الساعة 9:00 صباحاً")
             
         except Exception as e:
-            logger.error(f"خطأ في بدء جدولة التقارير المحسنة: {e}")
-    
-    def _run_scheduler(self):
-        """تشغيل الجدولة"""
-        while self.running:
-            try:
-                schedule.run_pending()
-                time.sleep(60)  # فحص كل دقيقة
-            except Exception as e:
-                logger.error(f"خطأ في تشغيل جدولة التقارير المحسنة: {e}")
-                time.sleep(60)
-    
-    def _run_weekly_report(self):
-        """تشغيل التقرير الأسبوعي"""
-        try:
-            logger.info("بدء إنشاء التقرير الأسبوعي المحسن المجدول...")
-            success = self.report_generator.generate_and_send_fixed_report()
-            
-            if success:
-                logger.info("تم إنشاء وإرسال التقرير الأسبوعي المحسن المجدول بنجاح")
-            else:
-                logger.error("فشل في إنشاء التقرير الأسبوعي المحسن المجدول")
-                
-        except Exception as e:
-            logger.error(f"خطأ في التقرير الأسبوعي المحسن المجدول: {e}")
+            logger.error(f"خطأ في بدء جدولة التقارير: {e}")
     
     def stop_scheduler(self):
-        """إيقاف الجدولة"""
+        """إيقاف جدولة التقارير"""
         self.running = False
         if self.scheduler_thread:
             self.scheduler_thread.join(timeout=5)
-        logger.info("تم إيقاف جدولة التقارير المحسنة")
-
-def is_fixed_email_configured() -> bool:
-    """التحقق من إعدادات الإيميل المحسنة"""
-    required_vars = ['EMAIL_USERNAME', 'EMAIL_PASSWORD', 'ADMIN_EMAIL']
-    return all(os.getenv(var) for var in required_vars)
+        logger.info("تم إيقاف جدولة التقارير الأسبوعية")
+    
+    def get_quick_analytics(self) -> Dict[str, Any]:
+        """الحصول على تحليلات سريعة"""
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=7)
+            
+            stats = self.report_generator.get_comprehensive_stats(start_date, end_date)
+            return {
+                'period': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
+                'total_users': stats.get('total_registered_users', 0),
+                'active_users': stats.get('active_users_this_week', 0),
+                'engagement_rate': stats.get('engagement_rate', 0),
+                'total_quizzes': stats.get('total_quizzes_this_week', 0),
+                'avg_score': stats.get('avg_percentage_this_week', 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"خطأ في الحصول على التحليلات السريعة: {e}")
+            return {}
 
