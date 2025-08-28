@@ -139,7 +139,7 @@ async def report_status_command(update: Update, context: ContextTypes.DEFAULT_TY
         # فحص حالة النظام
         from weekly_report import is_email_configured
         
-        status_msg = "📊 **حالة نظام التقارير الأسبوعية**\n\n"
+        status_msg = "📊 حالة نظام التقارير الأسبوعية\n\n"
         
         # فحص قاعدة البيانات
         db_path = find_database_file()
@@ -155,21 +155,21 @@ async def report_status_command(update: Update, context: ContextTypes.DEFAULT_TY
             status_msg += "❌ إعدادات الإيميل: غير مكونة\n"
         
         # معلومات المدير
-        status_msg += f"\n👤 **معلومات المدير:**\n"
+        status_msg += f"\n👤 معلومات المدير:\n"
         status_msg += f"• معرف المستخدم: {user_id}\n"
         status_msg += f"• حالة الصلاحية: {'✅ مدير' if is_admin else '❌ غير مدير'}\n"
         
         # معلومات الجدولة
-        status_msg += "\n📅 **جدولة التقارير:**\n"
+        status_msg += "\n📅 جدولة التقارير:\n"
         status_msg += "• التوقيت: كل يوم أحد الساعة 9:00 صباحاً\n"
         status_msg += "• المحتوى: إحصائيات الأسبوع الماضي\n"
         
         # الأوامر المتاحة
-        status_msg += "\n🔧 **الأوامر المتاحة:**\n"
+        status_msg += "\n🔧 الأوامر المتاحة:\n"
         status_msg += "• /generate_report - إنشاء تقرير فوري\n"
         status_msg += "• /report_status - عرض هذه الحالة\n"
         
-        await update.message.reply_text(status_msg, parse_mode='Markdown')
+        await update.message.reply_text(status_msg)
         
     except Exception as e:
         logger.error(f"خطأ في أمر حالة التقارير: {e}")
