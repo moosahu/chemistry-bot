@@ -389,24 +389,24 @@ def main() -> None:
     # Add error handler
     application.add_error_handler(error_handler)
 
-    # --- Setup Ultimate Weekly Reports System ---
-    logger.info("Setting up Ultimate Weekly Reports System...")
+    # --- Setup Fixed Weekly Reports System ---
+    logger.info("Setting up Fixed Weekly Reports System...")
     try:
-        from ultimate_bot_integration import setup_ultimate_reporting_system, add_ultimate_admin_commands
+        from fixed_bot_integration import setup_fixed_reporting_system, add_fixed_admin_report_commands
         
-        ultimate_reporting_system = setup_ultimate_reporting_system()
+        fixed_reporting_system = setup_fixed_reporting_system()
         
-        if ultimate_reporting_system:
-            ultimate_reporting_system.start_scheduler()
-            add_ultimate_admin_commands(application, ultimate_reporting_system)
-            logger.info("✅ Ultimate Weekly Reports System activated successfully")
+        if fixed_reporting_system:
+            fixed_reporting_system.start_scheduler()
+            add_fixed_admin_report_commands(application, fixed_reporting_system)
+            logger.info("✅ Fixed Weekly Reports System activated successfully")
         else:
-            logger.error("❌ Failed to initialize Ultimate Weekly Reports System")
+            logger.error("❌ Failed to initialize Fixed Weekly Reports System")
             
     except ImportError as ie:
-        logger.warning(f"Could not import Ultimate Weekly Reports System: {ie}. Ultimate reports will not be available.")
+        logger.warning(f"Could not import Fixed Weekly Reports System: {ie}. Fixed reports will not be available.")
     except Exception as e:
-        logger.error(f"Error setting up Ultimate Weekly Reports System: {e}", exc_info=True)
+        logger.error(f"Error setting up Fixed Weekly Reports System: {e}", exc_info=True)
 
     # Run the bot
     logger.info("Starting bot polling...")
