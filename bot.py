@@ -402,26 +402,28 @@ def main() -> None:
     application.add_error_handler(error_handler)
 
     # --- Setup Weekly Reports System ---
-    if 'weekly_reports_loaded' in locals() and weekly_reports_loaded:
+    try:
+        # محاولة استيراد النظام مباشرة
+        from bot_integration import setup_reporting_system, add_admin_report_commands
+        
         logger.info("Setting up Weekly Reports System...")
-        try:
-            reporting_system = setup_reporting_system()
+        reporting_system = setup_reporting_system()
+        
+        if reporting_system:
+            # Start weekly reports scheduling
+            reporting_system.start_weekly_reports()
             
-            if reporting_system:
-                # Start weekly reports scheduling
-                reporting_system.start_weekly_reports()
-                
-                # Add admin report commands
-                add_admin_report_commands(application, reporting_system)
-                
-                logger.info("✅ Weekly Reports System activated successfully")
-            else:
-                logger.error("❌ Failed to initialize Weekly Reports System")
-                
-        except Exception as e:
-            logger.error(f"Error setting up Weekly Reports System: {e}", exc_info=True)
-    else:
-        logger.warning("Weekly Reports System was not imported, skipping setup.")
+            # Add admin report commands
+            add_admin_report_commands(application, reporting_system)
+            
+            logger.info("✅ Weekly Reports System activated successfully")
+        else:
+            logger.error("❌ Failed to initialize Weekly Reports System")
+            
+    except ImportError as e:
+        logger.warning(f"Weekly Reports System not available: {e}")
+    except Exception as e:
+        logger.error(f"Error setting up Weekly Reports System: {e}", exc_info=True)
 
     # Run the bot
     logger.info("Starting bot polling...")
