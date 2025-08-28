@@ -432,9 +432,9 @@ class FinalWeeklyReportGenerator:
                     colors = ['#2E8B57', '#32CD32', '#FFD700', '#FF6347', '#DC143C', '#808080']
                     
                     bars = ax.bar(levels, counts, color=colors[:len(levels)])
-                    ax.set_title('Performance Level Distribution', fontsize=16, fontweight='bold')
-                    ax.set_ylabel('Number of Users', fontsize=12)
-                    ax.set_xlabel('Performance Level', fontsize=12)
+                    ax.set_title('توزيع مستويات الأداء', fontsize=16, fontweight='bold')
+                    ax.set_ylabel('عدد المستخدمين', fontsize=12)
+                    ax.set_xlabel('مستوى الأداء', fontsize=12)
                     
                     # إضافة القيم على الأعمدة
                     for bar, count in zip(bars, counts):
@@ -448,7 +448,7 @@ class FinalWeeklyReportGenerator:
                     chart_path = os.path.join(self.charts_dir, 'performance_distribution.png')
                     plt.savefig(chart_path, dpi=300, bbox_inches='tight')
                     plt.close()
-                    chart_paths['Performance Distribution'] = chart_path
+                    chart_paths['توزيع مستويات الأداء'] = chart_path
             
             # 2. مقارنة أداء الصفوف
             if grade_analysis:
@@ -457,9 +457,9 @@ class FinalWeeklyReportGenerator:
                 percentages = [g['avg_percentage'] for g in grade_analysis]
                 
                 bars = ax.bar(grades, percentages, color='#4CAF50')
-                ax.set_title('Average Grade Performance', fontsize=16, fontweight='bold')
-                ax.set_ylabel('Average Percentage (%)', fontsize=12)
-                ax.set_xlabel('Grade Level', fontsize=12)
+                ax.set_title('متوسط أداء الصفوف الدراسية', fontsize=16, fontweight='bold')
+                ax.set_ylabel('متوسط النسبة المئوية (%)', fontsize=12)
+                ax.set_xlabel('الصف الدراسي', fontsize=12)
                 ax.set_ylim(0, 100)
                 
                 # إضافة خط المتوسط العام
@@ -480,7 +480,7 @@ class FinalWeeklyReportGenerator:
                 chart_path = os.path.join(self.charts_dir, 'grade_performance.png')
                 plt.savefig(chart_path, dpi=300, bbox_inches='tight')
                 plt.close()
-                chart_paths['Grade Performance'] = chart_path
+                chart_paths['أداء الصفوف الدراسية'] = chart_path
             
             # 3. النشاط اليومي
             daily_activity = time_patterns.get('daily_activity', [])
@@ -492,9 +492,9 @@ class FinalWeeklyReportGenerator:
                 ax.plot(dates, counts, marker='o', linewidth=2, markersize=6, color='#2196F3')
                 ax.fill_between(dates, counts, alpha=0.3, color='#2196F3')
                 
-                ax.set_title('Daily Quiz Activity', fontsize=16, fontweight='bold')
-                ax.set_ylabel('Number of Quizzes', fontsize=12)
-                ax.set_xlabel('Date', fontsize=12)
+                ax.set_title('النشاط اليومي للاختبارات', fontsize=16, fontweight='bold')
+                ax.set_ylabel('عدد الاختبارات', fontsize=12)
+                ax.set_xlabel('التاريخ', fontsize=12)
                 
                 # تنسيق التواريخ
                 if len(dates) > 1:
@@ -508,7 +508,7 @@ class FinalWeeklyReportGenerator:
                 chart_path = os.path.join(self.charts_dir, 'daily_activity.png')
                 plt.savefig(chart_path, dpi=300, bbox_inches='tight')
                 plt.close()
-                chart_paths['Daily Activity'] = chart_path
+                chart_paths['النشاط اليومي'] = chart_path
             
         except Exception as e:
             logger.error(f"خطأ في إنشاء الرسوم البيانية: {e}")
@@ -538,17 +538,17 @@ class FinalWeeklyReportGenerator:
             with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
                 # 1. الملخص التنفيذي
                 executive_summary = pd.DataFrame([
-                    ['Total Registered Users', general_stats.get('total_registered_users', 0)],
-                    ['Active Users This Week', general_stats.get('active_users_this_week', 0)],
-                    ['New Users This Week', general_stats.get('new_users_this_week', 0)],
-                    ['Engagement Rate (%)', general_stats.get('engagement_rate', 0)],
-                    ['Total Quizzes This Week', general_stats.get('total_quizzes_this_week', 0)],
-                    ['Average Score (%)', general_stats.get('avg_percentage_this_week', 0)],
-                    ['Total Questions Answered', general_stats.get('total_questions_this_week', 0)],
-                    ['Average Time (seconds)', general_stats.get('avg_time_taken', 0)]
-                ], columns=['Metric', 'Value'])
+                    ['إجمالي المستخدمين المسجلين', general_stats.get('total_registered_users', 0)],
+                    ['المستخدمين النشطين هذا الأسبوع', general_stats.get('active_users_this_week', 0)],
+                    ['المستخدمين الجدد هذا الأسبوع', general_stats.get('new_users_this_week', 0)],
+                    ['معدل المشاركة (%)', general_stats.get('engagement_rate', 0)],
+                    ['إجمالي الاختبارات هذا الأسبوع', general_stats.get('total_quizzes_this_week', 0)],
+                    ['متوسط الدرجات (%)', general_stats.get('avg_percentage_this_week', 0)],
+                    ['إجمالي الأسئلة المجابة', general_stats.get('total_questions_this_week', 0)],
+                    ['متوسط الوقت (ثانية)', general_stats.get('avg_time_taken', 0)]
+                ], columns=['المؤشر', 'القيمة'])
                 
-                executive_summary.to_excel(writer, sheet_name='Executive Summary', index=False)
+                executive_summary.to_excel(writer, sheet_name='الملخص التنفيذي', index=False)
                 
                 # 2. تقدم المستخدمين
                 if user_progress:
@@ -562,17 +562,17 @@ class FinalWeeklyReportGenerator:
                                     user[date_field] = user[date_field].replace(tzinfo=None)
                     
                     users_df = pd.DataFrame(user_progress)
-                    users_df.to_excel(writer, sheet_name='User Progress', index=False)
+                    users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
                 
                 # 3. أداء الصفوف
                 if grade_analysis:
                     grades_df = pd.DataFrame(grade_analysis)
-                    grades_df.to_excel(writer, sheet_name='Grade Performance', index=False)
+                    grades_df.to_excel(writer, sheet_name='أداء الصفوف', index=False)
                 
                 # 4. الأسئلة الصعبة
                 if difficult_questions:
                     questions_df = pd.DataFrame(difficult_questions)
-                    questions_df.to_excel(writer, sheet_name='Difficult Questions', index=False)
+                    questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
                 
                 # 5. أنماط النشاط
                 daily_activity = time_patterns.get('daily_activity', [])
@@ -585,25 +585,25 @@ class FinalWeeklyReportGenerator:
                                 activity['date'] = activity['date'].replace(tzinfo=None)
                     
                     activity_df = pd.DataFrame(daily_activity)
-                    activity_df.to_excel(writer, sheet_name='Activity Patterns', index=False)
+                    activity_df.to_excel(writer, sheet_name='أنماط النشاط', index=False)
                 
                 # 6. التوصيات الذكية
                 recommendations_data = []
                 for category, recs in smart_recommendations.items():
                     for rec in recs:
-                        recommendations_data.append({'Category': category, 'Recommendation': rec})
+                        recommendations_data.append({'الفئة': category, 'التوصية': rec})
                 
                 if recommendations_data:
                     recommendations_df = pd.DataFrame(recommendations_data)
-                    recommendations_df.to_excel(writer, sheet_name='Smart Recommendations', index=False)
+                    recommendations_df.to_excel(writer, sheet_name='التوصيات الذكية', index=False)
                 
                 # 7. معلومات الرسوم البيانية
                 if chart_paths:
                     charts_df = pd.DataFrame([
-                        {'Chart Name': name, 'File Path': path} 
+                        {'اسم الرسم': name, 'مسار الملف': path} 
                         for name, path in chart_paths.items()
                     ])
-                    charts_df.to_excel(writer, sheet_name='Charts Info', index=False)
+                    charts_df.to_excel(writer, sheet_name='معلومات الرسوم البيانية', index=False)
             
             logger.info(f"تم إنشاء التقرير النهائي بنجاح: {report_path}")
             return report_path
