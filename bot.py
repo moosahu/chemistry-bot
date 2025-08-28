@@ -389,32 +389,24 @@ def main() -> None:
     # Add error handler
     application.add_error_handler(error_handler)
 
-    # Add error handler
-    application.add_error_handler(error_handler)
-
-    # --- Setup Weekly Reports System ---
+    # --- Setup Ultimate Weekly Reports System ---
+    logger.info("Setting up Ultimate Weekly Reports System...")
     try:
-        # محاولة استيراد النظام مباشرة
-        from bot_integration import setup_reporting_system, add_admin_report_commands
+        from ultimate_bot_integration import setup_ultimate_reporting_system, add_ultimate_admin_commands
         
-        logger.info("Setting up Weekly Reports System...")
-        reporting_system = setup_reporting_system()
+        ultimate_reporting_system = setup_ultimate_reporting_system()
         
-        if reporting_system:
-            # Start weekly reports scheduling
-            reporting_system.start_scheduler()
-            
-            # Add admin report commands
-            add_admin_report_commands(application, reporting_system)
-            
-            logger.info("✅ Weekly Reports System activated successfully")
+        if ultimate_reporting_system:
+            ultimate_reporting_system.start_scheduler()
+            add_ultimate_admin_commands(application, ultimate_reporting_system)
+            logger.info("✅ Ultimate Weekly Reports System activated successfully")
         else:
-            logger.error("❌ Failed to initialize Weekly Reports System")
+            logger.error("❌ Failed to initialize Ultimate Weekly Reports System")
             
-    except ImportError as e:
-        logger.warning(f"Weekly Reports System not available: {e}")
+    except ImportError as ie:
+        logger.warning(f"Could not import Ultimate Weekly Reports System: {ie}. Ultimate reports will not be available.")
     except Exception as e:
-        logger.error(f"Error setting up Weekly Reports System: {e}", exc_info=True)
+        logger.error(f"Error setting up Ultimate Weekly Reports System: {e}", exc_info=True)
 
     # Run the bot
     logger.info("Starting bot polling...")
