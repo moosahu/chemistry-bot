@@ -553,15 +553,13 @@ class FinalWeeklyReportGenerator:
                 # 2. تقدم المستخدمين
                 if user_progress:
                     # إزالة timezone من التواريخ لتوافق Excel
+                    from datetime import datetime
                     for user in user_progress:
-                        if user.get('registration_date') and hasattr(user['registration_date'], 'replace'):
-                            user['registration_date'] = user['registration_date'].replace(tzinfo=None)
-                        if user.get('last_active') and hasattr(user['last_active'], 'replace'):
-                            user['last_active'] = user['last_active'].replace(tzinfo=None)
-                        if user.get('last_quiz_date') and hasattr(user['last_quiz_date'], 'replace'):
-                            user['last_quiz_date'] = user['last_quiz_date'].replace(tzinfo=None)
-                        if user.get('first_quiz_date') and hasattr(user['first_quiz_date'], 'replace'):
-                            user['first_quiz_date'] = user['first_quiz_date'].replace(tzinfo=None)
+                        # معالجة آمنة للتواريخ
+                        for date_field in ['registration_date', 'last_active', 'last_quiz_date', 'first_quiz_date']:
+                            if user.get(date_field) and isinstance(user[date_field], datetime):
+                                if user[date_field].tzinfo is not None:
+                                    user[date_field] = user[date_field].replace(tzinfo=None)
                     
                     users_df = pd.DataFrame(user_progress)
                     users_df.to_excel(writer, sheet_name='User Progress', index=False)
@@ -580,9 +578,11 @@ class FinalWeeklyReportGenerator:
                 daily_activity = time_patterns.get('daily_activity', [])
                 if daily_activity:
                     # إزالة timezone من التواريخ في daily_activity
+                    from datetime import datetime
                     for activity in daily_activity:
-                        if activity.get('date') and hasattr(activity['date'], 'replace'):
-                            activity['date'] = activity['date'].replace(tzinfo=None)
+                        if activity.get('date') and isinstance(activity['date'], datetime):
+                            if activity['date'].tzinfo is not None:
+                                activity['date'] = activity['date'].replace(tzinfo=None)
                     
                     activity_df = pd.DataFrame(daily_activity)
                     activity_df.to_excel(writer, sheet_name='Activity Patterns', index=False)
