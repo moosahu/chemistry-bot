@@ -246,9 +246,11 @@ class FinalWeeklyReportGenerator:
                         ua.question_id,
                         COUNT(*) as total_attempts,
                         SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
-                        ROUND(
-                            (SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(*)) * 100, 
-                            2
+                        CAST(
+                            ROUND(
+                                CAST((SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(*)) * 100 AS NUMERIC), 
+                                2
+                            ) AS FLOAT
                         ) as success_rate
                     FROM user_answers ua
                     WHERE ua.answer_time >= :start_date AND ua.answer_time <= :end_date
@@ -550,6 +552,17 @@ class FinalWeeklyReportGenerator:
                 
                 # 2. تقدم المستخدمين
                 if user_progress:
+                    # إزالة timezone من التواريخ لتوافق Excel
+                    for user in user_progress:
+                        if user.get('registration_date') and hasattr(user['registration_date'], 'replace'):
+                            user['registration_date'] = user['registration_date'].replace(tzinfo=None)
+                        if user.get('last_active') and hasattr(user['last_active'], 'replace'):
+                            user['last_active'] = user['last_active'].replace(tzinfo=None)
+                        if user.get('last_quiz_date') and hasattr(user['last_quiz_date'], 'replace'):
+                            user['last_quiz_date'] = user['last_quiz_date'].replace(tzinfo=None)
+                        if user.get('first_quiz_date') and hasattr(user['first_quiz_date'], 'replace'):
+                            user['first_quiz_date'] = user['first_quiz_date'].replace(tzinfo=None)
+                    
                     users_df = pd.DataFrame(user_progress)
                     users_df.to_excel(writer, sheet_name='User Progress', index=False)
                 
@@ -566,6 +579,11 @@ class FinalWeeklyReportGenerator:
                 # 5. أنماط النشاط
                 daily_activity = time_patterns.get('daily_activity', [])
                 if daily_activity:
+                    # إزالة timezone من التواريخ في daily_activity
+                    for activity in daily_activity:
+                        if activity.get('date') and hasattr(activity['date'], 'replace'):
+                            activity['date'] = activity['date'].replace(tzinfo=None)
+                    
                     activity_df = pd.DataFrame(daily_activity)
                     activity_df.to_excel(writer, sheet_name='Activity Patterns', index=False)
                 
