@@ -7,6 +7,3 @@ matplotlib
 arabic_reshaper
 python-bidi
 SQLAlchemy
-
-schedule>=1.2.0
-

@@ -107,6 +107,15 @@ try:
         logger.warning(f"Could not import Admin Interface V4/V7/V8 handlers from handlers.admin_interface: {ie_v4}. The new admin dashboard will not be available.")
         admin_interface_v4_loaded = False
 
+    # --- Import Weekly Reports System ---
+    try:
+        from bot_integration import setup_reporting_system, add_admin_report_commands
+        logger.info("Successfully imported Weekly Reports System.")
+        weekly_reports_loaded = True
+    except ImportError as ie_reports:
+        logger.warning(f"Could not import Weekly Reports System: {ie_reports}. Weekly reports will not be available.")
+        weekly_reports_loaded = False
+
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger(__name__)
@@ -391,6 +400,28 @@ def main() -> None:
 
     # Add error handler
     application.add_error_handler(error_handler)
+
+    # --- Setup Weekly Reports System ---
+    if 'weekly_reports_loaded' in locals() and weekly_reports_loaded:
+        logger.info("Setting up Weekly Reports System...")
+        try:
+            reporting_system = setup_reporting_system()
+            
+            if reporting_system:
+                # Start weekly reports scheduling
+                reporting_system.start_weekly_reports()
+                
+                # Add admin report commands
+                add_admin_report_commands(application, reporting_system)
+                
+                logger.info("✅ Weekly Reports System activated successfully")
+            else:
+                logger.error("❌ Failed to initialize Weekly Reports System")
+                
+        except Exception as e:
+            logger.error(f"Error setting up Weekly Reports System: {e}", exc_info=True)
+    else:
+        logger.warning("Weekly Reports System was not imported, skipping setup.")
 
     # Run the bot
     logger.info("Starting bot polling...")

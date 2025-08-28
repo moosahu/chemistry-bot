@@ -186,6 +186,22 @@ def main() -> None:
     except Exception as db_exc:
         logger.error(f"Error during initial SQLAlchemy database setup (get_engine or create_tables): {db_exc}", exc_info=True)
     
+    # تهيئة نظام الحماية الإداري
+    try:
+        from admin_security_system import initialize_admin_security
+        from admin_commands import admin_conversation_handler, quick_block_command, quick_unblock_command
+        
+        # ضع معرفات المدراء هنا - يجب تحديثها بالمعرفات الحقيقية
+        ADMIN_IDS = [6448526509]  # معرفك الحقيقي
+        
+        # تهيئة نظام الحماية
+        security_manager = initialize_admin_security(ADMIN_IDS)
+        logger.info(f"[SECURITY] تم تهيئة نظام الحماية مع {len(ADMIN_IDS)} مدير")
+        
+    except ImportError as e:
+        logger.error(f"[SECURITY] خطأ في استيراد نظام الحماية: {e}. سيعمل البوت بدون حماية إدارية.")
+        security_manager = None
+    
     persistence = None
     try:
         persistence_dir = os.path.join(project_root, 'persistence')
@@ -263,7 +279,18 @@ def main() -> None:
         except ImportError as e2:
             logger.error(f"Error importing registration handlers: {e2}. Registration features will not be available.")
 
-    # إضافة باقي المعالجات بعد معالجات التسجيل
+    # إضافة معالجات الإدارة والحماية
+    if security_manager:
+        try:
+            # إضافة معالجات الإدارة
+            application.add_handler(admin_conversation_handler)
+            application.add_handler(CommandHandler("block", quick_block_command))
+            application.add_handler(CommandHandler("unblock", quick_unblock_command))
+            logger.info("[SECURITY] تم إضافة معالجات الإدارة والحماية بنجاح")
+        except Exception as e:
+            logger.error(f"[SECURITY] خطأ في إضافة معالجات الإدارة: {e}")
+
+    # إضافة باقي المعالجات بعد معالجات التسجيل والإدارة
     if new_admin_tools_loaded:
         # تجنب إضافة معالج start لتجنب التعارض مع معالج التسجيل
         application.add_handler(CommandHandler("about", admin_about_command))
@@ -342,23 +369,36 @@ def main() -> None:
             name="broadcast_conversation"
         )
         application.add_handler(broadcast_conv_handler)
-        
-        # Add other callback query handlers for admin tools menu navigation
+
+        # Add other admin tools handlers
         application.add_handler(CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"))
         application.add_handler(CallbackQueryHandler(admin_back_to_start_callback, pattern=r"^admin_back_to_start$"))
         application.add_handler(CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$"))
-        
-        # Add export users command handler
-        application.add_handler(CommandHandler("export_users", export_users_command))
-        logger.info("User data export command handler registered successfully.")
-        
-        logger.info("New admin tools (edit/broadcast) ConversationHandlers and CallbackQueryHandlers added.")
-    
+
+        # Add export users command handler if available
+        try:
+            application.add_handler(CommandHandler("export_users", export_users_command))
+            logger.info("Export users command handler added.")
+        except NameError:
+            logger.warning("export_users_command not found, skipping addition.")
+
+        logger.info("New admin tools (edit/broadcast) ConversationHandlers and related handlers added.")
+    else:
+        logger.warning("New admin tools (edit/broadcast) were not imported, skipping their addition.")
+
     # Add error handler
     application.add_error_handler(error_handler)
-    
-    logger.info("Bot application configured. Starting polling...")
-    application.run_polling()
+
+    # Add error handler
+    application.add_error_handler(error_handler)
+
+    # Run the bot
+    logger.info("Starting bot polling...")
+    try:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as run_exc:
+        logger.critical(f"Critical error during bot polling: {run_exc}", exc_info=True)
+        exit(1)
 
 if __name__ == '__main__':
     main()
