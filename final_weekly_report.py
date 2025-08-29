@@ -72,7 +72,7 @@ class FinalWeeklyReportGenerator:
                     SELECT 
                         COUNT(*) as total_quizzes_this_week,
                         COUNT(DISTINCT user_id) as unique_users_this_week,
-                        AVG(percentage) as avg_percentage_this_week,
+                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_this_week,
                         SUM(total_questions) as total_questions_this_week,
                         AVG(time_taken_seconds) as avg_time_taken
                     FROM quiz_results 
@@ -83,6 +83,47 @@ class FinalWeeklyReportGenerator:
                     'start_date': start_date,
                     'end_date': end_date
                 }).fetchone()
+                
+                # تسجيل تفصيلي لتشخيص المشكلة
+                logger.info(f"نتائج استعلام الاختبارات:")
+                logger.info(f"- إجمالي الاختبارات: {quiz_result.total_quizzes_this_week}")
+                logger.info(f"- المستخدمين الفريدين: {quiz_result.unique_users_this_week}")
+                logger.info(f"- متوسط الدرجات الخام: {quiz_result.avg_percentage_this_week}")
+                logger.info(f"- إجمالي الأسئلة: {quiz_result.total_questions_this_week}")
+                logger.info(f"- متوسط الوقت: {quiz_result.avg_time_taken}")
+                
+                # فحص إضافي للبيانات
+                debug_query = text("""
+                    SELECT 
+                        COUNT(*) as total_records,
+                        MIN(percentage) as min_percentage,
+                        MAX(percentage) as max_percentage,
+                        COUNT(CASE WHEN percentage > 0 THEN 1 END) as non_zero_records
+                    FROM quiz_results 
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                """)
+                
+                debug_result = conn.execute(debug_query, {
+                    'start_date': start_date,
+                    'end_date': end_date
+                }).fetchone()
+                
+                logger.info(f"فحص إضافي للبيانات:")
+                logger.info(f"- إجمالي السجلات: {debug_result.total_records}")
+                logger.info(f"- أقل نسبة: {debug_result.min_percentage}")
+                logger.info(f"- أعلى نسبة: {debug_result.max_percentage}")
+                logger.info(f"- السجلات غير الصفرية: {debug_result.non_zero_records}")
+                
+                # فحص بنية الجدول
+                try:
+                    structure_query = text("SELECT * FROM quiz_results LIMIT 1")
+                    sample_result = conn.execute(structure_query).fetchone()
+                    if sample_result:
+                        logger.info(f"عينة من البيانات: {dict(sample_result._mapping)}")
+                    else:
+                        logger.warning("لا توجد بيانات في جدول quiz_results")
+                except Exception as struct_error:
+                    logger.error(f"خطأ في فحص بنية الجدول: {struct_error}")
                 
                 # حساب معدل المشاركة
                 total_users = users_result.total_registered_users or 0

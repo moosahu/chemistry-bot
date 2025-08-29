@@ -12,6 +12,7 @@ import smtplib
 import schedule
 import time
 import threading
+import openpyxl.styles
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -143,37 +144,37 @@ class FinalWeeklyReportGenerator:
                     # تحديد مستوى الأداء
                     avg_percentage = row.overall_avg_percentage or 0
                     if avg_percentage >= 90:
-                        performance_level = "Excellent"
+                        performance_level = "ممتاز"
                     elif avg_percentage >= 80:
-                        performance_level = "Very Good"
+                        performance_level = "جيد جداً"
                     elif avg_percentage >= 70:
-                        performance_level = "Good"
+                        performance_level = "جيد"
                     elif avg_percentage >= 60:
-                        performance_level = "Average"
+                        performance_level = "متوسط"
                     elif avg_percentage > 0:
-                        performance_level = "Weak"
+                        performance_level = "ضعيف"
                     else:
-                        performance_level = "No Activity"
+                        performance_level = "لا يوجد نشاط"
                     
                     # تحديد مستوى النشاط
                     total_quizzes = row.total_quizzes or 0
                     if total_quizzes >= 10:
-                        activity_level = "Very Active"
+                        activity_level = "نشط جداً"
                     elif total_quizzes >= 5:
-                        activity_level = "Active"
+                        activity_level = "نشط"
                     elif total_quizzes >= 1:
-                        activity_level = "Low Activity"
+                        activity_level = "قليل النشاط"
                     else:
-                        activity_level = "Inactive"
+                        activity_level = "غير نشط"
                     
                     # تحليل الاتجاه (مبسط)
-                    trend = "Stable"  # يمكن تحسينه لاحقاً بتحليل أعمق
+                    trend = "ثابت"  # يمكن تحسينه لاحقاً بتحليل أعمق
                     
                     users_analysis.append({
                         'user_id': row.user_id,
-                        'username': row.username or 'Not Set',
-                        'full_name': row.full_name or f"{row.first_name or ''} {row.last_name or ''}".strip() or 'Not Set',
-                        'grade': row.grade or 'Not Set',
+                        'username': row.username or 'غير محدد',
+                        'full_name': row.full_name or f"{row.first_name or ''} {row.last_name or ''}".strip() or 'غير محدد',
+                        'grade': row.grade or 'غير محدد',
                         'registration_date': row.first_seen_timestamp,
                         'last_active': row.last_active_timestamp,
                         'total_quizzes': total_quizzes,
@@ -383,11 +384,11 @@ class FinalWeeklyReportGenerator:
                 recommendations['Management'].append(f"Excellent engagement rate ({engagement_rate}%). Maintain current strategies")
             
             # توصيات للمعلمين
-            weak_users = [u for u in user_progress if u['performance_level'] == 'Weak']
+            weak_users = [u for u in user_progress if u['performance_level'] == 'ضعيف']
             if len(weak_users) > 0:
                 recommendations['Teachers'].append(f"{len(weak_users)} students need extra support")
             
-            excellent_users = [u for u in user_progress if u['performance_level'] == 'Excellent']
+            excellent_users = [u for u in user_progress if u['performance_level'] == 'ممتاز']
             if len(excellent_users) > 0:
                 recommendations['Teachers'].append(f"{len(excellent_users)} excellent students can be given advanced challenges")
             
@@ -562,16 +563,60 @@ class FinalWeeklyReportGenerator:
                                     user[date_field] = user[date_field].replace(tzinfo=None)
                     
                     users_df = pd.DataFrame(user_progress)
+                    
+                    # تعريب أسماء الأعمدة
+                    column_translations = {
+                        'user_id': 'معرف المستخدم',
+                        'username': 'اسم المستخدم',
+                        'full_name': 'الاسم الكامل',
+                        'grade': 'الصف',
+                        'registration_date': 'تاريخ التسجيل',
+                        'last_active': 'آخر نشاط',
+                        'total_quizzes': 'إجمالي الاختبارات',
+                        'overall_avg_percentage': 'متوسط الدرجات (%)',
+                        'total_questions_answered': 'إجمالي الأسئلة المجابة',
+                        'avg_time_per_quiz': 'متوسط الوقت لكل اختبار',
+                        'performance_level': 'مستوى الأداء',
+                        'activity_level': 'مستوى النشاط',
+                        'trend': 'اتجاه التحسن',
+                        'last_quiz_date': 'تاريخ آخر اختبار',
+                        'first_quiz_date': 'تاريخ أول اختبار'
+                    }
+                    users_df.rename(columns=column_translations, inplace=True)
+                    
                     users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
                 
                 # 3. أداء الصفوف
                 if grade_analysis:
                     grades_df = pd.DataFrame(grade_analysis)
+                    
+                    # تعريب أسماء الأعمدة
+                    grade_translations = {
+                        'grade': 'الصف',
+                        'total_users': 'إجمالي المستخدمين',
+                        'active_users': 'المستخدمين النشطين',
+                        'avg_percentage': 'متوسط الدرجات (%)',
+                        'total_quizzes': 'إجمالي الاختبارات',
+                        'engagement_rate': 'معدل المشاركة (%)'
+                    }
+                    grades_df.rename(columns=grade_translations, inplace=True)
+                    
                     grades_df.to_excel(writer, sheet_name='أداء الصفوف', index=False)
                 
                 # 4. الأسئلة الصعبة
                 if difficult_questions:
                     questions_df = pd.DataFrame(difficult_questions)
+                    
+                    # تعريب أسماء الأعمدة
+                    questions_translations = {
+                        'question_id': 'معرف السؤال',
+                        'total_attempts': 'إجمالي المحاولات',
+                        'correct_answers': 'الإجابات الصحيحة',
+                        'success_rate': 'معدل النجاح (%)',
+                        'review_priority': 'أولوية المراجعة'
+                    }
+                    questions_df.rename(columns=questions_translations, inplace=True)
+                    
                     questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
                 
                 # 5. أنماط النشاط
@@ -585,6 +630,16 @@ class FinalWeeklyReportGenerator:
                                 activity['date'] = activity['date'].replace(tzinfo=None)
                     
                     activity_df = pd.DataFrame(daily_activity)
+                    
+                    # تعريب أسماء الأعمدة
+                    activity_translations = {
+                        'date': 'التاريخ',
+                        'quiz_count': 'عدد الاختبارات',
+                        'unique_users': 'المستخدمين الفريدين',
+                        'avg_score': 'متوسط الدرجات'
+                    }
+                    activity_df.rename(columns=activity_translations, inplace=True)
+                    
                     activity_df.to_excel(writer, sheet_name='أنماط النشاط', index=False)
                 
                 # 6. التوصيات الذكية
@@ -604,6 +659,43 @@ class FinalWeeklyReportGenerator:
                         for name, path in chart_paths.items()
                     ])
                     charts_df.to_excel(writer, sheet_name='معلومات الرسوم البيانية', index=False)
+                
+                # إدراج الرسوم البيانية في Excel
+                try:
+                    from openpyxl.drawing.image import Image
+                    workbook = writer.book
+                    
+                    # إنشاء ورقة للرسوم البيانية
+                    if chart_paths:
+                        charts_sheet = workbook.create_sheet('الرسوم البيانية')
+                        
+                        row_position = 1
+                        for chart_name, chart_path in chart_paths.items():
+                            if os.path.exists(chart_path):
+                                try:
+                                    # إضافة عنوان الرسم
+                                    charts_sheet.cell(row=row_position, column=1, value=chart_name)
+                                    charts_sheet.cell(row=row_position, column=1).font = openpyxl.styles.Font(bold=True, size=14)
+                                    
+                                    # إضافة الرسم البياني
+                                    img = Image(chart_path)
+                                    # تصغير حجم الصورة لتناسب Excel
+                                    img.width = 600
+                                    img.height = 400
+                                    charts_sheet.add_image(img, f'A{row_position + 1}')
+                                    
+                                    # الانتقال للموضع التالي
+                                    row_position += 25  # مساحة كافية للرسم والعنوان
+                                    
+                                except Exception as img_error:
+                                    logger.warning(f"تعذر إدراج الرسم {chart_name}: {img_error}")
+                                    
+                        logger.info(f"تم إدراج {len(chart_paths)} رسم بياني في Excel")
+                    
+                except ImportError:
+                    logger.warning("openpyxl.drawing.image غير متاح - سيتم حفظ الرسوم كملفات منفصلة")
+                except Exception as chart_error:
+                    logger.warning(f"تعذر إدراج الرسوم البيانية في Excel: {chart_error}")
             
             logger.info(f"تم إنشاء التقرير النهائي بنجاح: {report_path}")
             return report_path
