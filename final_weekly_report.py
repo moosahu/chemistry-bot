@@ -130,16 +130,23 @@ class FinalWeeklyReportGenerator:
                 active_users = users_result.active_users_this_week or 0
                 engagement_rate = (active_users / total_users * 100) if total_users > 0 else 0
                 
+                # معالجة خاصة عندما تكون جميع النتائج صفر
+                avg_percentage_final = quiz_result.avg_percentage_this_week or 0
+                if avg_percentage_final == 0 and debug_result.total_records > 0:
+                    logger.warning("⚠️ تحذير: جميع نتائج الاختبارات في قاعدة البيانات صفر!")
+                    logger.warning("هذا يشير إلى مشكلة في كود حفظ نتائج الاختبارات")
+                    avg_percentage_final = 0  # سنعرض 0 مع رسالة تحذيرية
+                
                 return {
                     'total_registered_users': total_users,
                     'active_users_this_week': active_users,
                     'new_users_this_week': users_result.new_users_this_week or 0,
                     'engagement_rate': round(engagement_rate, 2),
                     'total_quizzes_this_week': quiz_result.total_quizzes_this_week or 0,
-                    'unique_users_this_week': quiz_result.unique_users_this_week or 0,
-                    'avg_percentage_this_week': round(quiz_result.avg_percentage_this_week or 0, 2),
+                    'avg_percentage_this_week': round(avg_percentage_final, 2),
                     'total_questions_this_week': quiz_result.total_questions_this_week or 0,
-                    'avg_time_taken': round(quiz_result.avg_time_taken or 0, 2)
+                    'avg_time_taken': round(quiz_result.avg_time_taken or 0, 2),
+                    'data_quality_warning': avg_percentage_final == 0 and debug_result.total_records > 0
                 }
                 
         except Exception as e:
@@ -882,7 +889,8 @@ Chemistry Bot Reporting System
             start_date = end_date - timedelta(days=7)
             
             stats = self.report_generator.get_comprehensive_stats(start_date, end_date)
-            return {
+            
+            result = {
                 'period': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
                 'total_users': stats.get('total_registered_users', 0),
                 'active_users': stats.get('active_users_this_week', 0),
@@ -890,6 +898,12 @@ Chemistry Bot Reporting System
                 'total_quizzes': stats.get('total_quizzes_this_week', 0),
                 'avg_score': stats.get('avg_percentage_this_week', 0)
             }
+            
+            # إضافة تحذير إذا كانت هناك مشكلة في جودة البيانات
+            if stats.get('data_quality_warning', False):
+                result['warning'] = "⚠️ تحذير: جميع نتائج الاختبارات صفر - يحتاج فحص كود حفظ النتائج"
+            
+            return result
             
         except Exception as e:
             logger.error(f"خطأ في الحصول على التحليلات السريعة: {e}")
