@@ -196,7 +196,7 @@ class DatabaseManager:
             score = %s, 
             wrong_answers = %s, 
             skipped_answers = %s,
-            percentage = %s, 
+            score_percentage = %s, 
             completed_at = %s, 
             time_taken_seconds = %s, 
             answers_details = %s::jsonb
