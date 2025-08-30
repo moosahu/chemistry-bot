@@ -320,17 +320,17 @@ class FinalWeeklyReportGenerator:
                     
                     # تحديد مستوى الصعوبة
                     if success_rate < 30:
-                        difficulty_level = "صعب جداً"
-                        priority = "عالية"
+                        difficulty_level = "Very Hard"
+                        priority = "High"
                     elif success_rate < 50:
-                        difficulty_level = "صعب"
-                        priority = "متوسطة"
+                        difficulty_level = "Hard"
+                        priority = "Medium"
                     elif success_rate < 70:
-                        difficulty_level = "متوسط"
-                        priority = "منخفضة"
+                        difficulty_level = "Medium"
+                        priority = "Low"
                     else:
-                        difficulty_level = "سهل"
-                        priority = "منخفضة"
+                        difficulty_level = "Easy"
+                        priority = "Low"
                     
                     difficult_questions.append({
                         'question_id': row.question_id,
@@ -417,44 +417,44 @@ class FinalWeeklyReportGenerator:
                                      time_patterns: Dict) -> Dict[str, List[str]]:
         """إنشاء توصيات ذكية"""
         recommendations = {
-            'الإدارة': [],
-            'المعلمين': [],
-            'المحتوى': [],
-            'النظام': []
+            'Management': [],
+            'Teachers': [],
+            'Content': [],
+            'System': []
         }
         
         try:
             # توصيات للإدارة
             engagement_rate = general_stats.get('engagement_rate', 0)
             if engagement_rate < 50:
-                recommendations['الإدارة'].append(f"معدل المشاركة منخفض ({engagement_rate}%). يُنصح بتطبيق استراتيجيات تحفيزية")
+                recommendations['Management'].append(f"Low engagement rate ({engagement_rate}%). Consider motivation strategies")
             elif engagement_rate > 80:
-                recommendations['الإدارة'].append(f"معدل مشاركة ممتاز ({engagement_rate}%). حافظ على الاستراتيجيات الحالية")
+                recommendations['Management'].append(f"Excellent engagement rate ({engagement_rate}%). Maintain current strategies")
             
             # توصيات للمعلمين
             weak_users = [u for u in user_progress if u['performance_level'] == 'ضعيف']
             if len(weak_users) > 0:
-                recommendations['المعلمين'].append(f"{len(weak_users)} طالب يحتاج دعم إضافي")
+                recommendations['Teachers'].append(f"{len(weak_users)} students need extra support")
             
             excellent_users = [u for u in user_progress if u['performance_level'] == 'ممتاز']
             if len(excellent_users) > 0:
-                recommendations['المعلمين'].append(f"{len(excellent_users)} طالب متفوق يمكن إعطاؤه تحديات متقدمة")
+                recommendations['Teachers'].append(f"{len(excellent_users)} excellent students can be given advanced challenges")
             
             # توصيات للمحتوى
-            high_priority_questions = [q for q in difficult_questions if q['review_priority'] == 'عالية']
+            high_priority_questions = [q for q in difficult_questions if q['review_priority'] == 'High']
             if len(high_priority_questions) > 0:
-                recommendations['المحتوى'].append(f"{len(high_priority_questions)} سؤال يحتاج مراجعة عاجلة")
+                recommendations['Content'].append(f"{len(high_priority_questions)} questions need urgent review")
             
             # توصيات للنظام
             avg_time = general_stats.get('avg_time_taken', 0)
             if avg_time > 300:  # أكثر من 5 دقائق
-                recommendations['النظام'].append(f"متوسط وقت الاختبار مرتفع ({avg_time/60:.1f} دقيقة). فكر في اختبارات أقصر")
+                recommendations['System'].append(f"Average quiz time is high ({avg_time/60:.1f} minutes). Consider shorter quizzes")
             
             # توصيات الوقت
             peak_hours = time_patterns.get('peak_hours', [])
             if peak_hours:
                 best_hour = peak_hours[0]['hour']
-                recommendations['النظام'].append(f"ذروة النشاط في الساعة {best_hour}:00. جدول المحتوى الجديد وفقاً لذلك")
+                recommendations['System'].append(f"Peak activity at {best_hour}:00. Schedule new content accordingly")
             
         except Exception as e:
             logger.error(f"خطأ في إنشاء التوصيات الذكية: {e}")
@@ -463,12 +463,8 @@ class FinalWeeklyReportGenerator:
     
     def create_performance_charts(self, user_progress: List, grade_analysis: List, 
                                 time_patterns: Dict) -> Dict[str, str]:
-        """إنشاء الرسوم البيانية بخطوط آمنة ونصوص عربية صحيحة"""
+        """إنشاء الرسوم البيانية بخطوط آمنة"""
         chart_paths = {}
-        
-        # إعداد matplotlib للنصوص العربية
-        plt.rcParams['font.family'] = ['DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False
         
         try:
             # 1. توزيع مستويات الأداء
@@ -485,11 +481,9 @@ class FinalWeeklyReportGenerator:
                     colors = ['#2E8B57', '#32CD32', '#FFD700', '#FF6347', '#DC143C', '#808080']
                     
                     bars = ax.bar(levels, counts, color=colors[:len(levels)])
-                    
-                    # استخدام نصوص بسيطة لتجنب مشاكل الترميز
-                    ax.set_title('Performance Levels Distribution', fontsize=16, fontweight='bold')
-                    ax.set_ylabel('Number of Users', fontsize=12)
-                    ax.set_xlabel('Performance Level', fontsize=12)
+                    ax.set_title('توزيع مستويات الأداء', fontsize=16, fontweight='bold')
+                    ax.set_ylabel('عدد المستخدمين', fontsize=12)
+                    ax.set_xlabel('مستوى الأداء', fontsize=12)
                     
                     # إضافة القيم على الأعمدة
                     for bar, count in zip(bars, counts):
@@ -512,9 +506,9 @@ class FinalWeeklyReportGenerator:
                 percentages = [g['avg_percentage'] for g in grade_analysis]
                 
                 bars = ax.bar(grades, percentages, color='#4CAF50')
-                ax.set_title('Grade Performance Comparison', fontsize=16, fontweight='bold')
-                ax.set_ylabel('Average Percentage (%)', fontsize=12)
-                ax.set_xlabel('Grade Level', fontsize=12)
+                ax.set_title('متوسط أداء الصفوف الدراسية', fontsize=16, fontweight='bold')
+                ax.set_ylabel('متوسط النسبة المئوية (%)', fontsize=12)
+                ax.set_xlabel('الصف الدراسي', fontsize=12)
                 ax.set_ylim(0, 100)
                 
                 # إضافة خط المتوسط العام
@@ -547,9 +541,9 @@ class FinalWeeklyReportGenerator:
                 ax.plot(dates, counts, marker='o', linewidth=2, markersize=6, color='#2196F3')
                 ax.fill_between(dates, counts, alpha=0.3, color='#2196F3')
                 
-                ax.set_title('Daily Quiz Activity', fontsize=16, fontweight='bold')
-                ax.set_ylabel('Number of Quizzes', fontsize=12)
-                ax.set_xlabel('Date', fontsize=12)
+                ax.set_title('النشاط اليومي للاختبارات', fontsize=16, fontweight='bold')
+                ax.set_ylabel('عدد الاختبارات', fontsize=12)
+                ax.set_xlabel('التاريخ', fontsize=12)
                 
                 # تنسيق التواريخ
                 if len(dates) > 1:
@@ -604,30 +598,6 @@ class FinalWeeklyReportGenerator:
                 ], columns=['المؤشر', 'القيمة'])
                 
                 executive_summary.to_excel(writer, sheet_name='الملخص التنفيذي', index=False)
-                
-                # تنسيق ورقة الملخص التنفيذي
-                worksheet = writer.sheets['الملخص التنفيذي']
-                from openpyxl.styles import Font, PatternFill, Alignment
-                
-                # تنسيق العناوين
-                header_font = Font(bold=True, size=12)
-                header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-                
-                for cell in worksheet[1]:
-                    cell.font = Font(bold=True, size=12, color="FFFFFF")
-                    cell.fill = header_fill
-                    cell.alignment = Alignment(horizontal="center")
-                
-                # تنسيق البيانات
-                for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
-                    for cell in row:
-                        cell.alignment = Alignment(horizontal="center")
-                        if cell.column == 2:  # عمود القيم
-                            cell.font = Font(bold=True)
-                
-                # ضبط عرض الأعمدة
-                worksheet.column_dimensions['A'].width = 30
-                worksheet.column_dimensions['B'].width = 20
                 
                 # 2. تقدم المستخدمين
                 if user_progress:
@@ -690,9 +660,7 @@ class FinalWeeklyReportGenerator:
                         'question_id': 'معرف السؤال',
                         'total_attempts': 'إجمالي المحاولات',
                         'correct_answers': 'الإجابات الصحيحة',
-                        'wrong_answers': 'الإجابات الخاطئة',
                         'success_rate': 'معدل النجاح (%)',
-                        'difficulty_level': 'مستوى الصعوبة',
                         'review_priority': 'أولوية المراجعة'
                     }
                     questions_df.rename(columns=questions_translations, inplace=True)

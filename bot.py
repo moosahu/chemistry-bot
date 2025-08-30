@@ -410,21 +410,6 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Error setting up Final Weekly Reports System: {e}", exc_info=True)
 
-    # --- Setup Quiz Results Restoration System (Temporary) ---
-    logger.info("Setting up Quiz Results Restoration System...")
-    try:
-        from restore_integration import add_restore_commands
-        
-        add_restore_commands(application)
-        logger.info("✅ Quiz Results Restoration System activated successfully")
-        logger.info("🔧 الأوامر المتاحة: /restore_analyze")
-        logger.info("⚠️ هذا النظام مؤقت لاستعادة النتائج القديمة")
-            
-    except ImportError as ie:
-        logger.warning(f"Could not import Quiz Results Restoration System: {ie}. Restoration will not be available.")
-    except Exception as e:
-        logger.error(f"Error setting up Quiz Results Restoration System: {e}", exc_info=True)
-
     # Run the bot
     logger.info("Starting bot polling...")
     try:
