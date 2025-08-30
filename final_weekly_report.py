@@ -570,6 +570,110 @@ class FinalWeeklyReportGenerator:
         
         return chart_paths
     
+    def analyze_student_performance_categories(self, user_progress: List) -> Dict[str, List]:
+        """تصنيف الطلاب حسب مستوى الأداء"""
+        categories = {
+            'متفوقين': [],
+            'متوسطين': [],
+            'ضعاف': []
+        }
+        
+        try:
+            for user in user_progress:
+                avg_percentage = user.get('avg_percentage', 0)
+                user_info = {
+                    'الاسم': user.get('full_name', 'غير محدد'),
+                    'اسم المستخدم': user.get('username', 'غير محدد'),
+                    'الصف': user.get('grade', 'غير محدد'),
+                    'متوسط الدرجات': f"{avg_percentage:.1f}%",
+                    'عدد الاختبارات': user.get('total_quizzes', 0)
+                }
+                
+                if avg_percentage >= 80:
+                    categories['متفوقين'].append(user_info)
+                elif avg_percentage >= 50:
+                    categories['متوسطين'].append(user_info)
+                else:
+                    categories['ضعاف'].append(user_info)
+            
+            # ترتيب كل فئة حسب الدرجات
+            for category in categories:
+                categories[category].sort(key=lambda x: float(x['متوسط الدرجات'].replace('%', '')), reverse=True)
+                
+        except Exception as e:
+            logger.error(f"خطأ في تصنيف الطلاب: {e}")
+            
+        return categories
+    
+    def analyze_question_difficulty(self, difficult_questions: List) -> Dict[str, List]:
+        """تحليل صعوبة الأسئلة"""
+        analysis = {
+            'أصعب_الأسئلة': [],
+            'أسهل_الأسئلة': []
+        }
+        
+        try:
+            # ترتيب الأسئلة حسب معدل النجاح
+            sorted_questions = sorted(difficult_questions, key=lambda x: x.get('success_rate', 0))
+            
+            # أصعب 10 أسئلة (أقل معدل نجاح)
+            hardest = sorted_questions[:10]
+            for q in hardest:
+                analysis['أصعب_الأسئلة'].append({
+                    'معرف السؤال': q.get('question_id', 'غير محدد'),
+                    'معدل النجاح': f"{q.get('success_rate', 0):.1f}%",
+                    'إجمالي المحاولات': q.get('total_attempts', 0),
+                    'مستوى الصعوبة': q.get('difficulty_level', 'غير محدد'),
+                    'أولوية المراجعة': q.get('review_priority', 'غير محدد')
+                })
+            
+            # أسهل 10 أسئلة (أعلى معدل نجاح)
+            easiest = sorted_questions[-10:]
+            for q in easiest:
+                analysis['أسهل_الأسئلة'].append({
+                    'معرف السؤال': q.get('question_id', 'غير محدد'),
+                    'معدل النجاح': f"{q.get('success_rate', 0):.1f}%",
+                    'إجمالي المحاولات': q.get('total_attempts', 0),
+                    'مستوى الصعوبة': q.get('difficulty_level', 'غير محدد')
+                })
+                
+        except Exception as e:
+            logger.error(f"خطأ في تحليل صعوبة الأسئلة: {e}")
+            
+        return analysis
+    
+    def analyze_student_improvement_trends(self, user_progress: List) -> Dict[str, List]:
+        """تحليل اتجاهات تحسن الطلاب"""
+        trends = {
+            'متحسنين': [],
+            'متراجعين': [],
+            'مستقرين': []
+        }
+        
+        try:
+            for user in user_progress:
+                improvement = user.get('improvement_trend', 'مستقر')
+                user_info = {
+                    'الاسم': user.get('full_name', 'غير محدد'),
+                    'اسم المستخدم': user.get('username', 'غير محدد'),
+                    'الصف': user.get('grade', 'غير محدد'),
+                    'متوسط الدرجات': f"{user.get('avg_percentage', 0):.1f}%",
+                    'اتجاه التحسن': improvement,
+                    'عدد الاختبارات': user.get('total_quizzes', 0)
+                }
+                
+                if improvement == 'متحسن':
+                    trends['متحسنين'].append(user_info)
+                elif improvement == 'متراجع':
+                    trends['متراجعين'].append(user_info)
+                else:
+                    trends['مستقرين'].append(user_info)
+                    
+        except Exception as e:
+            logger.error(f"خطأ في تحليل اتجاهات التحسن: {e}")
+            
+        return trends
+    
     def create_final_excel_report(self, start_date: datetime, end_date: datetime) -> str:
         """إنشاء تقرير Excel نهائي ومحسن"""
         try:
@@ -582,6 +686,11 @@ class FinalWeeklyReportGenerator:
             smart_recommendations = self.generate_smart_recommendations(
                 general_stats, user_progress, grade_analysis, difficult_questions, time_patterns
             )
+            
+            # إضافة التحليلات التعليمية الجديدة
+            student_categories = self.analyze_student_performance_categories(user_progress)
+            question_difficulty_analysis = self.analyze_question_difficulty(difficult_questions)
+            improvement_trends = self.analyze_student_improvement_trends(user_progress)
             
             # إنشاء الرسوم البيانية
             chart_paths = self.create_performance_charts(user_progress, grade_analysis, time_patterns)
@@ -732,7 +841,28 @@ class FinalWeeklyReportGenerator:
                     recommendations_df = pd.DataFrame(recommendations_data)
                     recommendations_df.to_excel(writer, sheet_name='التوصيات الذكية', index=False)
                 
-                # 7. معلومات الرسوم البيانية
+                # 7. تصنيف الطلاب حسب الأداء
+                for category_name, students in student_categories.items():
+                    if students:
+                        students_df = pd.DataFrame(students)
+                        sheet_name = f'الطلاب ال{category_name}'
+                        students_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                # 8. تحليل صعوبة الأسئلة
+                for analysis_type, questions in question_difficulty_analysis.items():
+                    if questions:
+                        questions_df = pd.DataFrame(questions)
+                        sheet_name = analysis_type.replace('_', ' ')
+                        questions_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                # 9. اتجاهات تحسن الطلاب
+                for trend_name, students in improvement_trends.items():
+                    if students:
+                        trends_df = pd.DataFrame(students)
+                        sheet_name = f'الطلاب ال{trend_name}'
+                        trends_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                # 10. معلومات الرسوم البيانية
                 if chart_paths:
                     charts_df = pd.DataFrame([
                         {'اسم الرسم': name, 'مسار الملف': path} 
