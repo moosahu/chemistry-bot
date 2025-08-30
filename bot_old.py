@@ -389,8 +389,26 @@ def main() -> None:
     # Add error handler
     application.add_error_handler(error_handler)
 
-    # Add error handler
-    application.add_error_handler(error_handler)
+    # --- Setup Final Weekly Reports System ---
+    logger.info("Setting up Final Weekly Reports System...")
+    try:
+        from final_bot_integration import setup_final_reporting_system, add_final_admin_report_commands
+        
+        final_reporting_system = setup_final_reporting_system()
+        
+        if final_reporting_system:
+            final_reporting_system.start_scheduler()
+            add_final_admin_report_commands(application, final_reporting_system)
+            logger.info("✅ Final Weekly Reports System activated successfully")
+            logger.info("📊 النظام النهائي يعمل بدون مشاكل الخطوط العربية")
+            logger.info("🎯 الأوامر المتاحة: /final_status, /final_generate, /final_analytics")
+        else:
+            logger.error("❌ Failed to initialize Final Weekly Reports System")
+            
+    except ImportError as ie:
+        logger.warning(f"Could not import Final Weekly Reports System: {ie}. Final reports will not be available.")
+    except Exception as e:
+        logger.error(f"Error setting up Final Weekly Reports System: {e}", exc_info=True)
 
     # Run the bot
     logger.info("Starting bot polling...")
