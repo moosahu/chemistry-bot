@@ -64,7 +64,7 @@ class FinalWeeklyReportGenerator:
                 users_query = text("""
                     SELECT 
                         COUNT(CASE WHEN last_interaction_date >= :start_date THEN 1 END) as active_users_previous_week,
-                        COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_previous_week
+                        COUNT(CASE WHEN first_seen_timestamp >= :start_date THEN 1 END) as new_users_previous_week
                     FROM users
                 """)
                 
@@ -324,7 +324,7 @@ class FinalWeeklyReportGenerator:
                     SELECT 
                         COUNT(*) as total_registered_users,
                         COUNT(CASE WHEN last_interaction_date >= :start_date THEN 1 END) as active_users_this_week,
-                        COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_this_week
+                        COUNT(CASE WHEN first_seen_timestamp >= :start_date THEN 1 END) as new_users_this_week
                     FROM users
                 """)
                 
