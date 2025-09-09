@@ -444,10 +444,15 @@ class FinalWeeklyReportGenerator:
                     SELECT 
                         u.user_id,
                         u.user_id as telegram_id,
+                        u.username,
+                        u.first_name,
+                        u.last_name,
                         u.full_name,
                         u.grade,
-                        u.registration_date as first_seen_timestamp,
-                        u.last_activity as last_active_timestamp,
+                        u.first_seen_timestamp,
+                        u.last_active_timestamp,
+                        u.registration_date,
+                        u.last_activity,
                         COUNT(qr.result_id) as total_quizzes,
                         AVG(qr.percentage) as overall_avg_percentage,
                         SUM(qr.total_questions) as total_questions_answered,
@@ -458,8 +463,9 @@ class FinalWeeklyReportGenerator:
                     LEFT JOIN quiz_results qr ON u.user_id = qr.user_id 
                         AND qr.completed_at >= :start_date 
                         AND qr.completed_at <= :end_date
-                    GROUP BY u.user_id, u.full_name, 
-                             u.grade, u.registration_date, u.last_activity
+                    GROUP BY u.user_id, u.username, u.first_name, u.last_name, u.full_name, 
+                             u.grade, u.first_seen_timestamp, u.last_active_timestamp,
+                             u.registration_date, u.last_activity
                     ORDER BY overall_avg_percentage DESC NULLS LAST
                 """)
                 
@@ -529,20 +535,27 @@ class FinalWeeklyReportGenerator:
                     else:
                         trend = "غير كافي للتقييم"
                     
+                    # تحديد الاسم الكامل
+                    full_name = row.full_name
+                    if not full_name:
+                        full_name = f"{row.first_name or ''} {row.last_name or ''}".strip()
+                    if not full_name:
+                        full_name = row.username or 'غير محدد'
+                    
                     users_analysis.append({
                         'user_id': row.user_id,
+                        'telegram_id': row.telegram_id,
                         'username': row.username or 'غير محدد',
-                        'full_name': row.full_name or f"{row.first_name or ''} {row.last_name or ''}".strip() or 'غير محدد',
+                        'full_name': full_name,
                         'grade': row.grade or 'غير محدد',
-                        'registration_date': row.first_seen_timestamp,
-                        'last_active': row.last_active_timestamp,
+                        'first_seen_timestamp': row.first_seen_timestamp or row.registration_date,
+                        'last_active_timestamp': row.last_active_timestamp or row.last_activity,
                         'total_quizzes': total_quizzes,
                         'overall_avg_percentage': round(avg_percentage, 2),
                         'total_questions_answered': row.total_questions_answered or 0,
-                        'avg_time_per_quiz': round(row.avg_time_per_quiz or 0, 2),
+                        'avg_time_per_quiz': round(self.safe_convert(row.avg_time_per_quiz), 2),
                         'performance_level': performance_level,
                         'activity_level': activity_level,
-                        'trend': trend,
                         'last_quiz_date': row.last_quiz_date,
                         'first_quiz_date': row.first_quiz_date
                     })
