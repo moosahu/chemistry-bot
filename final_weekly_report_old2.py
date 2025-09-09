@@ -202,8 +202,8 @@ class FinalWeeklyReportGenerator:
             kpis = {}
             
             # معدل المشاركة
-            total_users = float(stats.get('total_registered_users', 0))
-            active_users = float(stats.get('active_users_this_week', 0))
+            total_users = stats.get('total_registered_users', 0)
+            active_users = stats.get('active_users_this_week', 0)
             
             if total_users > 0:
                 kpis['participation_rate'] = round((active_users / total_users) * 100, 2)
@@ -211,9 +211,9 @@ class FinalWeeklyReportGenerator:
                 kpis['participation_rate'] = 0
             
             # معدل الإنجاز (الاختبارات المكتملة)
-            total_quizzes = float(stats.get('total_quizzes_this_week', 0))
+            total_quizzes = stats.get('total_quizzes_this_week', 0)
             if active_users > 0:
-                kpis['completion_rate'] = round(total_quizzes / active_users, 2)
+                kpis['completion_rate'] = round(float(total_quizzes) / float(active_users), 2)
             else:
                 kpis['completion_rate'] = 0
             
@@ -237,7 +237,7 @@ class FinalWeeklyReportGenerator:
                 }).fetchone()
                 
                 if excellence_result.total_results > 0:
-                    kpis['excellence_rate'] = round((float(excellence_result.excellent_results) / float(excellence_result.total_results)) * 100, 2)
+                    kpis['excellence_rate'] = round((excellence_result.excellent_results / excellence_result.total_results) * 100, 2)
                 else:
                     kpis['excellence_rate'] = 0
             
@@ -257,17 +257,16 @@ class FinalWeeklyReportGenerator:
                 }).fetchone()
                 
                 if risk_result.total_results > 0:
-                    kpis['at_risk_rate'] = round((float(risk_result.at_risk_results) / float(risk_result.total_results)) * 100, 2)
+                    kpis['at_risk_rate'] = round((risk_result.at_risk_results / risk_result.total_results) * 100, 2)
                 else:
                     kpis['at_risk_rate'] = 0
             
             # متوسط الوقت لكل سؤال
-            avg_time = float(stats.get('avg_time_taken', 0))
-            total_questions = float(stats.get('total_questions_this_week', 0))
-            total_quizzes_for_calc = float(stats.get('total_quizzes_this_week', 1))
+            avg_time = stats.get('avg_time_taken', 0)
+            total_questions = stats.get('total_questions_this_week', 0)
             
-            if total_questions > 0 and avg_time > 0 and total_quizzes_for_calc > 0:
-                kpis['avg_time_per_question'] = round(avg_time / (total_questions / total_quizzes_for_calc), 2)
+            if total_questions > 0 and avg_time > 0:
+                kpis['avg_time_per_question'] = round(avg_time / (total_questions / stats.get('total_quizzes_this_week', 1)), 2)
             else:
                 kpis['avg_time_per_question'] = 0
             
@@ -275,14 +274,7 @@ class FinalWeeklyReportGenerator:
             
         except Exception as e:
             logger.error(f"خطأ في حساب مؤشرات الأداء الرئيسية: {e}")
-            # إرجاع المؤشرات الأساسية حتى لو فشلت بعض الاستعلامات
-            return {
-                'participation_rate': round((float(stats.get('active_users_this_week', 0)) / float(stats.get('total_registered_users', 1))) * 100, 2) if stats.get('total_registered_users', 0) > 0 else 0,
-                'completion_rate': round(float(stats.get('total_quizzes_this_week', 0)) / float(stats.get('active_users_this_week', 1)), 2) if stats.get('active_users_this_week', 0) > 0 else 0,
-                'excellence_rate': 0,
-                'at_risk_rate': 0,
-                'avg_time_per_question': 0
-            }
+            return {}
 
     def predict_performance_trend(self, current_stats: Dict[str, Any], previous_stats: Dict[str, Any], comparison: Dict[str, Any]) -> Dict[str, Any]:
         """توقع اتجاه الأداء للأسابيع القادمة"""
