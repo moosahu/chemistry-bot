@@ -98,7 +98,7 @@ class FinalWeeklyReportGenerator:
                         AVG(CASE WHEN score IS NOT NULL AND score > 0 THEN score END) as avg_percentage_previous_week,
                         SUM(total_questions) as total_questions_previous_week
                     FROM quiz_results 
-                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
                 """)
                 
                 quiz_result = conn.execute(quiz_query, {
@@ -213,7 +213,7 @@ class FinalWeeklyReportGenerator:
                         COUNT(CASE WHEN score >= 80 THEN 1 END) as excellent_results,
                         COUNT(*) as total_results
                     FROM quiz_results 
-                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
                 """)
                 
                 # استخدام التواريخ من الإحصائيات
@@ -237,7 +237,7 @@ class FinalWeeklyReportGenerator:
                         COUNT(CASE WHEN score < 50 THEN 1 END) as at_risk_results,
                         COUNT(*) as total_results
                     FROM quiz_results 
-                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
                 """)
                 
                 risk_result = conn.execute(risk_query, {
@@ -357,9 +357,9 @@ class FinalWeeklyReportGenerator:
                         COUNT(DISTINCT user_id) as unique_users_this_week,
                         AVG(CASE WHEN score IS NOT NULL AND score > 0 THEN score END) as avg_percentage_this_week,
                         SUM(total_questions) as total_questions_this_week,
-                        AVG(completion_time) as avg_time_taken
+                        AVG(time_taken_seconds) as avg_time_taken
                     FROM quiz_results 
-                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
                 """)
                 
                 quiz_result = conn.execute(quiz_query, {
@@ -383,7 +383,7 @@ class FinalWeeklyReportGenerator:
                         MAX(score) as max_percentage,
                         COUNT(CASE WHEN score > 0 THEN 1 END) as non_zero_records
                     FROM quiz_results 
-                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
                 """)
                 
                 debug_result = conn.execute(debug_query, {
@@ -442,23 +442,23 @@ class FinalWeeklyReportGenerator:
             with self.engine.connect() as conn:
                 query = text("""
                     SELECT 
-                        u.id as user_id,
-                        u.telegram_id,
-                        u.name as full_name,
+                        u.user_id,
+                        u.user_id as telegram_id,
+                        u.full_name,
                         u.grade,
                         u.registration_date as first_seen_timestamp,
                         u.last_activity as last_active_timestamp,
-                        COUNT(qr.id) as total_quizzes,
-                        AVG(qr.score) as overall_avg_percentage,
+                        COUNT(qr.result_id) as total_quizzes,
+                        AVG(qr.percentage) as overall_avg_percentage,
                         SUM(qr.total_questions) as total_questions_answered,
-                        AVG(qr.completion_time) as avg_time_per_quiz,
-                        MAX(qr.quiz_date) as last_quiz_date,
-                        MIN(qr.quiz_date) as first_quiz_date
+                        AVG(qr.time_taken_seconds) as avg_time_per_quiz,
+                        MAX(qr.completed_at) as last_quiz_date,
+                        MIN(qr.completed_at) as first_quiz_date
                     FROM users u
-                    LEFT JOIN quiz_results qr ON u.id = qr.user_id 
-                        AND qr.quiz_date >= :start_date 
-                        AND qr.quiz_date <= :end_date
-                    GROUP BY u.id, u.telegram_id, u.name, 
+                    LEFT JOIN quiz_results qr ON u.user_id = qr.user_id 
+                        AND qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                    GROUP BY u.user_id, u.full_name, 
                              u.grade, u.registration_date, u.last_activity
                     ORDER BY overall_avg_percentage DESC NULLS LAST
                 """)
@@ -500,13 +500,13 @@ class FinalWeeklyReportGenerator:
                     if total_quizzes >= 3:
                         # حساب اتجاه التحسن بناءً على آخر 3 اختبارات
                         trend_query = text("""
-                            SELECT score 
+                            SELECT percentage as score
                             FROM quiz_results 
                             WHERE user_id = :user_id 
-                                AND quiz_date >= :start_date 
-                                AND quiz_date <= :end_date
-                                AND score IS NOT NULL
-                            ORDER BY quiz_date DESC 
+                                AND completed_at >= :start_date 
+                                AND completed_at <= :end_date
+                                AND percentage IS NOT NULL
+                            ORDER BY completed_at DESC 
                             LIMIT 3
                         """)
                         
@@ -517,7 +517,7 @@ class FinalWeeklyReportGenerator:
                         }).fetchall()
                         
                         if len(trend_result) >= 2:
-                            recent_scores = [self.safe_float(r.score) for r in trend_result]
+                            recent_scores = [self.safe_convert(r.percentage) for r in trend_result]
                             if recent_scores[0] > recent_scores[-1]:
                                 trend = "تحسن"
                             elif recent_scores[0] < recent_scores[-1]:
@@ -560,14 +560,14 @@ class FinalWeeklyReportGenerator:
                 query = text("""
                     SELECT 
                         u.grade,
-                        COUNT(DISTINCT u.id) as total_students,
-                        COUNT(qr.id) as total_quizzes,
-                        AVG(qr.score) as avg_percentage,
-                        COUNT(DISTINCT CASE WHEN qr.quiz_date >= :start_date THEN u.id END) as active_students
+                        COUNT(DISTINCT u.user_id) as total_students,
+                        COUNT(qr.result_id) as total_quizzes,
+                        AVG(qr.percentage) as avg_percentage,
+                        COUNT(DISTINCT CASE WHEN qr.completed_at >= :start_date THEN u.user_id END) as active_students
                     FROM users u
-                    LEFT JOIN quiz_results qr ON u.id = qr.user_id 
-                        AND qr.quiz_date >= :start_date 
-                        AND qr.quiz_date <= :end_date
+                    LEFT JOIN quiz_results qr ON u.user_id = qr.user_id 
+                        AND qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
                     WHERE u.grade IS NOT NULL AND u.grade != ''
                     GROUP BY u.grade
                     ORDER BY u.grade
@@ -666,11 +666,11 @@ class FinalWeeklyReportGenerator:
                 # النشاط اليومي
                 daily_query = text("""
                     SELECT 
-                        DATE(quiz_date) as quiz_date,
+                        DATE(completed_at) as quiz_date,
                         COUNT(*) as quiz_count,
                         COUNT(DISTINCT user_id) as unique_users
                     FROM quiz_results
-                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
                     GROUP BY DATE(quiz_date)
                     ORDER BY quiz_date
                 """)
@@ -683,10 +683,10 @@ class FinalWeeklyReportGenerator:
                 # النشاط حسب الساعة
                 hourly_query = text("""
                     SELECT 
-                        EXTRACT(HOUR FROM quiz_date) as hour,
+                        EXTRACT(HOUR FROM completed_at) as hour,
                         COUNT(*) as quiz_count
                     FROM quiz_results
-                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
                     GROUP BY EXTRACT(HOUR FROM quiz_date)
                     ORDER BY quiz_count DESC
                     LIMIT 5
