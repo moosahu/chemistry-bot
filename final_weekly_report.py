@@ -50,7 +50,270 @@ class FinalWeeklyReportGenerator:
         
         logger.info(f"تم إعداد مولد التقارير النهائي - مجلد التقارير: {self.reports_dir}")
     
-    def get_comprehensive_stats(self, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+    def get_previous_week_stats(self, current_start: datetime, current_end: datetime) -> Dict[str, Any]:
+        """الحصول على إحصائيات الأسبوع السابق للمقارنة"""
+        try:
+            # حساب تواريخ الأسبوع السابق
+            previous_start = current_start - timedelta(days=7)
+            previous_end = current_end - timedelta(days=7)
+            
+            logger.info(f"جاري حساب إحصائيات الأسبوع السابق: {previous_start.date()} إلى {previous_end.date()}")
+            
+            with self.engine.connect() as conn:
+                # إحصائيات المستخدمين للأسبوع السابق
+                users_query = text("""
+                    SELECT 
+                        COUNT(CASE WHEN last_interaction_date >= :start_date THEN 1 END) as active_users_previous_week,
+                        COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_previous_week
+                    FROM users
+                """)
+                
+                users_result = conn.execute(users_query, {
+                    'start_date': previous_start
+                }).fetchone()
+                
+                # إحصائيات الاختبارات للأسبوع السابق
+                quiz_query = text("""
+                    SELECT 
+                        COUNT(*) as total_quizzes_previous_week,
+                        COUNT(DISTINCT user_id) as unique_users_previous_week,
+                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_previous_week,
+                        SUM(total_questions) as total_questions_previous_week
+                    FROM quiz_results 
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                """)
+                
+                quiz_result = conn.execute(quiz_query, {
+                    'start_date': previous_start,
+                    'end_date': previous_end
+                }).fetchone()
+                
+                return {
+                    'active_users_previous_week': users_result.active_users_previous_week or 0,
+                    'new_users_previous_week': users_result.new_users_previous_week or 0,
+                    'total_quizzes_previous_week': quiz_result.total_quizzes_previous_week or 0,
+                    'unique_users_previous_week': quiz_result.unique_users_previous_week or 0,
+                    'avg_percentage_previous_week': float(quiz_result.avg_percentage_previous_week or 0),
+                    'total_questions_previous_week': quiz_result.total_questions_previous_week or 0
+                }
+                
+        except Exception as e:
+            logger.error(f"خطأ في حساب إحصائيات الأسبوع السابق: {e}")
+            return {
+                'active_users_previous_week': 0,
+                'new_users_previous_week': 0,
+                'total_quizzes_previous_week': 0,
+                'unique_users_previous_week': 0,
+                'avg_percentage_previous_week': 0,
+                'total_questions_previous_week': 0
+            }
+
+    def calculate_weekly_comparison(self, current_stats: Dict[str, Any], previous_stats: Dict[str, Any]) -> Dict[str, Any]:
+        """حساب المقارنة الأسبوعية والاتجاهات"""
+        try:
+            comparisons = {}
+            
+            # مقارنة المستخدمين النشطين
+            current_active = current_stats.get('active_users_this_week', 0)
+            previous_active = previous_stats.get('active_users_previous_week', 0)
+            
+            if previous_active > 0:
+                active_change = ((current_active - previous_active) / previous_active) * 100
+                comparisons['active_users_change'] = round(active_change, 2)
+                comparisons['active_users_trend'] = 'تحسن' if active_change > 0 else 'تراجع' if active_change < 0 else 'مستقر'
+            else:
+                comparisons['active_users_change'] = 0
+                comparisons['active_users_trend'] = 'جديد'
+            
+            # مقارنة الاختبارات
+            current_quizzes = current_stats.get('total_quizzes_this_week', 0)
+            previous_quizzes = previous_stats.get('total_quizzes_previous_week', 0)
+            
+            if previous_quizzes > 0:
+                quizzes_change = ((current_quizzes - previous_quizzes) / previous_quizzes) * 100
+                comparisons['quizzes_change'] = round(quizzes_change, 2)
+                comparisons['quizzes_trend'] = 'تحسن' if quizzes_change > 0 else 'تراجع' if quizzes_change < 0 else 'مستقر'
+            else:
+                comparisons['quizzes_change'] = 0
+                comparisons['quizzes_trend'] = 'جديد'
+            
+            # مقارنة متوسط الدرجات
+            current_avg = current_stats.get('avg_percentage_this_week', 0)
+            previous_avg = previous_stats.get('avg_percentage_previous_week', 0)
+            
+            if previous_avg > 0:
+                avg_change = current_avg - previous_avg
+                comparisons['avg_percentage_change'] = round(avg_change, 2)
+                comparisons['avg_percentage_trend'] = 'تحسن' if avg_change > 0 else 'تراجع' if avg_change < 0 else 'مستقر'
+            else:
+                comparisons['avg_percentage_change'] = 0
+                comparisons['avg_percentage_trend'] = 'جديد'
+            
+            # مقارنة المستخدمين الجدد
+            current_new = current_stats.get('new_users_this_week', 0)
+            previous_new = previous_stats.get('new_users_previous_week', 0)
+            
+            if previous_new > 0:
+                new_change = ((current_new - previous_new) / previous_new) * 100
+                comparisons['new_users_change'] = round(new_change, 2)
+                comparisons['new_users_trend'] = 'تحسن' if new_change > 0 else 'تراجع' if new_change < 0 else 'مستقر'
+            else:
+                comparisons['new_users_change'] = 0
+                comparisons['new_users_trend'] = 'جديد'
+            
+            return comparisons
+            
+        except Exception as e:
+            logger.error(f"خطأ في حساب المقارنة الأسبوعية: {e}")
+            return {}
+
+    def calculate_kpis(self, stats: Dict[str, Any]) -> Dict[str, Any]:
+        """حساب مؤشرات الأداء الرئيسية (KPIs)"""
+        try:
+            kpis = {}
+            
+            # معدل المشاركة
+            total_users = stats.get('total_registered_users', 0)
+            active_users = stats.get('active_users_this_week', 0)
+            
+            if total_users > 0:
+                kpis['participation_rate'] = round((active_users / total_users) * 100, 2)
+            else:
+                kpis['participation_rate'] = 0
+            
+            # معدل الإنجاز (الاختبارات المكتملة)
+            total_quizzes = stats.get('total_quizzes_this_week', 0)
+            if active_users > 0:
+                kpis['completion_rate'] = round(total_quizzes / active_users, 2)
+            else:
+                kpis['completion_rate'] = 0
+            
+            # معدل التفوق (درجات أعلى من 80%)
+            with self.engine.connect() as conn:
+                excellence_query = text("""
+                    SELECT 
+                        COUNT(CASE WHEN percentage >= 80 THEN 1 END) as excellent_results,
+                        COUNT(*) as total_results
+                    FROM quiz_results 
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                """)
+                
+                # استخدام التواريخ من الإحصائيات
+                start_date = datetime.now() - timedelta(days=7)
+                end_date = datetime.now()
+                
+                excellence_result = conn.execute(excellence_query, {
+                    'start_date': start_date,
+                    'end_date': end_date
+                }).fetchone()
+                
+                if excellence_result.total_results > 0:
+                    kpis['excellence_rate'] = round((excellence_result.excellent_results / excellence_result.total_results) * 100, 2)
+                else:
+                    kpis['excellence_rate'] = 0
+            
+            # معدل الخطر (درجات أقل من 50%)
+            with self.engine.connect() as conn:
+                risk_query = text("""
+                    SELECT 
+                        COUNT(CASE WHEN percentage < 50 THEN 1 END) as at_risk_results,
+                        COUNT(*) as total_results
+                    FROM quiz_results 
+                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                """)
+                
+                risk_result = conn.execute(risk_query, {
+                    'start_date': start_date,
+                    'end_date': end_date
+                }).fetchone()
+                
+                if risk_result.total_results > 0:
+                    kpis['at_risk_rate'] = round((risk_result.at_risk_results / risk_result.total_results) * 100, 2)
+                else:
+                    kpis['at_risk_rate'] = 0
+            
+            # متوسط الوقت لكل سؤال
+            avg_time = stats.get('avg_time_taken', 0)
+            total_questions = stats.get('total_questions_this_week', 0)
+            
+            if total_questions > 0 and avg_time > 0:
+                kpis['avg_time_per_question'] = round(avg_time / (total_questions / stats.get('total_quizzes_this_week', 1)), 2)
+            else:
+                kpis['avg_time_per_question'] = 0
+            
+            return kpis
+            
+        except Exception as e:
+            logger.error(f"خطأ في حساب مؤشرات الأداء الرئيسية: {e}")
+            return {}
+
+    def predict_performance_trend(self, current_stats: Dict[str, Any], previous_stats: Dict[str, Any], comparison: Dict[str, Any]) -> Dict[str, Any]:
+        """توقع اتجاه الأداء للأسابيع القادمة"""
+        try:
+            predictions = {}
+            
+            # توقع متوسط الدرجات
+            current_avg = current_stats.get('avg_percentage_this_week', 0)
+            avg_change = comparison.get('avg_percentage_change', 0)
+            
+            if avg_change != 0:
+                predicted_avg = current_avg + avg_change
+                predictions['predicted_avg_next_week'] = max(0, min(100, round(predicted_avg, 2)))
+                predictions['avg_trend_prediction'] = 'تحسن متوقع' if avg_change > 0 else 'تراجع متوقع'
+            else:
+                predictions['predicted_avg_next_week'] = current_avg
+                predictions['avg_trend_prediction'] = 'مستقر'
+            
+            # توقع عدد المستخدمين النشطين
+            current_active = current_stats.get('active_users_this_week', 0)
+            active_change_percent = comparison.get('active_users_change', 0)
+            
+            if active_change_percent != 0:
+                predicted_active = current_active * (1 + active_change_percent / 100)
+                predictions['predicted_active_users_next_week'] = max(0, round(predicted_active))
+                predictions['active_trend_prediction'] = 'نمو متوقع' if active_change_percent > 0 else 'انخفاض متوقع'
+            else:
+                predictions['predicted_active_users_next_week'] = current_active
+                predictions['active_trend_prediction'] = 'مستقر'
+            
+            # توقع عدد الاختبارات
+            current_quizzes = current_stats.get('total_quizzes_this_week', 0)
+            quizzes_change_percent = comparison.get('quizzes_change', 0)
+            
+            if quizzes_change_percent != 0:
+                predicted_quizzes = current_quizzes * (1 + quizzes_change_percent / 100)
+                predictions['predicted_quizzes_next_week'] = max(0, round(predicted_quizzes))
+                predictions['quizzes_trend_prediction'] = 'زيادة متوقعة' if quizzes_change_percent > 0 else 'انخفاض متوقع'
+            else:
+                predictions['predicted_quizzes_next_week'] = current_quizzes
+                predictions['quizzes_trend_prediction'] = 'مستقر'
+            
+            # تقييم الاتجاه العام
+            positive_trends = 0
+            total_trends = 0
+            
+            for trend in [comparison.get('active_users_trend'), comparison.get('quizzes_trend'), comparison.get('avg_percentage_trend')]:
+                if trend and trend != 'جديد':
+                    total_trends += 1
+                    if trend == 'تحسن':
+                        positive_trends += 1
+            
+            if total_trends > 0:
+                overall_trend_score = (positive_trends / total_trends) * 100
+                if overall_trend_score >= 66:
+                    predictions['overall_trend'] = 'إيجابي'
+                elif overall_trend_score >= 33:
+                    predictions['overall_trend'] = 'مختلط'
+                else:
+                    predictions['overall_trend'] = 'يحتاج تحسين'
+            else:
+                predictions['overall_trend'] = 'غير محدد'
+            
+            return predictions
+            
+        except Exception as e:
+            logger.error(f"خطأ في توقع اتجاه الأداء: {e}")
+            return {}
         """الحصول على إحصائيات شاملة"""
         try:
             with self.engine.connect() as conn:
@@ -675,9 +938,9 @@ class FinalWeeklyReportGenerator:
         return trends
     
     def create_final_excel_report(self, start_date: datetime, end_date: datetime) -> str:
-        """إنشاء تقرير Excel نهائي ومحسن"""
+        """إنشاء تقرير Excel نهائي ومحسن مع التحليلات المتقدمة"""
         try:
-            # جمع البيانات
+            # جمع البيانات الأساسية
             general_stats = self.get_comprehensive_stats(start_date, end_date)
             user_progress = self.get_user_progress_analysis(start_date, end_date)
             grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
@@ -687,7 +950,13 @@ class FinalWeeklyReportGenerator:
                 general_stats, user_progress, grade_analysis, difficult_questions, time_patterns
             )
             
-            # إضافة التحليلات التعليمية الجديدة
+            # إضافة التحليلات المتقدمة الجديدة
+            previous_stats = self.get_previous_week_stats(start_date, end_date)
+            weekly_comparison = self.calculate_weekly_comparison(general_stats, previous_stats)
+            kpis = self.calculate_kpis(general_stats)
+            performance_predictions = self.predict_performance_trend(general_stats, previous_stats, weekly_comparison)
+            
+            # التحليلات التعليمية
             student_categories = self.analyze_student_performance_categories(user_progress)
             question_difficulty_analysis = self.analyze_question_difficulty(difficult_questions)
             improvement_trends = self.analyze_student_improvement_trends(user_progress)
@@ -700,19 +969,68 @@ class FinalWeeklyReportGenerator:
             report_path = os.path.join(self.reports_dir, report_filename)
             
             with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
-                # 1. الملخص التنفيذي
+                # 1. الملخص التنفيذي المحسن
                 executive_summary = pd.DataFrame([
                     ['إجمالي المستخدمين المسجلين', general_stats.get('total_registered_users', 0)],
                     ['المستخدمين النشطين هذا الأسبوع', general_stats.get('active_users_this_week', 0)],
                     ['المستخدمين الجدد هذا الأسبوع', general_stats.get('new_users_this_week', 0)],
-                    ['معدل المشاركة (%)', general_stats.get('engagement_rate', 0)],
+                    ['معدل المشاركة (%)', f"{kpis.get('participation_rate', 0)}%"],
                     ['إجمالي الاختبارات هذا الأسبوع', general_stats.get('total_quizzes_this_week', 0)],
-                    ['متوسط الدرجات (%)', general_stats.get('avg_percentage_this_week', 0)],
-                    ['إجمالي الأسئلة المجابة', general_stats.get('total_questions_this_week', 0)],
-                    ['متوسط الوقت (ثانية)', general_stats.get('avg_time_taken', 0)]
+                    ['متوسط الدرجات (%)', f"{general_stats.get('avg_percentage_this_week', 0)}%"],
+                    ['معدل التفوق (80%+)', f"{kpis.get('excellence_rate', 0)}%"],
+                    ['معدل الخطر (أقل من 50%)', f"{kpis.get('at_risk_rate', 0)}%"],
+                    ['معدل الإنجاز (اختبارات/طالب)', kpis.get('completion_rate', 0)],
+                    ['متوسط الوقت لكل سؤال (ثانية)', kpis.get('avg_time_per_question', 0)]
                 ], columns=['المؤشر', 'القيمة'])
-                
                 executive_summary.to_excel(writer, sheet_name='الملخص التنفيذي', index=False)
+                
+                # 2. المقارنة الأسبوعية (جديد!)
+                weekly_comparison_df = pd.DataFrame([
+                    ['المستخدمين النشطين - الأسبوع الحالي', general_stats.get('active_users_this_week', 0)],
+                    ['المستخدمين النشطين - الأسبوع السابق', previous_stats.get('active_users_previous_week', 0)],
+                    ['التغيير في المستخدمين النشطين (%)', f"{weekly_comparison.get('active_users_change', 0)}%"],
+                    ['اتجاه المستخدمين النشطين', weekly_comparison.get('active_users_trend', 'غير محدد')],
+                    ['الاختبارات - الأسبوع الحالي', general_stats.get('total_quizzes_this_week', 0)],
+                    ['الاختبارات - الأسبوع السابق', previous_stats.get('total_quizzes_previous_week', 0)],
+                    ['التغيير في الاختبارات (%)', f"{weekly_comparison.get('quizzes_change', 0)}%"],
+                    ['اتجاه الاختبارات', weekly_comparison.get('quizzes_trend', 'غير محدد')],
+                    ['متوسط الدرجات - الأسبوع الحالي (%)', f"{general_stats.get('avg_percentage_this_week', 0)}%"],
+                    ['متوسط الدرجات - الأسبوع السابق (%)', f"{previous_stats.get('avg_percentage_previous_week', 0)}%"],
+                    ['التغيير في متوسط الدرجات (%)', f"{weekly_comparison.get('avg_percentage_change', 0)}%"],
+                    ['اتجاه متوسط الدرجات', weekly_comparison.get('avg_percentage_trend', 'غير محدد')]
+                ], columns=['المؤشر', 'القيمة'])
+                weekly_comparison_df.to_excel(writer, sheet_name='المقارنة الأسبوعية', index=False)
+                
+                # 3. مؤشرات الأداء الرئيسية (جديد!)
+                kpis_df = pd.DataFrame([
+                    ['معدل المشاركة (%)', f"{kpis.get('participation_rate', 0)}%"],
+                    ['معدل الإنجاز (اختبارات/طالب)', kpis.get('completion_rate', 0)],
+                    ['معدل التفوق (80%+)', f"{kpis.get('excellence_rate', 0)}%"],
+                    ['معدل الخطر (أقل من 50%)', f"{kpis.get('at_risk_rate', 0)}%"],
+                    ['متوسط الوقت لكل سؤال (ثانية)', kpis.get('avg_time_per_question', 0)]
+                ], columns=['مؤشر الأداء', 'القيمة'])
+                kpis_df.to_excel(writer, sheet_name='مؤشرات الأداء الرئيسية', index=False)
+                
+                # 4. توقعات الأداء (جديد!)
+                predictions_df = pd.DataFrame([
+                    ['متوسط الدرجات المتوقع الأسبوع القادم (%)', f"{performance_predictions.get('predicted_avg_next_week', 0)}%"],
+                    ['اتجاه متوسط الدرجات المتوقع', performance_predictions.get('avg_trend_prediction', 'غير محدد')],
+                    ['المستخدمين النشطين المتوقعين الأسبوع القادم', performance_predictions.get('predicted_active_users_next_week', 0)],
+                    ['اتجاه المستخدمين النشطين المتوقع', performance_predictions.get('active_trend_prediction', 'غير محدد')],
+                    ['الاختبارات المتوقعة الأسبوع القادم', performance_predictions.get('predicted_quizzes_next_week', 0)],
+                    ['اتجاه الاختبارات المتوقع', performance_predictions.get('quizzes_trend_prediction', 'غير محدد')],
+                    ['التقييم العام للاتجاه', performance_predictions.get('overall_trend', 'غير محدد')]
+                ], columns=['التوقع', 'القيمة'])
+                predictions_df.to_excel(writer, sheet_name='توقعات الأداء', index=False)
+                
+                # 5. تقدم المستخدمين
+                if user_progress:
+                    users_df = pd.DataFrame(user_progress)
+                    # تعريب أسماء الأعمدة
+                    users_df.columns = ['معرف المستخدم', 'اسم المستخدم', 'الاسم الكامل', 'رقم الهاتف', 'الصف', 'تاريخ التسجيل', 'آخر نشاط', 'إجمالي الاختبارات', 'متوسط الدرجات (%)', 'مستوى الأداء', 'مستوى النشاط', 'اتجاه التحسن']
+                    users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
+                
+                # 6. أداء الصفوف
                 
                 # تنسيق ورقة الملخص التنفيذي
                 worksheet = writer.sheets['الملخص التنفيذي']
