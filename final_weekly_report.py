@@ -106,7 +106,7 @@ class FinalWeeklyReportGenerator:
                     SELECT 
                         COUNT(*) as total_quizzes_previous_week,
                         COUNT(DISTINCT user_id) as unique_users_previous_week,
-                        AVG(CASE WHEN score IS NOT NULL AND score > 0 THEN score END) as avg_percentage_previous_week,
+                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_previous_week,
                         SUM(total_questions) as total_questions_previous_week
                     FROM quiz_results 
                     WHERE completed_at >= :start_date AND completed_at <= :end_date
@@ -221,7 +221,7 @@ class FinalWeeklyReportGenerator:
             with self.engine.connect() as conn:
                 excellence_query = text("""
                     SELECT 
-                        COUNT(CASE WHEN score >= 80 THEN 1 END) as excellent_results,
+                        COUNT(CASE WHEN percentage >= 80 THEN 1 END) as excellent_results,
                         COUNT(*) as total_results
                     FROM quiz_results 
                     WHERE completed_at >= :start_date AND completed_at <= :end_date
@@ -245,7 +245,7 @@ class FinalWeeklyReportGenerator:
             with self.engine.connect() as conn:
                 risk_query = text("""
                     SELECT 
-                        COUNT(CASE WHEN score < 50 THEN 1 END) as at_risk_results,
+                        COUNT(CASE WHEN percentage < 50 THEN 1 END) as at_risk_results,
                         COUNT(*) as total_results
                     FROM quiz_results 
                     WHERE completed_at >= :start_date AND completed_at <= :end_date
@@ -366,7 +366,7 @@ class FinalWeeklyReportGenerator:
                     SELECT 
                         COUNT(*) as total_quizzes_this_week,
                         COUNT(DISTINCT user_id) as unique_users_this_week,
-                        AVG(CASE WHEN score IS NOT NULL AND score > 0 THEN score END) as avg_percentage_this_week,
+                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_this_week,
                         SUM(total_questions) as total_questions_this_week,
                         AVG(time_taken_seconds) as avg_time_taken
                     FROM quiz_results 
@@ -390,9 +390,9 @@ class FinalWeeklyReportGenerator:
                 debug_query = text("""
                     SELECT 
                         COUNT(*) as total_records,
-                        MIN(score) as min_percentage,
-                        MAX(score) as max_percentage,
-                        COUNT(CASE WHEN score > 0 THEN 1 END) as non_zero_records
+                        MIN(percentage) as min_percentage,
+                        MAX(percentage) as max_percentage,
+                        COUNT(CASE WHEN percentage > 0 THEN 1 END) as non_zero_records
                     FROM quiz_results 
                     WHERE completed_at >= :start_date AND completed_at <= :end_date
                 """)
@@ -517,7 +517,7 @@ class FinalWeeklyReportGenerator:
                     if total_quizzes >= 3:
                         # حساب اتجاه التحسن بناءً على آخر 3 اختبارات
                         trend_query = text("""
-                            SELECT percentage as score
+                            SELECT percentage
                             FROM quiz_results 
                             WHERE user_id = :user_id 
                                 AND completed_at >= :start_date 
