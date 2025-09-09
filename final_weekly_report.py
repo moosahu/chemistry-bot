@@ -50,6 +50,24 @@ class FinalWeeklyReportGenerator:
         
         logger.info(f"تم إعداد مولد التقارير النهائي - مجلد التقارير: {self.reports_dir}")
     
+    def safe_float(self, value, default=0.0):
+        """تحويل آمن للقيم إلى float مع التعامل مع Decimal و None"""
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+    
+    def safe_int(self, value, default=0):
+        """تحويل آمن للقيم إلى int مع التعامل مع None"""
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    
     def get_previous_week_stats(self, current_start: datetime, current_end: datetime) -> Dict[str, Any]:
         """الحصول على إحصائيات الأسبوع السابق للمقارنة"""
         try:
@@ -63,8 +81,8 @@ class FinalWeeklyReportGenerator:
                 # إحصائيات المستخدمين للأسبوع السابق
                 users_query = text("""
                     SELECT 
-                        COUNT(CASE WHEN last_interaction_date >= :start_date THEN 1 END) as active_users_previous_week,
-                        COUNT(CASE WHEN first_seen_timestamp >= :start_date THEN 1 END) as new_users_previous_week
+                        COUNT(CASE WHEN last_activity >= :start_date THEN 1 END) as active_users_previous_week,
+                        COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_previous_week
                     FROM users
                 """)
                 
@@ -77,10 +95,10 @@ class FinalWeeklyReportGenerator:
                     SELECT 
                         COUNT(*) as total_quizzes_previous_week,
                         COUNT(DISTINCT user_id) as unique_users_previous_week,
-                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_previous_week,
+                        AVG(CASE WHEN score IS NOT NULL AND score > 0 THEN score END) as avg_percentage_previous_week,
                         SUM(total_questions) as total_questions_previous_week
                     FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
                 """)
                 
                 quiz_result = conn.execute(quiz_query, {
@@ -93,7 +111,7 @@ class FinalWeeklyReportGenerator:
                     'new_users_previous_week': users_result.new_users_previous_week or 0,
                     'total_quizzes_previous_week': quiz_result.total_quizzes_previous_week or 0,
                     'unique_users_previous_week': quiz_result.unique_users_previous_week or 0,
-                    'avg_percentage_previous_week': float(quiz_result.avg_percentage_previous_week or 0),
+                    'avg_percentage_previous_week': self.safe_float(quiz_result.avg_percentage_previous_week),
                     'total_questions_previous_week': quiz_result.total_questions_previous_week or 0
                 }
                 
@@ -138,8 +156,8 @@ class FinalWeeklyReportGenerator:
                 comparisons['quizzes_trend'] = 'جديد'
             
             # مقارنة متوسط الدرجات
-            current_avg = current_stats.get('avg_percentage_this_week', 0)
-            previous_avg = previous_stats.get('avg_percentage_previous_week', 0)
+            current_avg = self.safe_float(current_stats.get('avg_percentage_this_week', 0))
+            previous_avg = self.safe_float(previous_stats.get('avg_percentage_previous_week', 0))
             
             if previous_avg > 0:
                 avg_change = current_avg - previous_avg
@@ -184,7 +202,7 @@ class FinalWeeklyReportGenerator:
             # معدل الإنجاز (الاختبارات المكتملة)
             total_quizzes = stats.get('total_quizzes_this_week', 0)
             if active_users > 0:
-                kpis['completion_rate'] = round(total_quizzes / active_users, 2)
+                kpis['completion_rate'] = round(self.safe_float(total_quizzes) / self.safe_float(active_users), 2)
             else:
                 kpis['completion_rate'] = 0
             
@@ -192,10 +210,10 @@ class FinalWeeklyReportGenerator:
             with self.engine.connect() as conn:
                 excellence_query = text("""
                     SELECT 
-                        COUNT(CASE WHEN percentage >= 80 THEN 1 END) as excellent_results,
+                        COUNT(CASE WHEN score >= 80 THEN 1 END) as excellent_results,
                         COUNT(*) as total_results
                     FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
                 """)
                 
                 # استخدام التواريخ من الإحصائيات
@@ -216,10 +234,10 @@ class FinalWeeklyReportGenerator:
             with self.engine.connect() as conn:
                 risk_query = text("""
                     SELECT 
-                        COUNT(CASE WHEN percentage < 50 THEN 1 END) as at_risk_results,
+                        COUNT(CASE WHEN score < 50 THEN 1 END) as at_risk_results,
                         COUNT(*) as total_results
                     FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
                 """)
                 
                 risk_result = conn.execute(risk_query, {
@@ -253,8 +271,8 @@ class FinalWeeklyReportGenerator:
             predictions = {}
             
             # توقع متوسط الدرجات
-            current_avg = current_stats.get('avg_percentage_this_week', 0)
-            avg_change = comparison.get('avg_percentage_change', 0)
+            current_avg = self.safe_float(current_stats.get('avg_percentage_this_week', 0))
+            avg_change = self.safe_float(comparison.get('avg_percentage_change', 0))
             
             if avg_change != 0:
                 predicted_avg = current_avg + avg_change
@@ -323,8 +341,8 @@ class FinalWeeklyReportGenerator:
                 users_query = text("""
                     SELECT 
                         COUNT(*) as total_registered_users,
-                        COUNT(CASE WHEN last_interaction_date >= :start_date THEN 1 END) as active_users_this_week,
-                        COUNT(CASE WHEN first_seen_timestamp >= :start_date THEN 1 END) as new_users_this_week
+                        COUNT(CASE WHEN last_activity >= :start_date THEN 1 END) as active_users_this_week,
+                        COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_this_week
                     FROM users
                 """)
                 
@@ -337,11 +355,11 @@ class FinalWeeklyReportGenerator:
                     SELECT 
                         COUNT(*) as total_quizzes_this_week,
                         COUNT(DISTINCT user_id) as unique_users_this_week,
-                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_this_week,
+                        AVG(CASE WHEN score IS NOT NULL AND score > 0 THEN score END) as avg_percentage_this_week,
                         SUM(total_questions) as total_questions_this_week,
-                        AVG(time_taken_seconds) as avg_time_taken
+                        AVG(completion_time) as avg_time_taken
                     FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
                 """)
                 
                 quiz_result = conn.execute(quiz_query, {
@@ -361,11 +379,11 @@ class FinalWeeklyReportGenerator:
                 debug_query = text("""
                     SELECT 
                         COUNT(*) as total_records,
-                        MIN(percentage) as min_percentage,
-                        MAX(percentage) as max_percentage,
-                        COUNT(CASE WHEN percentage > 0 THEN 1 END) as non_zero_records
+                        MIN(score) as min_percentage,
+                        MAX(score) as max_percentage,
+                        COUNT(CASE WHEN score > 0 THEN 1 END) as non_zero_records
                     FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
                 """)
                 
                 debug_result = conn.execute(debug_query, {
@@ -424,26 +442,24 @@ class FinalWeeklyReportGenerator:
             with self.engine.connect() as conn:
                 query = text("""
                     SELECT 
-                        u.user_id,
-                        u.username,
-                        u.first_name,
-                        u.last_name,
-                        u.full_name,
+                        u.id as user_id,
+                        u.telegram_id,
+                        u.name as full_name,
                         u.grade,
-                        u.first_seen_timestamp,
-                        u.last_active_timestamp,
-                        COUNT(qr.result_id) as total_quizzes,
-                        AVG(qr.percentage) as overall_avg_percentage,
+                        u.registration_date as first_seen_timestamp,
+                        u.last_activity as last_active_timestamp,
+                        COUNT(qr.id) as total_quizzes,
+                        AVG(qr.score) as overall_avg_percentage,
                         SUM(qr.total_questions) as total_questions_answered,
-                        AVG(qr.time_taken_seconds) as avg_time_per_quiz,
-                        MAX(qr.completed_at) as last_quiz_date,
-                        MIN(qr.completed_at) as first_quiz_date
+                        AVG(qr.completion_time) as avg_time_per_quiz,
+                        MAX(qr.quiz_date) as last_quiz_date,
+                        MIN(qr.quiz_date) as first_quiz_date
                     FROM users u
-                    LEFT JOIN quiz_results qr ON u.user_id = qr.user_id 
-                        AND qr.completed_at >= :start_date 
-                        AND qr.completed_at <= :end_date
-                    GROUP BY u.user_id, u.username, u.first_name, u.last_name, 
-                             u.full_name, u.grade, u.first_seen_timestamp, u.last_active_timestamp
+                    LEFT JOIN quiz_results qr ON u.id = qr.user_id 
+                        AND qr.quiz_date >= :start_date 
+                        AND qr.quiz_date <= :end_date
+                    GROUP BY u.id, u.telegram_id, u.name, 
+                             u.grade, u.registration_date, u.last_activity
                     ORDER BY overall_avg_percentage DESC NULLS LAST
                 """)
                 
@@ -480,8 +496,38 @@ class FinalWeeklyReportGenerator:
                     else:
                         activity_level = "غير نشط"
                     
-                    # تحليل الاتجاه (مبسط)
-                    trend = "ثابت"  # يمكن تحسينه لاحقاً بتحليل أعمق
+                    # تحليل الاتجاه المحسن
+                    if total_quizzes >= 3:
+                        # حساب اتجاه التحسن بناءً على آخر 3 اختبارات
+                        trend_query = text("""
+                            SELECT score 
+                            FROM quiz_results 
+                            WHERE user_id = :user_id 
+                                AND quiz_date >= :start_date 
+                                AND quiz_date <= :end_date
+                                AND score IS NOT NULL
+                            ORDER BY quiz_date DESC 
+                            LIMIT 3
+                        """)
+                        
+                        trend_result = conn.execute(trend_query, {
+                            'user_id': row.user_id,
+                            'start_date': start_date,
+                            'end_date': end_date
+                        }).fetchall()
+                        
+                        if len(trend_result) >= 2:
+                            recent_scores = [self.safe_float(r.score) for r in trend_result]
+                            if recent_scores[0] > recent_scores[-1]:
+                                trend = "تحسن"
+                            elif recent_scores[0] < recent_scores[-1]:
+                                trend = "تراجع"
+                            else:
+                                trend = "مستقر"
+                        else:
+                            trend = "غير كافي للتقييم"
+                    else:
+                        trend = "غير كافي للتقييم"
                     
                     users_analysis.append({
                         'user_id': row.user_id,
@@ -514,14 +560,14 @@ class FinalWeeklyReportGenerator:
                 query = text("""
                     SELECT 
                         u.grade,
-                        COUNT(DISTINCT u.user_id) as total_students,
-                        COUNT(qr.result_id) as total_quizzes,
-                        AVG(qr.percentage) as avg_percentage,
-                        COUNT(DISTINCT CASE WHEN qr.completed_at >= :start_date THEN u.user_id END) as active_students
+                        COUNT(DISTINCT u.id) as total_students,
+                        COUNT(qr.id) as total_quizzes,
+                        AVG(qr.score) as avg_percentage,
+                        COUNT(DISTINCT CASE WHEN qr.quiz_date >= :start_date THEN u.id END) as active_students
                     FROM users u
-                    LEFT JOIN quiz_results qr ON u.user_id = qr.user_id 
-                        AND qr.completed_at >= :start_date 
-                        AND qr.completed_at <= :end_date
+                    LEFT JOIN quiz_results qr ON u.id = qr.user_id 
+                        AND qr.quiz_date >= :start_date 
+                        AND qr.quiz_date <= :end_date
                     WHERE u.grade IS NOT NULL AND u.grade != ''
                     GROUP BY u.grade
                     ORDER BY u.grade
@@ -620,12 +666,12 @@ class FinalWeeklyReportGenerator:
                 # النشاط اليومي
                 daily_query = text("""
                     SELECT 
-                        DATE(completed_at) as quiz_date,
+                        DATE(quiz_date) as quiz_date,
                         COUNT(*) as quiz_count,
                         COUNT(DISTINCT user_id) as unique_users
                     FROM quiz_results
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
-                    GROUP BY DATE(completed_at)
+                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    GROUP BY DATE(quiz_date)
                     ORDER BY quiz_date
                 """)
                 
@@ -637,11 +683,11 @@ class FinalWeeklyReportGenerator:
                 # النشاط حسب الساعة
                 hourly_query = text("""
                     SELECT 
-                        EXTRACT(HOUR FROM completed_at) as hour,
+                        EXTRACT(HOUR FROM quiz_date) as hour,
                         COUNT(*) as quiz_count
                     FROM quiz_results
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
-                    GROUP BY EXTRACT(HOUR FROM completed_at)
+                    WHERE quiz_date >= :start_date AND quiz_date <= :end_date
+                    GROUP BY EXTRACT(HOUR FROM quiz_date)
                     ORDER BY quiz_count DESC
                     LIMIT 5
                 """)
@@ -863,7 +909,7 @@ class FinalWeeklyReportGenerator:
             
             # ترتيب كل فئة حسب الدرجات
             for category in categories:
-                categories[category].sort(key=lambda x: float(x['متوسط الدرجات'].replace('%', '')), reverse=True)
+                categories[category].sort(key=lambda x: self.safe_float(x['متوسط الدرجات'].replace('%', '')), reverse=True)
                 
         except Exception as e:
             logger.error(f"خطأ في تصنيف الطلاب: {e}")
@@ -1028,8 +1074,8 @@ class FinalWeeklyReportGenerator:
                 # 5. تقدم المستخدمين
                 if user_progress:
                     users_df = pd.DataFrame(user_progress)
-                    # تعريب أسماء الأعمدة
-                    users_df.columns = ['معرف المستخدم', 'اسم المستخدم', 'الاسم الكامل', 'رقم الهاتف', 'الصف', 'تاريخ التسجيل', 'آخر نشاط', 'إجمالي الاختبارات', 'متوسط الدرجات (%)', 'مستوى الأداء', 'مستوى النشاط', 'اتجاه التحسن']
+                    # تعريب أسماء الأعمدة (15 عمود كامل)
+                    users_df.columns = ['معرف المستخدم', 'اسم المستخدم', 'الاسم الكامل', 'الصف', 'تاريخ التسجيل', 'آخر نشاط', 'إجمالي الاختبارات', 'متوسط الدرجات (%)', 'إجمالي الأسئلة', 'متوسط الوقت (ثانية)', 'مستوى الأداء', 'مستوى النشاط', 'اتجاه التحسن', 'تاريخ آخر اختبار', 'تاريخ أول اختبار']
                     users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
                 
                 # 6. أداء الصفوف
