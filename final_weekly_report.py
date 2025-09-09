@@ -314,6 +314,8 @@ class FinalWeeklyReportGenerator:
         except Exception as e:
             logger.error(f"خطأ في توقع اتجاه الأداء: {e}")
             return {}
+
+    def get_comprehensive_stats(self, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
         """الحصول على إحصائيات شاملة"""
         try:
             with self.engine.connect() as conn:
@@ -321,8 +323,8 @@ class FinalWeeklyReportGenerator:
                 users_query = text("""
                     SELECT 
                         COUNT(*) as total_registered_users,
-                        COUNT(CASE WHEN last_active_timestamp >= :start_date THEN 1 END) as active_users_this_week,
-                        COUNT(CASE WHEN first_seen_timestamp >= :start_date THEN 1 END) as new_users_this_week
+                        COUNT(CASE WHEN last_interaction_date >= :start_date THEN 1 END) as active_users_this_week,
+                        COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_this_week
                     FROM users
                 """)
                 
