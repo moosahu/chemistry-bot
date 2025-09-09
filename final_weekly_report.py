@@ -50,6 +50,17 @@ class FinalWeeklyReportGenerator:
         
         logger.info(f"تم إعداد مولد التقارير النهائي - مجلد التقارير: {self.reports_dir}")
     
+    def safe_convert(self, value, target_type=float, default=0):
+        """تحويل آمن للقيم مع معالجة Decimal و None"""
+        try:
+            if value is None:
+                return default
+            if hasattr(value, '__float__'):  # للتعامل مع Decimal
+                return target_type(float(value))
+            return target_type(value)
+        except (ValueError, TypeError):
+            return default
+    
     def safe_float(self, value, default=0.0):
         """تحويل آمن للقيم إلى float مع التعامل مع Decimal و None"""
         if value is None:
@@ -202,7 +213,7 @@ class FinalWeeklyReportGenerator:
             # معدل الإنجاز (الاختبارات المكتملة)
             total_quizzes = stats.get('total_quizzes_this_week', 0)
             if active_users > 0:
-                kpis['completion_rate'] = round(self.safe_float(total_quizzes) / self.safe_float(active_users), 2)
+                kpis['completion_rate'] = round(self.safe_convert(total_quizzes) / self.safe_convert(active_users), 2)
             else:
                 kpis['completion_rate'] = 0
             
@@ -684,8 +695,8 @@ class FinalWeeklyReportGenerator:
                         COUNT(DISTINCT user_id) as unique_users
                     FROM quiz_results
                     WHERE completed_at >= :start_date AND completed_at <= :end_date
-                    GROUP BY DATE(quiz_date)
-                    ORDER BY quiz_date
+                    GROUP BY DATE(completed_at)
+                    ORDER BY DATE(completed_at)
                 """)
                 
                 daily_result = conn.execute(daily_query, {
