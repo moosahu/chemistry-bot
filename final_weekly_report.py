@@ -213,7 +213,7 @@ class FinalWeeklyReportGenerator:
             # معدل الإنجاز (الاختبارات المكتملة)
             total_quizzes = stats.get('total_quizzes_this_week', 0)
             if active_users > 0:
-                kpis['completion_rate'] = round(self.safe_convert(total_quizzes) / self.safe_convert(active_users), 2)
+                kpis['completion_rate'] = round(float(total_quizzes) / float(active_users), 2)
             else:
                 kpis['completion_rate'] = 0
             
@@ -553,22 +553,39 @@ class FinalWeeklyReportGenerator:
                     if not full_name:
                         full_name = row.username or 'غير محدد'
                     
+                    # إزالة timezone من التواريخ لتوافق Excel
+                    first_seen_clean = row.first_seen_timestamp or row.registration_date
+                    if first_seen_clean and hasattr(first_seen_clean, 'tzinfo') and first_seen_clean.tzinfo:
+                        first_seen_clean = first_seen_clean.replace(tzinfo=None)
+                    
+                    last_active_clean = row.last_active_timestamp or row.last_activity
+                    if last_active_clean and hasattr(last_active_clean, 'tzinfo') and last_active_clean.tzinfo:
+                        last_active_clean = last_active_clean.replace(tzinfo=None)
+                    
+                    last_quiz_clean = row.last_quiz_date
+                    if last_quiz_clean and hasattr(last_quiz_clean, 'tzinfo') and last_quiz_clean.tzinfo:
+                        last_quiz_clean = last_quiz_clean.replace(tzinfo=None)
+                    
+                    first_quiz_clean = row.first_quiz_date
+                    if first_quiz_clean and hasattr(first_quiz_clean, 'tzinfo') and first_quiz_clean.tzinfo:
+                        first_quiz_clean = first_quiz_clean.replace(tzinfo=None)
+                    
                     users_analysis.append({
                         'user_id': row.user_id,
                         'telegram_id': row.telegram_id,
                         'username': row.username or 'غير محدد',
                         'full_name': full_name,
                         'grade': row.grade or 'غير محدد',
-                        'first_seen_timestamp': row.first_seen_timestamp or row.registration_date,
-                        'last_active_timestamp': row.last_active_timestamp or row.last_activity,
+                        'first_seen_timestamp': first_seen_clean,
+                        'last_active_timestamp': last_active_clean,
                         'total_quizzes': total_quizzes,
                         'overall_avg_percentage': round(avg_percentage, 2),
                         'total_questions_answered': row.total_questions_answered or 0,
                         'avg_time_per_quiz': round(self.safe_convert(row.avg_time_per_quiz), 2),
                         'performance_level': performance_level,
                         'activity_level': activity_level,
-                        'last_quiz_date': row.last_quiz_date,
-                        'first_quiz_date': row.first_quiz_date
+                        'last_quiz_date': last_quiz_clean,
+                        'first_quiz_date': first_quiz_clean
                     })
                 
                 return users_analysis
@@ -711,7 +728,7 @@ class FinalWeeklyReportGenerator:
                         COUNT(*) as quiz_count
                     FROM quiz_results
                     WHERE completed_at >= :start_date AND completed_at <= :end_date
-                    GROUP BY EXTRACT(HOUR FROM quiz_date)
+                    GROUP BY EXTRACT(HOUR FROM completed_at)
                     ORDER BY quiz_count DESC
                     LIMIT 5
                 """)
