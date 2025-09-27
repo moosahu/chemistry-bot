@@ -745,8 +745,10 @@ class FinalWeeklyReportGenerator:
                         COUNT(*) as total_attempts,
                         SUM(qr.score) as total_correct_answers,
                         SUM(qr.total_questions) as total_questions_asked,
-                        ROUND(
-                            (SUM(qr.score)::float / SUM(qr.total_questions)) * 100, 2
+                        CAST(
+                            ROUND(
+                                CAST((SUM(qr.score)::float / SUM(qr.total_questions)) * 100 AS NUMERIC), 2
+                            ) AS FLOAT
                         ) as success_rate,
                         AVG(qr.percentage) as avg_percentage
                     FROM quiz_results qr
