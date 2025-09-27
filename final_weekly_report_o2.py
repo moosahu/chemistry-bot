@@ -734,29 +734,26 @@ class FinalWeeklyReportGenerator:
             return []
     
     def get_difficult_questions_analysis(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
-        """تحليل الأسئلة الصعبة بناءً على نتائج الاختبارات"""
+        """تحليل الأسئلة الصعبة"""
         try:
             with self.engine.connect() as conn:
-                # بما أن جدول user_answers غير متوفر، سنحلل من quiz_results
                 query = text("""
                     SELECT 
-                        qr.filter_id as question_set_id,
-                        qr.quiz_name,
+                        ua.question_id,
                         COUNT(*) as total_attempts,
-                        SUM(qr.score) as total_correct_answers,
-                        SUM(qr.total_questions) as total_questions_asked,
-                        ROUND(
-                            (SUM(qr.score)::float / SUM(qr.total_questions)) * 100, 2
-                        ) as success_rate,
-                        AVG(qr.percentage) as avg_percentage
-                    FROM quiz_results qr
-                    WHERE qr.completed_at >= :start_date 
-                        AND qr.completed_at <= :end_date
-                        AND qr.total_questions > 0
-                    GROUP BY qr.filter_id, qr.quiz_name
-                    HAVING COUNT(*) >= 3  -- على الأقل 3 محاولات
+                        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+                        CAST(
+                            ROUND(
+                                CAST((SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(*)) * 100 AS NUMERIC), 
+                                2
+                            ) AS FLOAT
+                        ) as success_rate
+                    FROM user_answers ua
+                    WHERE ua.answer_time >= :start_date AND ua.answer_time <= :end_date
+                    GROUP BY ua.question_id
+                    HAVING COUNT(*) >= 5  -- على الأقل 5 محاولات
                     ORDER BY success_rate ASC, total_attempts DESC
-                    LIMIT 15
+                    LIMIT 20
                 """)
                 
                 result = conn.execute(query, {
@@ -783,13 +780,11 @@ class FinalWeeklyReportGenerator:
                         priority = "منخفضة"
                     
                     difficult_questions.append({
-                        'question_set_id': row.question_set_id or 'غير محدد',
-                        'quiz_name': row.quiz_name or 'اختبار غير محدد',
+                        'question_id': row.question_id,
                         'total_attempts': row.total_attempts,
-                        'correct_answers': row.total_correct_answers or 0,
-                        'wrong_answers': (row.total_questions_asked or 0) - (row.total_correct_answers or 0),
+                        'correct_answers': row.correct_answers,
+                        'wrong_answers': row.total_attempts - row.correct_answers,
                         'success_rate': success_rate,
-                        'avg_percentage': round(row.avg_percentage or 0, 2),
                         'difficulty_level': difficulty_level,
                         'review_priority': priority
                     })
@@ -1268,7 +1263,6 @@ class FinalWeeklyReportGenerator:
                     quiz_df.to_excel(writer, sheet_name='تفاصيل الاختبارات', index=False)
                 
                 # 7. أداء الصفوف
-                print(f"Debug: grade_analysis contains {len(grade_analysis) if grade_analysis else 0} items")
                 if grade_analysis:
                     grades_df = pd.DataFrame(grade_analysis)
                     # تعريب أسماء الأعمدة
@@ -1315,13 +1309,11 @@ class FinalWeeklyReportGenerator:
                     
                     # تعريب أسماء الأعمدة
                     questions_translations = {
-                        'question_set_id': 'معرف مجموعة الأسئلة',
-                        'quiz_name': 'اسم الاختبار',
+                        'question_id': 'معرف السؤال',
                         'total_attempts': 'إجمالي المحاولات',
                         'correct_answers': 'الإجابات الصحيحة',
                         'wrong_answers': 'الإجابات الخاطئة',
                         'success_rate': 'معدل النجاح (%)',
-                        'avg_percentage': 'متوسط الدرجات (%)',
                         'difficulty_level': 'مستوى الصعوبة',
                         'review_priority': 'أولوية المراجعة'
                     }
