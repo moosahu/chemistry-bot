@@ -940,8 +940,7 @@ class FinalWeeklyReportGenerator:
         
         try:
             for user in user_progress:
-                avg_percentage = user.get('overall_avg_percentage', 0)
-
+                avg_percentage = user.get('avg_percentage', 0)
                 user_info = {
                     'الاسم': user.get('full_name', 'غير محدد'),
                     'اسم المستخدم': user.get('username', 'غير محدد'),
@@ -1018,8 +1017,7 @@ class FinalWeeklyReportGenerator:
                     'الاسم': user.get('full_name', 'غير محدد'),
                     'اسم المستخدم': user.get('username', 'غير محدد'),
                     'الصف': user.get('grade', 'غير محدد'),
-                    'متوسط الدرجات': f"{user.get('overall_avg_percentage', 0):.1f}%",
-
+                    'متوسط الدرجات': f"{user.get('avg_percentage', 0):.1f}%",
                     'اتجاه التحسن': improvement,
                     'عدد الاختبارات': user.get('total_quizzes', 0)
                 }
