@@ -466,16 +466,16 @@ class FinalWeeklyReportGenerator:
                         u.full_name,
                         u.username,
                         u.grade,
-                        qr.quiz_id,
-                        qr.quiz_title,
-                        qr.quiz_subject,
+                        qr.filter_id as quiz_id,
+                        qr.quiz_name as quiz_title,
+                        'كيمياء' as quiz_subject,
                         qr.total_questions,
-                        qr.correct_answers,
-                        qr.wrong_answers,
+                        qr.score as correct_answers,
+                        (qr.total_questions - qr.score) as wrong_answers,
                         qr.percentage,
                         qr.time_taken_seconds,
                         qr.completed_at,
-                        qr.started_at
+                        qr.start_time as started_at
                     FROM quiz_results qr
                     JOIN users u ON qr.user_id = u.user_id
                     WHERE qr.completed_at >= :start_date 
@@ -546,8 +546,8 @@ class FinalWeeklyReportGenerator:
                         COUNT(qr.result_id) as total_quizzes,
                         AVG(qr.percentage) as overall_avg_percentage,
                         SUM(qr.total_questions) as total_questions_answered,
-                        SUM(qr.correct_answers) as total_correct_answers,
-                        SUM(qr.wrong_answers) as total_wrong_answers,
+                        SUM(qr.score) as total_correct_answers,
+                        SUM(qr.total_questions - qr.score) as total_wrong_answers,
                         AVG(qr.time_taken_seconds) as avg_time_per_quiz,
                         MAX(qr.completed_at) as last_quiz_date,
                         MIN(qr.completed_at) as first_quiz_date
