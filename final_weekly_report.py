@@ -1394,7 +1394,23 @@ class FinalWeeklyReportGenerator:
                     
                     activity_df.to_excel(writer, sheet_name='أنماط النشاط', index=False)
                 
-                # 6. التوصيات الذكية
+                # 8. الأسئلة الصعبة
+                if difficult_questions:
+                    questions_df = pd.DataFrame(difficult_questions)
+                    # تعريب أسماء الأعمدة
+                    questions_translations = {
+                        'question_id': 'معرف السؤال',
+                        'total_attempts': 'إجمالي المحاولات',
+                        'correct_answers': 'الإجابات الصحيحة',
+                        'wrong_answers': 'الإجابات الخاطئة',
+                        'success_rate': 'معدل النجاح (%)',
+                        'difficulty_level': 'مستوى الصعوبة',
+                        'review_priority': 'أولوية المراجعة'
+                    }
+                    questions_df.rename(columns=questions_translations, inplace=True)
+                    questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
+                
+                # 9. التوصيات الذكية
                 recommendations_data = []
                 for category, recs in smart_recommendations.items():
                     for rec in recs:
@@ -1404,28 +1420,28 @@ class FinalWeeklyReportGenerator:
                     recommendations_df = pd.DataFrame(recommendations_data)
                     recommendations_df.to_excel(writer, sheet_name='التوصيات الذكية', index=False)
                 
-                # 7. تصنيف الطلاب حسب الأداء
+                # 10. تصنيف الطلاب حسب الأداء
                 for category_name, students in student_categories.items():
                     if students:
                         students_df = pd.DataFrame(students)
                         sheet_name = f'الطلاب ال{category_name}'
                         students_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 8. تحليل صعوبة الأسئلة
+                # 11. تحليل صعوبة الأسئلة
                 for analysis_type, questions in question_difficulty_analysis.items():
                     if questions:
                         questions_df = pd.DataFrame(questions)
                         sheet_name = analysis_type.replace('_', ' ')
                         questions_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 9. اتجاهات تحسن الطلاب
+                # 12. اتجاهات تحسن الطلاب
                 for trend_name, students in improvement_trends.items():
                     if students:
                         trends_df = pd.DataFrame(students)
                         sheet_name = f'الطلاب ال{trend_name}'
                         trends_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 10. معلومات الرسوم البيانية
+                # 13. معلومات الرسوم البيانية
                 if chart_paths:
                     charts_df = pd.DataFrame([
                         {'اسم الرسم': name, 'مسار الملف': path} 
