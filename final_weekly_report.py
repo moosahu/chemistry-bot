@@ -1243,7 +1243,7 @@ class FinalWeeklyReportGenerator:
         """إنشاء تقرير Excel نهائي ومحسن مع التحليلات المتقدمة"""
         try:
             # جمع البيانات
-            general_stats = self.get_general_statistics(start_date, end_date)
+            general_stats = self.get_comprehensive_stats(start_date, end_date)
             user_progress = self.get_user_progress_analysis(start_date, end_date)
             grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
             difficult_questions = self.get_difficult_questions_analysis(start_date, end_date)
