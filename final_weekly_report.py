@@ -480,7 +480,7 @@ class FinalWeeklyReportGenerator:
                     JOIN users u ON qr.user_id = u.user_id
                     WHERE qr.completed_at >= :start_date 
                         AND qr.completed_at <= :end_date
-                    ORDER BY qr.completed_at DESC
+                    ORDER BY qr.user_id, qr.completed_at DESC
                 """)
                 
                 result = conn.execute(query, {
@@ -1216,12 +1216,12 @@ class FinalWeeklyReportGenerator:
                     # تعريب أسماء الأعمدة مع الأعمدة الجديدة
                     column_translations = {
                         'user_id': 'معرف المستخدم',
-                        'telegram_id': 'telegram_id',
+                        'telegram_id': 'معرف تليجرام',
                         'username': 'اسم المستخدم',
                         'full_name': 'الاسم الكامل',
                         'grade': 'الصف',
-                        'first_seen_timestamp': 'first_seen_timestamp',
-                        'last_active_timestamp': 'last_active_timestamp',
+                        'first_seen_timestamp': 'تاريخ التسجيل',
+                        'last_active_timestamp': 'آخر نشاط',
                         'total_quizzes': 'إجمالي الاختبارات',
                         'overall_avg_percentage': 'متوسط الدرجات (%)',
                         'total_questions_answered': 'إجمالي الأسئلة المجابة',

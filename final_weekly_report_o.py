@@ -202,8 +202,8 @@ class FinalWeeklyReportGenerator:
             kpis = {}
             
             # معدل المشاركة
-            total_users = stats.get('total_registered_users', 0)
-            active_users = stats.get('active_users_this_week', 0)
+            total_users = float(stats.get('total_registered_users', 0))
+            active_users = float(stats.get('active_users_this_week', 0))
             
             if total_users > 0:
                 kpis['participation_rate'] = round((active_users / total_users) * 100, 2)
@@ -211,9 +211,9 @@ class FinalWeeklyReportGenerator:
                 kpis['participation_rate'] = 0
             
             # معدل الإنجاز (الاختبارات المكتملة)
-            total_quizzes = stats.get('total_quizzes_this_week', 0)
+            total_quizzes = float(stats.get('total_quizzes_this_week', 0))
             if active_users > 0:
-                kpis['completion_rate'] = round(float(total_quizzes) / float(active_users), 2)
+                kpis['completion_rate'] = round(total_quizzes / active_users, 2)
             else:
                 kpis['completion_rate'] = 0
             
@@ -237,7 +237,7 @@ class FinalWeeklyReportGenerator:
                 }).fetchone()
                 
                 if excellence_result.total_results > 0:
-                    kpis['excellence_rate'] = round((excellence_result.excellent_results / excellence_result.total_results) * 100, 2)
+                    kpis['excellence_rate'] = round((float(excellence_result.excellent_results) / float(excellence_result.total_results)) * 100, 2)
                 else:
                     kpis['excellence_rate'] = 0
             
@@ -257,16 +257,17 @@ class FinalWeeklyReportGenerator:
                 }).fetchone()
                 
                 if risk_result.total_results > 0:
-                    kpis['at_risk_rate'] = round((risk_result.at_risk_results / risk_result.total_results) * 100, 2)
+                    kpis['at_risk_rate'] = round((float(risk_result.at_risk_results) / float(risk_result.total_results)) * 100, 2)
                 else:
                     kpis['at_risk_rate'] = 0
             
             # متوسط الوقت لكل سؤال
-            avg_time = stats.get('avg_time_taken', 0)
-            total_questions = stats.get('total_questions_this_week', 0)
+            avg_time = float(stats.get('avg_time_taken', 0))
+            total_questions = float(stats.get('total_questions_this_week', 0))
+            total_quizzes_for_calc = float(stats.get('total_quizzes_this_week', 1))
             
-            if total_questions > 0 and avg_time > 0:
-                kpis['avg_time_per_question'] = round(avg_time / (total_questions / stats.get('total_quizzes_this_week', 1)), 2)
+            if total_questions > 0 and avg_time > 0 and total_quizzes_for_calc > 0:
+                kpis['avg_time_per_question'] = round(avg_time / (total_questions / total_quizzes_for_calc), 2)
             else:
                 kpis['avg_time_per_question'] = 0
             
@@ -274,7 +275,14 @@ class FinalWeeklyReportGenerator:
             
         except Exception as e:
             logger.error(f"خطأ في حساب مؤشرات الأداء الرئيسية: {e}")
-            return {}
+            # إرجاع المؤشرات الأساسية حتى لو فشلت بعض الاستعلامات
+            return {
+                'participation_rate': round((float(stats.get('active_users_this_week', 0)) / float(stats.get('total_registered_users', 1))) * 100, 2) if stats.get('total_registered_users', 0) > 0 else 0,
+                'completion_rate': round(float(stats.get('total_quizzes_this_week', 0)) / float(stats.get('active_users_this_week', 1)), 2) if stats.get('active_users_this_week', 0) > 0 else 0,
+                'excellence_rate': 0,
+                'at_risk_rate': 0,
+                'avg_time_per_question': 0
+            }
 
     def predict_performance_trend(self, current_stats: Dict[str, Any], previous_stats: Dict[str, Any], comparison: Dict[str, Any]) -> Dict[str, Any]:
         """توقع اتجاه الأداء للأسابيع القادمة"""
@@ -447,8 +455,79 @@ class FinalWeeklyReportGenerator:
             logger.error(f"خطأ في الحصول على الإحصائيات الشاملة: {e}")
             return {}
     
+    def get_quiz_details(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+        """جلب تفاصيل جميع الاختبارات في الفترة المحددة"""
+        try:
+            with self.engine.connect() as conn:
+                query = text("""
+                    SELECT 
+                        qr.result_id,
+                        qr.user_id,
+                        u.full_name,
+                        u.username,
+                        u.grade,
+                        qr.filter_id as quiz_id,
+                        qr.quiz_name as quiz_title,
+                        'كيمياء' as quiz_subject,
+                        qr.total_questions,
+                        qr.score as correct_answers,
+                        (qr.total_questions - qr.score) as wrong_answers,
+                        qr.percentage,
+                        qr.time_taken_seconds,
+                        qr.completed_at,
+                        qr.start_time as started_at
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                    ORDER BY qr.completed_at DESC
+                """)
+                
+                result = conn.execute(query, {
+                    'start_date': start_date,
+                    'end_date': end_date
+                }).fetchall()
+                
+                quiz_details = []
+                for row in result:
+                    # إزالة timezone من التواريخ
+                    completed_at_clean = row.completed_at
+                    if completed_at_clean and hasattr(completed_at_clean, 'tzinfo') and completed_at_clean.tzinfo:
+                        completed_at_clean = completed_at_clean.replace(tzinfo=None)
+                    
+                    started_at_clean = row.started_at
+                    if started_at_clean and hasattr(started_at_clean, 'tzinfo') and started_at_clean.tzinfo:
+                        started_at_clean = started_at_clean.replace(tzinfo=None)
+                    
+                    # حساب الوقت المستغرق بالدقائق
+                    time_minutes = round((row.time_taken_seconds or 0) / 60, 2) if row.time_taken_seconds else 0
+                    
+                    quiz_details.append({
+                        'result_id': row.result_id,
+                        'user_id': row.user_id,
+                        'full_name': row.full_name or 'غير محدد',
+                        'username': row.username or 'غير محدد',
+                        'grade': row.grade or 'غير محدد',
+                        'quiz_id': row.quiz_id or 'غير محدد',
+                        'quiz_title': row.quiz_title or f'اختبار رقم {row.quiz_id}',
+                        'quiz_subject': row.quiz_subject or 'غير محدد',
+                        'total_questions': row.total_questions or 0,
+                        'correct_answers': row.correct_answers or 0,
+                        'wrong_answers': row.wrong_answers or 0,
+                        'percentage': round(row.percentage or 0, 2),
+                        'time_taken_minutes': time_minutes,
+                        'completed_at': completed_at_clean,
+                        'started_at': started_at_clean
+                    })
+                
+                return quiz_details
+                
+        except Exception as e:
+            logger.error(f"خطأ في جلب تفاصيل الاختبارات: {e}")
+            return []
+
     def get_user_progress_analysis(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
-        """تحليل تقدم المستخدمين"""
+        """تحليل تقدم المستخدمين مع إضافة تفاصيل الإجابات الصحيحة"""
         try:
             with self.engine.connect() as conn:
                 query = text("""
@@ -467,6 +546,8 @@ class FinalWeeklyReportGenerator:
                         COUNT(qr.result_id) as total_quizzes,
                         AVG(qr.percentage) as overall_avg_percentage,
                         SUM(qr.total_questions) as total_questions_answered,
+                        SUM(qr.score) as total_correct_answers,
+                        SUM(qr.total_questions - qr.score) as total_wrong_answers,
                         AVG(qr.time_taken_seconds) as avg_time_per_quiz,
                         MAX(qr.completed_at) as last_quiz_date,
                         MIN(qr.completed_at) as first_quiz_date
@@ -570,6 +651,16 @@ class FinalWeeklyReportGenerator:
                     if first_quiz_clean and hasattr(first_quiz_clean, 'tzinfo') and first_quiz_clean.tzinfo:
                         first_quiz_clean = first_quiz_clean.replace(tzinfo=None)
                     
+                    # حساب متوسط الأسئلة لكل اختبار
+                    avg_questions_per_quiz = 0
+                    if total_quizzes > 0:
+                        avg_questions_per_quiz = round((row.total_questions_answered or 0) / total_quizzes, 1)
+                    
+                    # حساب معدل الإجابات الصحيحة
+                    correct_answer_rate = 0
+                    if (row.total_questions_answered or 0) > 0:
+                        correct_answer_rate = round(((row.total_correct_answers or 0) / (row.total_questions_answered or 1)) * 100, 2)
+                    
                     users_analysis.append({
                         'user_id': row.user_id,
                         'telegram_id': row.telegram_id,
@@ -581,6 +672,10 @@ class FinalWeeklyReportGenerator:
                         'total_quizzes': total_quizzes,
                         'overall_avg_percentage': round(avg_percentage, 2),
                         'total_questions_answered': row.total_questions_answered or 0,
+                        'total_correct_answers': row.total_correct_answers or 0,
+                        'total_wrong_answers': row.total_wrong_answers or 0,
+                        'avg_questions_per_quiz': avg_questions_per_quiz,
+                        'correct_answer_rate': correct_answer_rate,
                         'avg_time_per_quiz': round(self.safe_convert(row.avg_time_per_quiz), 2),
                         'performance_level': performance_level,
                         'activity_level': activity_level,
@@ -932,7 +1027,8 @@ class FinalWeeklyReportGenerator:
         
         try:
             for user in user_progress:
-                avg_percentage = user.get('avg_percentage', 0)
+                avg_percentage = user.get('overall_avg_percentage', 0)
+
                 user_info = {
                     'الاسم': user.get('full_name', 'غير محدد'),
                     'اسم المستخدم': user.get('username', 'غير محدد'),
@@ -1009,7 +1105,8 @@ class FinalWeeklyReportGenerator:
                     'الاسم': user.get('full_name', 'غير محدد'),
                     'اسم المستخدم': user.get('username', 'غير محدد'),
                     'الصف': user.get('grade', 'غير محدد'),
-                    'متوسط الدرجات': f"{user.get('avg_percentage', 0):.1f}%",
+                    'متوسط الدرجات': f"{user.get('overall_avg_percentage', 0):.1f}%",
+
                     'اتجاه التحسن': improvement,
                     'عدد الاختبارات': user.get('total_quizzes', 0)
                 }
@@ -1032,6 +1129,7 @@ class FinalWeeklyReportGenerator:
             # جمع البيانات الأساسية
             general_stats = self.get_comprehensive_stats(start_date, end_date)
             user_progress = self.get_user_progress_analysis(start_date, end_date)
+            quiz_details = self.get_quiz_details(start_date, end_date)  # إضافة تفاصيل الاختبارات
             grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
             difficult_questions = self.get_difficult_questions_analysis(start_date, end_date)
             time_patterns = self.get_time_patterns_analysis(start_date, end_date)
@@ -1112,14 +1210,72 @@ class FinalWeeklyReportGenerator:
                 ], columns=['التوقع', 'القيمة'])
                 predictions_df.to_excel(writer, sheet_name='توقعات الأداء', index=False)
                 
-                # 5. تقدم المستخدمين
+                # 5. تقدم المستخدمين (محسن)
                 if user_progress:
                     users_df = pd.DataFrame(user_progress)
-                    # تعريب أسماء الأعمدة (15 عمود كامل)
-                    users_df.columns = ['معرف المستخدم', 'اسم المستخدم', 'الاسم الكامل', 'الصف', 'تاريخ التسجيل', 'آخر نشاط', 'إجمالي الاختبارات', 'متوسط الدرجات (%)', 'إجمالي الأسئلة', 'متوسط الوقت (ثانية)', 'مستوى الأداء', 'مستوى النشاط', 'اتجاه التحسن', 'تاريخ آخر اختبار', 'تاريخ أول اختبار']
+                    # تعريب أسماء الأعمدة مع الأعمدة الجديدة
+                    column_translations = {
+                        'user_id': 'معرف المستخدم',
+                        'telegram_id': 'telegram_id',
+                        'username': 'اسم المستخدم',
+                        'full_name': 'الاسم الكامل',
+                        'grade': 'الصف',
+                        'first_seen_timestamp': 'first_seen_timestamp',
+                        'last_active_timestamp': 'last_active_timestamp',
+                        'total_quizzes': 'إجمالي الاختبارات',
+                        'overall_avg_percentage': 'متوسط الدرجات (%)',
+                        'total_questions_answered': 'إجمالي الأسئلة المجابة',
+                        'total_correct_answers': 'إجمالي الإجابات الصحيحة',
+                        'total_wrong_answers': 'إجمالي الإجابات الخاطئة',
+                        'avg_questions_per_quiz': 'متوسط الأسئلة/اختبار',
+                        'correct_answer_rate': 'معدل الإجابات الصحيحة (%)',
+                        'avg_time_per_quiz': 'متوسط الوقت لكل اختبار',
+                        'performance_level': 'مستوى الأداء',
+                        'activity_level': 'مستوى النشاط',
+                        'last_quiz_date': 'تاريخ آخر اختبار',
+                        'first_quiz_date': 'تاريخ أول اختبار'
+                    }
+                    users_df.rename(columns=column_translations, inplace=True)
                     users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
                 
-                # 6. أداء الصفوف
+                # 6. تفاصيل الاختبارات (جديد!)
+                if quiz_details:
+                    quiz_df = pd.DataFrame(quiz_details)
+                    # تعريب أسماء الأعمدة
+                    quiz_translations = {
+                        'result_id': 'معرف النتيجة',
+                        'user_id': 'معرف المستخدم',
+                        'full_name': 'اسم الطالب',
+                        'username': 'اسم المستخدم',
+                        'grade': 'الصف',
+                        'quiz_id': 'معرف الاختبار',
+                        'quiz_title': 'اسم الاختبار',
+                        'quiz_subject': 'المادة/الموضوع',
+                        'total_questions': 'عدد الأسئلة',
+                        'correct_answers': 'الإجابات الصحيحة',
+                        'wrong_answers': 'الإجابات الخاطئة',
+                        'percentage': 'الدرجة (%)',
+                        'time_taken_minutes': 'الوقت المستغرق (دقيقة)',
+                        'completed_at': 'تاريخ الإكمال',
+                        'started_at': 'تاريخ البداية'
+                    }
+                    quiz_df.rename(columns=quiz_translations, inplace=True)
+                    quiz_df.to_excel(writer, sheet_name='تفاصيل الاختبارات', index=False)
+                
+                # 7. أداء الصفوف
+                if grade_analysis:
+                    grades_df = pd.DataFrame(grade_analysis)
+                    # تعريب أسماء الأعمدة
+                    grade_translations = {
+                        'grade': 'الصف',
+                        'total_students': 'إجمالي الطلاب',
+                        'active_students': 'الطلاب النشطين',
+                        'participation_rate': 'معدل المشاركة (%)',
+                        'total_quizzes': 'إجمالي الاختبارات',
+                        'avg_percentage': 'متوسط الدرجات (%)'
+                    }
+                    grades_df.rename(columns=grade_translations, inplace=True)
+                    grades_df.to_excel(writer, sheet_name='أداء الصفوف', index=False)
                 
                 # تنسيق ورقة الملخص التنفيذي
                 worksheet = writer.sheets['الملخص التنفيذي']
@@ -1238,7 +1394,23 @@ class FinalWeeklyReportGenerator:
                     
                     activity_df.to_excel(writer, sheet_name='أنماط النشاط', index=False)
                 
-                # 6. التوصيات الذكية
+                # 8. الأسئلة الصعبة
+                if difficult_questions:
+                    questions_df = pd.DataFrame(difficult_questions)
+                    # تعريب أسماء الأعمدة
+                    questions_translations = {
+                        'question_id': 'معرف السؤال',
+                        'total_attempts': 'إجمالي المحاولات',
+                        'correct_answers': 'الإجابات الصحيحة',
+                        'wrong_answers': 'الإجابات الخاطئة',
+                        'success_rate': 'معدل النجاح (%)',
+                        'difficulty_level': 'مستوى الصعوبة',
+                        'review_priority': 'أولوية المراجعة'
+                    }
+                    questions_df.rename(columns=questions_translations, inplace=True)
+                    questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
+                
+                # 9. التوصيات الذكية
                 recommendations_data = []
                 for category, recs in smart_recommendations.items():
                     for rec in recs:
@@ -1248,28 +1420,28 @@ class FinalWeeklyReportGenerator:
                     recommendations_df = pd.DataFrame(recommendations_data)
                     recommendations_df.to_excel(writer, sheet_name='التوصيات الذكية', index=False)
                 
-                # 7. تصنيف الطلاب حسب الأداء
+                # 10. تصنيف الطلاب حسب الأداء
                 for category_name, students in student_categories.items():
                     if students:
                         students_df = pd.DataFrame(students)
                         sheet_name = f'الطلاب ال{category_name}'
                         students_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 8. تحليل صعوبة الأسئلة
+                # 11. تحليل صعوبة الأسئلة
                 for analysis_type, questions in question_difficulty_analysis.items():
                     if questions:
                         questions_df = pd.DataFrame(questions)
                         sheet_name = analysis_type.replace('_', ' ')
                         questions_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 9. اتجاهات تحسن الطلاب
+                # 12. اتجاهات تحسن الطلاب
                 for trend_name, students in improvement_trends.items():
                     if students:
                         trends_df = pd.DataFrame(students)
                         sheet_name = f'الطلاب ال{trend_name}'
                         trends_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 10. معلومات الرسوم البيانية
+                # 13. معلومات الرسوم البيانية
                 if chart_paths:
                     charts_df = pd.DataFrame([
                         {'اسم الرسم': name, 'مسار الملف': path} 
