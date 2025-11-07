@@ -887,13 +887,9 @@ class FinalWeeklyReportGenerator:
                             difficulty_level = "سهل"
                             priority = "منخفضة"
                         
-                        # التحقق من أن question_text ليس None قبل استخدام len()
-                        question_text_safe = stats['question_text'] if stats['question_text'] else 'غير محدد'
-                        question_text_display = question_text_safe[:100] + '...' if len(question_text_safe) > 100 else question_text_safe
-                        
                         difficult_questions.append({
                             'question_id': question_id,
-                            'question_text': question_text_display,
+                            'question_text': stats['question_text'][:100] + '...' if len(stats['question_text']) > 100 else stats['question_text'],
                             'quiz_name': stats['quiz_name'],
                             'correct_answer': stats['correct_answer'],
                             'total_attempts': stats['total_attempts'],
