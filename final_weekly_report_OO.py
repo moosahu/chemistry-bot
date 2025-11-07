@@ -1166,7 +1166,7 @@ class FinalWeeklyReportGenerator:
                 # معايير عادلة تأخذ في الاعتبار الأداء والاستمرارية والجهد
                 if avg_percentage >= 80 and total_quizzes >= 3 and total_questions >= 30:
                     categories['متفوقين'].append(user_info)
-                elif avg_percentage >= 60 and total_quizzes >= 2 and total_questions >= 20:
+                elif avg_percentage >= 50 and total_quizzes >= 1:
                     categories['متوسطين'].append(user_info)
                 else:
                     categories['ضعاف'].append(user_info)
