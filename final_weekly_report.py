@@ -568,15 +568,19 @@ class FinalWeeklyReportGenerator:
                 
                 users_analysis = []
                 for row in result:
-                    # تحديد مستوى الأداء
+                    # تحديد مستوى الأداء بناءً على معايير عادلة (الأداء + الاستمرارية + الجهد)
                     avg_percentage = row.overall_avg_percentage or 0
-                    if avg_percentage >= 90:
+                    total_quizzes = row.total_quizzes or 0
+                    total_questions = row.total_questions_answered or 0
+                    
+                    # معايير عادلة تأخذ في الاعتبار الأداء والاستمرارية والجهد
+                    if avg_percentage >= 85 and total_quizzes >= 3 and total_questions >= 30:
                         performance_level = "ممتاز"
-                    elif avg_percentage >= 80:
+                    elif avg_percentage >= 75 and total_quizzes >= 2 and total_questions >= 20:
                         performance_level = "جيد جداً"
-                    elif avg_percentage >= 70:
+                    elif avg_percentage >= 65 and total_quizzes >= 1:
                         performance_level = "جيد"
-                    elif avg_percentage >= 60:
+                    elif avg_percentage >= 50:
                         performance_level = "متوسط"
                     elif avg_percentage > 0:
                         performance_level = "ضعيف"
@@ -584,7 +588,6 @@ class FinalWeeklyReportGenerator:
                         performance_level = "لا يوجد نشاط"
                     
                     # تحديد مستوى النشاط
-                    total_quizzes = row.total_quizzes or 0
                     if total_quizzes >= 10:
                         activity_level = "نشط جداً"
                     elif total_quizzes >= 5:
@@ -1148,18 +1151,22 @@ class FinalWeeklyReportGenerator:
         try:
             for user in user_progress:
                 avg_percentage = user.get('overall_avg_percentage', 0)
+                total_quizzes = user.get('total_quizzes', 0)
+                total_questions = user.get('total_questions_answered', 0)
 
                 user_info = {
                     'الاسم': user.get('full_name', 'غير محدد'),
                     'اسم المستخدم': user.get('username', 'غير محدد'),
                     'الصف': user.get('grade', 'غير محدد'),
                     'متوسط الدرجات': f"{avg_percentage:.1f}%",
-                    'عدد الاختبارات': user.get('total_quizzes', 0)
+                    'عدد الاختبارات': total_quizzes,
+                    'إجمالي الأسئلة': total_questions
                 }
                 
-                if avg_percentage >= 80:
+                # معايير عادلة تأخذ في الاعتبار الأداء والاستمرارية والجهد
+                if avg_percentage >= 80 and total_quizzes >= 3 and total_questions >= 30:
                     categories['متفوقين'].append(user_info)
-                elif avg_percentage >= 50:
+                elif avg_percentage >= 50 and total_quizzes >= 1:
                     categories['متوسطين'].append(user_info)
                 else:
                     categories['ضعاف'].append(user_info)

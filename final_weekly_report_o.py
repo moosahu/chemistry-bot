@@ -887,9 +887,13 @@ class FinalWeeklyReportGenerator:
                             difficulty_level = "سهل"
                             priority = "منخفضة"
                         
+                        # التحقق من أن question_text ليس None قبل استخدام len()
+                        question_text_safe = stats['question_text'] if stats['question_text'] else 'غير محدد'
+                        question_text_display = question_text_safe[:100] + '...' if len(question_text_safe) > 100 else question_text_safe
+                        
                         difficult_questions.append({
                             'question_id': question_id,
-                            'question_text': stats['question_text'][:100] + '...' if len(stats['question_text']) > 100 else stats['question_text'],
+                            'question_text': question_text_display,
                             'quiz_name': stats['quiz_name'],
                             'correct_answer': stats['correct_answer'],
                             'total_attempts': stats['total_attempts'],
@@ -1248,6 +1252,9 @@ class FinalWeeklyReportGenerator:
             grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
             difficult_questions = self.get_difficult_questions_analysis(start_date, end_date)
             individual_difficult_questions = self.get_individual_difficult_questions(start_date, end_date)
+            # التحقق من أن النتيجة ليست None قبل استخدام len()
+            if individual_difficult_questions is None:
+                individual_difficult_questions = []
             logger.info(f"تم العثور على {len(individual_difficult_questions)} سؤال فردي صعب")
             quiz_details = self.get_quiz_details(start_date, end_date)
             time_patterns = self.get_time_patterns_analysis(start_date, end_date)
