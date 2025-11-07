@@ -480,7 +480,7 @@ class FinalWeeklyReportGenerator:
                     JOIN users u ON qr.user_id = u.user_id
                     WHERE qr.completed_at >= :start_date 
                         AND qr.completed_at <= :end_date
-                    ORDER BY qr.completed_at DESC
+                    ORDER BY qr.user_id, qr.completed_at DESC
                 """)
                 
                 result = conn.execute(query, {
@@ -734,26 +734,31 @@ class FinalWeeklyReportGenerator:
             return []
     
     def get_difficult_questions_analysis(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
-        """تحليل الأسئلة الصعبة"""
+        """تحليل الأسئلة الصعبة بناءً على نتائج الاختبارات"""
         try:
             with self.engine.connect() as conn:
+                # بما أن جدول user_answers غير متوفر، سنحلل من quiz_results
                 query = text("""
                     SELECT 
-                        ua.question_id,
+                        qr.filter_id as question_set_id,
+                        qr.quiz_name,
                         COUNT(*) as total_attempts,
-                        SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END) as correct_answers,
+                        SUM(qr.score) as total_correct_answers,
+                        SUM(qr.total_questions) as total_questions_asked,
                         CAST(
                             ROUND(
-                                CAST((SUM(CASE WHEN ua.is_correct THEN 1 ELSE 0 END)::float / COUNT(*)) * 100 AS NUMERIC), 
-                                2
+                                CAST((SUM(qr.score)::float / SUM(qr.total_questions)) * 100 AS NUMERIC), 2
                             ) AS FLOAT
-                        ) as success_rate
-                    FROM user_answers ua
-                    WHERE ua.answer_time >= :start_date AND ua.answer_time <= :end_date
-                    GROUP BY ua.question_id
-                    HAVING COUNT(*) >= 5  -- على الأقل 5 محاولات
+                        ) as success_rate,
+                        AVG(qr.percentage) as avg_percentage
+                    FROM quiz_results qr
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND qr.total_questions > 0
+                    GROUP BY qr.filter_id, qr.quiz_name
+                    HAVING COUNT(*) >= 3  -- على الأقل 3 محاولات
                     ORDER BY success_rate ASC, total_attempts DESC
-                    LIMIT 20
+                    LIMIT 15
                 """)
                 
                 result = conn.execute(query, {
@@ -780,11 +785,13 @@ class FinalWeeklyReportGenerator:
                         priority = "منخفضة"
                     
                     difficult_questions.append({
-                        'question_id': row.question_id,
+                        'question_set_id': row.question_set_id or 'غير محدد',
+                        'quiz_name': row.quiz_name or 'اختبار غير محدد',
                         'total_attempts': row.total_attempts,
-                        'correct_answers': row.correct_answers,
-                        'wrong_answers': row.total_attempts - row.correct_answers,
+                        'correct_answers': row.total_correct_answers or 0,
+                        'wrong_answers': (row.total_questions_asked or 0) - (row.total_correct_answers or 0),
                         'success_rate': success_rate,
+                        'avg_percentage': round(row.avg_percentage or 0, 2),
                         'difficulty_level': difficulty_level,
                         'review_priority': priority
                     })
@@ -793,6 +800,115 @@ class FinalWeeklyReportGenerator:
                 
         except Exception as e:
             logger.error(f"خطأ في تحليل الأسئلة الصعبة: {e}")
+            return []
+    
+    def get_individual_difficult_questions(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+        """تحليل الأسئلة الفردية الصعبة من تفاصيل الإجابات"""
+        try:
+            with self.engine.connect() as conn:
+                # جلب تفاصيل الإجابات من quiz_results
+                query = text("""
+                    SELECT 
+                        qr.quiz_name,
+                        qr.answers_details,
+                        qr.completed_at
+                    FROM quiz_results qr
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND qr.answers_details IS NOT NULL
+                        AND qr.answers_details != '[]'
+                """)
+                
+                result = conn.execute(query, {
+                    'start_date': start_date,
+                    'end_date': end_date
+                }).fetchall()
+                
+                # تحليل تفاصيل الأسئلة
+                question_stats = {}
+                
+                for row in result:
+                    try:
+                        import json
+                        answers_details = json.loads(row.answers_details) if isinstance(row.answers_details, str) else row.answers_details
+                        
+                        for answer in answers_details:
+                            if isinstance(answer, dict):
+                                question_id = answer.get('question_id')
+                                question_text = answer.get('question_text', 'غير محدد')
+                                is_correct = answer.get('is_correct', False)
+                                correct_option_text = answer.get('correct_option_text', 'غير محدد')
+                                chosen_option_text = answer.get('chosen_option_text', 'غير محدد')
+                                
+                                if question_id:
+                                    if question_id not in question_stats:
+                                        question_stats[question_id] = {
+                                            'question_id': question_id,
+                                            'question_text': question_text,
+                                            'correct_answer': correct_option_text,
+                                            'quiz_name': row.quiz_name,
+                                            'total_attempts': 0,
+                                            'correct_attempts': 0,
+                                            'wrong_attempts': 0,
+                                            'wrong_answers': []
+                                        }
+                                    
+                                    question_stats[question_id]['total_attempts'] += 1
+                                    
+                                    if is_correct:
+                                        question_stats[question_id]['correct_attempts'] += 1
+                                    else:
+                                        question_stats[question_id]['wrong_attempts'] += 1
+                                        if chosen_option_text not in question_stats[question_id]['wrong_answers']:
+                                            question_stats[question_id]['wrong_answers'].append(chosen_option_text)
+                    
+                    except Exception as parse_error:
+                        logger.warning(f"خطأ في تحليل تفاصيل الإجابات: {parse_error}")
+                        continue
+                
+                # تحويل إلى قائمة وترتيب حسب معدل الخطأ
+                difficult_questions = []
+                for question_id, stats in question_stats.items():
+                    if stats['total_attempts'] >= 3:  # على الأقل 3 محاولات
+                        error_rate = (stats['wrong_attempts'] / stats['total_attempts']) * 100
+                        success_rate = (stats['correct_attempts'] / stats['total_attempts']) * 100
+                        
+                        # تحديد مستوى الصعوبة
+                        if error_rate >= 70:
+                            difficulty_level = "صعب جداً"
+                            priority = "عالية"
+                        elif error_rate >= 50:
+                            difficulty_level = "صعب"
+                            priority = "متوسطة"
+                        elif error_rate >= 30:
+                            difficulty_level = "متوسط"
+                            priority = "منخفضة"
+                        else:
+                            difficulty_level = "سهل"
+                            priority = "منخفضة"
+                        
+                        difficult_questions.append({
+                            'question_id': question_id,
+                            'question_text': stats['question_text'][:100] + '...' if len(stats['question_text']) > 100 else stats['question_text'],
+                            'quiz_name': stats['quiz_name'],
+                            'correct_answer': stats['correct_answer'],
+                            'total_attempts': stats['total_attempts'],
+                            'correct_attempts': stats['correct_attempts'],
+                            'wrong_attempts': stats['wrong_attempts'],
+                            'error_rate': round(error_rate, 2),
+                            'success_rate': round(success_rate, 2),
+                            'difficulty_level': difficulty_level,
+                            'review_priority': priority,
+                            'common_wrong_answers': ', '.join(stats['wrong_answers'][:3])  # أكثر 3 إجابات خاطئة شيوعاً
+                        })
+                
+                # ترتيب حسب معدل الخطأ (الأصعب أولاً)
+                difficult_questions.sort(key=lambda x: x['error_rate'], reverse=True)
+                
+                return difficult_questions[:20]  # أصعب 20 سؤال
+                
+        except Exception as e:
+            logger.error(f"خطأ في تحليل الأسئلة الفردية الصعبة: {e}")
             return []
     
     def get_time_patterns_analysis(self, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
@@ -1126,12 +1242,14 @@ class FinalWeeklyReportGenerator:
     def create_final_excel_report(self, start_date: datetime, end_date: datetime) -> str:
         """إنشاء تقرير Excel نهائي ومحسن مع التحليلات المتقدمة"""
         try:
-            # جمع البيانات الأساسية
+            # جمع البيانات
             general_stats = self.get_comprehensive_stats(start_date, end_date)
             user_progress = self.get_user_progress_analysis(start_date, end_date)
-            quiz_details = self.get_quiz_details(start_date, end_date)  # إضافة تفاصيل الاختبارات
             grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
             difficult_questions = self.get_difficult_questions_analysis(start_date, end_date)
+            individual_difficult_questions = self.get_individual_difficult_questions(start_date, end_date)
+            logger.info(f"تم العثور على {len(individual_difficult_questions)} سؤال فردي صعب")
+            quiz_details = self.get_quiz_details(start_date, end_date)
             time_patterns = self.get_time_patterns_analysis(start_date, end_date)
             smart_recommendations = self.generate_smart_recommendations(
                 general_stats, user_progress, grade_analysis, difficult_questions, time_patterns
@@ -1216,12 +1334,12 @@ class FinalWeeklyReportGenerator:
                     # تعريب أسماء الأعمدة مع الأعمدة الجديدة
                     column_translations = {
                         'user_id': 'معرف المستخدم',
-                        'telegram_id': 'telegram_id',
+                        'telegram_id': 'معرف تليجرام',
                         'username': 'اسم المستخدم',
                         'full_name': 'الاسم الكامل',
                         'grade': 'الصف',
-                        'first_seen_timestamp': 'first_seen_timestamp',
-                        'last_active_timestamp': 'last_active_timestamp',
+                        'first_seen_timestamp': 'تاريخ التسجيل',
+                        'last_active_timestamp': 'آخر نشاط',
                         'total_quizzes': 'إجمالي الاختبارات',
                         'overall_avg_percentage': 'متوسط الدرجات (%)',
                         'total_questions_answered': 'إجمالي الأسئلة المجابة',
@@ -1301,69 +1419,21 @@ class FinalWeeklyReportGenerator:
                 worksheet.column_dimensions['A'].width = 30
                 worksheet.column_dimensions['B'].width = 20
                 
-                # 2. تقدم المستخدمين
-                if user_progress:
-                    # إزالة timezone من التواريخ لتوافق Excel
-                    from datetime import datetime
-                    for user in user_progress:
-                        # معالجة آمنة للتواريخ
-                        for date_field in ['registration_date', 'last_active', 'last_quiz_date', 'first_quiz_date']:
-                            if user.get(date_field) and isinstance(user[date_field], datetime):
-                                if user[date_field].tzinfo is not None:
-                                    user[date_field] = user[date_field].replace(tzinfo=None)
-                    
-                    users_df = pd.DataFrame(user_progress)
-                    
-                    # تعريب أسماء الأعمدة
-                    column_translations = {
-                        'user_id': 'معرف المستخدم',
-                        'username': 'اسم المستخدم',
-                        'full_name': 'الاسم الكامل',
-                        'grade': 'الصف',
-                        'registration_date': 'تاريخ التسجيل',
-                        'last_active': 'آخر نشاط',
-                        'total_quizzes': 'إجمالي الاختبارات',
-                        'overall_avg_percentage': 'متوسط الدرجات (%)',
-                        'total_questions_answered': 'إجمالي الأسئلة المجابة',
-                        'avg_time_per_quiz': 'متوسط الوقت لكل اختبار',
-                        'performance_level': 'مستوى الأداء',
-                        'activity_level': 'مستوى النشاط',
-                        'trend': 'اتجاه التحسن',
-                        'last_quiz_date': 'تاريخ آخر اختبار',
-                        'first_quiz_date': 'تاريخ أول اختبار'
-                    }
-                    users_df.rename(columns=column_translations, inplace=True)
-                    
-                    users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
+
                 
-                # 3. أداء الصفوف
-                if grade_analysis:
-                    grades_df = pd.DataFrame(grade_analysis)
-                    
-                    # تعريب أسماء الأعمدة
-                    grade_translations = {
-                        'grade': 'الصف',
-                        'total_users': 'إجمالي المستخدمين',
-                        'active_users': 'المستخدمين النشطين',
-                        'avg_percentage': 'متوسط الدرجات (%)',
-                        'total_quizzes': 'إجمالي الاختبارات',
-                        'engagement_rate': 'معدل المشاركة (%)'
-                    }
-                    grades_df.rename(columns=grade_translations, inplace=True)
-                    
-                    grades_df.to_excel(writer, sheet_name='أداء الصفوف', index=False)
-                
-                # 4. الأسئلة الصعبة
+                # 2. الأسئلة الصعبة
                 if difficult_questions:
                     questions_df = pd.DataFrame(difficult_questions)
                     
                     # تعريب أسماء الأعمدة
                     questions_translations = {
-                        'question_id': 'معرف السؤال',
+                        'question_set_id': 'معرف مجموعة الأسئلة',
+                        'quiz_name': 'اسم الاختبار',
                         'total_attempts': 'إجمالي المحاولات',
                         'correct_answers': 'الإجابات الصحيحة',
                         'wrong_answers': 'الإجابات الخاطئة',
                         'success_rate': 'معدل النجاح (%)',
+                        'avg_percentage': 'متوسط الدرجات (%)',
                         'difficulty_level': 'مستوى الصعوبة',
                         'review_priority': 'أولوية المراجعة'
                     }
@@ -1371,7 +1441,30 @@ class FinalWeeklyReportGenerator:
                     
                     questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
                 
-                # 5. أنماط النشاط
+                # 9. تفاصيل الأسئلة الفردية الصعبة
+                if individual_difficult_questions:
+                    individual_df = pd.DataFrame(individual_difficult_questions)
+                    
+                    # تعريب أسماء الأعمدة
+                    individual_translations = {
+                        'question_id': 'معرف السؤال',
+                        'question_text': 'نص السؤال',
+                        'quiz_name': 'اسم الاختبار',
+                        'correct_answer': 'الإجابة الصحيحة',
+                        'total_attempts': 'إجمالي المحاولات',
+                        'correct_attempts': 'المحاولات الصحيحة',
+                        'wrong_attempts': 'المحاولات الخاطئة',
+                        'error_rate': 'معدل الخطأ (%)',
+                        'success_rate': 'معدل النجاح (%)',
+                        'difficulty_level': 'مستوى الصعوبة',
+                        'review_priority': 'أولوية المراجعة',
+                        'common_wrong_answers': 'الإجابات الخاطئة الشائعة'
+                    }
+                    individual_df.rename(columns=individual_translations, inplace=True)
+                    
+                    individual_df.to_excel(writer, sheet_name='تفاصيل الأسئلة الصعبة', index=False)
+                
+                # 10. أنماط النشاط
                 daily_activity = time_patterns.get('daily_activity', [])
                 if daily_activity:
                     # إزالة timezone من التواريخ في daily_activity
@@ -1394,23 +1487,7 @@ class FinalWeeklyReportGenerator:
                     
                     activity_df.to_excel(writer, sheet_name='أنماط النشاط', index=False)
                 
-                # 8. الأسئلة الصعبة
-                if difficult_questions:
-                    questions_df = pd.DataFrame(difficult_questions)
-                    # تعريب أسماء الأعمدة
-                    questions_translations = {
-                        'question_id': 'معرف السؤال',
-                        'total_attempts': 'إجمالي المحاولات',
-                        'correct_answers': 'الإجابات الصحيحة',
-                        'wrong_answers': 'الإجابات الخاطئة',
-                        'success_rate': 'معدل النجاح (%)',
-                        'difficulty_level': 'مستوى الصعوبة',
-                        'review_priority': 'أولوية المراجعة'
-                    }
-                    questions_df.rename(columns=questions_translations, inplace=True)
-                    questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
-                
-                # 9. التوصيات الذكية
+                # 11. التوصيات الذكية
                 recommendations_data = []
                 for category, recs in smart_recommendations.items():
                     for rec in recs:
@@ -1420,21 +1497,21 @@ class FinalWeeklyReportGenerator:
                     recommendations_df = pd.DataFrame(recommendations_data)
                     recommendations_df.to_excel(writer, sheet_name='التوصيات الذكية', index=False)
                 
-                # 10. تصنيف الطلاب حسب الأداء
+                # 12. تصنيف الطلاب حسب الأداء
                 for category_name, students in student_categories.items():
                     if students:
                         students_df = pd.DataFrame(students)
                         sheet_name = f'الطلاب ال{category_name}'
                         students_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 11. تحليل صعوبة الأسئلة
+                # 6. تحليل صعوبة الأسئلة
                 for analysis_type, questions in question_difficulty_analysis.items():
                     if questions:
                         questions_df = pd.DataFrame(questions)
                         sheet_name = analysis_type.replace('_', ' ')
                         questions_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
-                # 12. اتجاهات تحسن الطلاب
+                # 7. اتجاهات تحسن الطلاب
                 for trend_name, students in improvement_trends.items():
                     if students:
                         trends_df = pd.DataFrame(students)

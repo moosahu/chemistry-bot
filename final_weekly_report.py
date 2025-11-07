@@ -1248,6 +1248,9 @@ class FinalWeeklyReportGenerator:
             grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
             difficult_questions = self.get_difficult_questions_analysis(start_date, end_date)
             individual_difficult_questions = self.get_individual_difficult_questions(start_date, end_date)
+            # التحقق من أن النتيجة ليست None قبل استخدام len()
+            if individual_difficult_questions is None:
+                individual_difficult_questions = []
             logger.info(f"تم العثور على {len(individual_difficult_questions)} سؤال فردي صعب")
             quiz_details = self.get_quiz_details(start_date, end_date)
             time_patterns = self.get_time_patterns_analysis(start_date, end_date)
