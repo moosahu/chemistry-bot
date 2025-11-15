@@ -828,7 +828,7 @@ class QuizLogic:
         keyboard = [
             [InlineKeyboardButton("✨ ابدأ اختباراً جديداً", callback_data="quiz_action_restart_quiz_cb")],
             [InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="menu_stats")],
-            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")]
+            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         

@@ -91,7 +91,7 @@ def create_quiz_type_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("🎲 اختبار عشوائي شامل (كل المقررات)", callback_data=f"quiz_type_{QUIZ_TYPE_ALL}")],
         [InlineKeyboardButton("📚 حسب الوحدة الدراسية (اختر المقرر ثم الوحدة)", callback_data=f"quiz_type_{QUIZ_TYPE_UNIT}")],
-        [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")] 
+        [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")] 
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -467,7 +467,7 @@ quiz_conv_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")],
     states={
         SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type_handler, pattern="^quiz_type_|^main_menu$|^quiz_action_back_to_type_selection$")
+            CallbackQueryHandler(select_quiz_type_handler, pattern="^quiz_type_|^quiz_action_main_menu$|^quiz_action_back_to_type_selection$")
         ],
         SELECT_COURSE_FOR_UNIT_QUIZ: [
             CallbackQueryHandler(select_course_for_unit_quiz_handler, pattern="^quiz_course_select_|^quiz_course_page_|^quiz_action_back_to_type_selection$")
@@ -484,7 +484,7 @@ quiz_conv_handler = ConversationHandler(
         SHOWING_RESULTS: [
             CallbackQueryHandler(handle_restart_quiz_from_results_cb, pattern="^quiz_action_restart_quiz_cb$"),
             CallbackQueryHandler(handle_show_stats_from_results_cb, pattern="^quiz_action_show_stats_cb$"),
-            CallbackQueryHandler(handle_main_menu_from_results_callback_data="main_menu"),
+            CallbackQueryHandler(handle_main_menu_from_results_cb, pattern="^quiz_action_main_menu_from_results_cb$"),
             # Fallback for any other callback in SHOWING_RESULTS, likely an old answer button if message not edited properly
             CallbackQueryHandler(handle_quiz_answer_wrapper) 
         ],
@@ -492,7 +492,7 @@ quiz_conv_handler = ConversationHandler(
     fallbacks=[
         CommandHandler("start", start_command_fallback_for_quiz),
         # General main menu fallback if user clicks a generic main menu button during quiz setup stages
-        CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^main_menu$"), 
+        CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^quiz_action_main_menu$"), 
     ],
     persistent=False, # Recommended to be False for in-memory ConversationHandlers
     name="quiz_conversation",
