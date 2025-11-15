@@ -55,9 +55,7 @@ users_table = Table(
     Column("phone", Text, nullable=True), # Added for registration
     Column("grade", Text, nullable=True), # Added for registration
     Column("full_name", Text, nullable=True), # Added for registration
-    Column("is_registered", Boolean, default=False, nullable=True), # Added for registration
-    Column("last_activity", TIMESTAMP(timezone=False), nullable=True), # Added for tracking user activity
-    Column("registration_date", TIMESTAMP(timezone=False), nullable=True) # Added for registration tracking
+    Column("is_registered", Boolean, default=False, nullable=True) # Added for registration
 )
 
 # Quiz Session Data Table (as per user's original psycopg2 version)
