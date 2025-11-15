@@ -484,7 +484,7 @@ quiz_conv_handler = ConversationHandler(
         SHOWING_RESULTS: [
             CallbackQueryHandler(handle_restart_quiz_from_results_cb, pattern="^quiz_action_restart_quiz_cb$"),
             CallbackQueryHandler(handle_show_stats_from_results_cb, pattern="^quiz_action_show_stats_cb$"),
-            CallbackQueryHandler(handle_main_menu_from_results_callback_data="main_menu"),
+            CallbackQueryHandler(handle_main_menu_from_results_cb, pattern="^main_menu$"),
             # Fallback for any other callback in SHOWING_RESULTS, likely an old answer button if message not edited properly
             CallbackQueryHandler(handle_quiz_answer_wrapper) 
         ],
