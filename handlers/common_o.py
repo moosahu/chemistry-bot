@@ -265,8 +265,7 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
                     parse_mode="Markdown"
                 )
             return MAIN_MENU # Stay in MAIN_MENU state, next interaction (back button) will be handled by this same callback
-        elif data == "main_menu" or data == "quiz_action_main_menu": 
-            # معالجة زر القائمة الرئيسية من أي مكان (بما في ذلك قوائم الاختبارات)
+        elif data == "main_menu": 
             state_to_return = MAIN_MENU
         else:
             logger.warning(f"Unknown main menu callback data: '{data}' in main_menu_callback")
