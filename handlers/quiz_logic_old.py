@@ -139,9 +139,9 @@ class QuizLogic:
             
             button_text_final = button_text_for_keyboard.strip()
             if not button_text_final: button_text_final = f"خيار {i+1}"
-            
-            # إزالة القص - كل زر في صف منفصل يعطي مساحة أكبر لعرض النص
-            # تليجرام سيتعامل مع النص حسب عرض الشاشة
+            if len(button_text_final.encode('utf-8')) > 60:
+                temp_bytes = button_text_final.encode('utf-8')[:57]
+                button_text_final = temp_bytes.decode('utf-8', 'ignore') + "..."
             
             callback_data = f"answer_{self.quiz_id}_{self.current_question_index}_{option_id}"
             keyboard_buttons.append([InlineKeyboardButton(text=button_text_final, callback_data=callback_data)])
