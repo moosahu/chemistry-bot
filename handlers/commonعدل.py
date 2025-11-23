@@ -30,7 +30,6 @@ except ImportError as e:
     class DummyDBManager:
         def register_or_update_user(*args, **kwargs): logger.warning("Dummy DB_MANAGER.register_or_update_user called"); return True
         def is_user_admin(*args, **kwargs): logger.warning("Dummy DB_MANAGER.is_user_admin called"); return False
-        def get_user_info(*args, **kwargs): logger.warning("Dummy DB_MANAGER.get_user_info called"); return None
     DB_MANAGER = DummyDBManager()
 
 def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
