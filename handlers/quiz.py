@@ -6,6 +6,7 @@ Conversation handler for the quiz selection and execution flow.
 import logging
 import random
 import uuid # For quiz_instance_id
+import asyncio # For async sleep in resume_saved_quiz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     CallbackContext,
