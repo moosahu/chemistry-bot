@@ -331,14 +331,13 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
     
-    # إضافة معالجات الاختبارات المحفوظة
+    # إضافة معالج عرض الاختبارات المحفوظة (resume_saved_quiz موجود في quiz_conv_handler)
     try:
-        from handlers.quiz import show_saved_quizzes_menu, resume_saved_quiz
+        from handlers.quiz import show_saved_quizzes_menu
         application.add_handler(CallbackQueryHandler(show_saved_quizzes_menu, pattern="^show_saved_quizzes$"))
-        application.add_handler(CallbackQueryHandler(resume_saved_quiz, pattern="^resume_quiz_"))
-        logger.info("Saved quizzes handlers (show_saved_quizzes_menu, resume_saved_quiz) added successfully.")
+        logger.info("Saved quizzes handler (show_saved_quizzes_menu) added successfully.")
     except ImportError as e:
-        logger.warning(f"Could not import saved quizzes handlers: {e}. Resume quiz feature will not be available.")
+        logger.warning(f"Could not import saved quizzes handler: {e}. Resume quiz feature will not be available.")
 
     if new_admin_tools_loaded:
         logger.info("Adding new admin tools (edit/broadcast) ConversationHandlers...")

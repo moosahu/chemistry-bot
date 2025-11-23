@@ -562,7 +562,10 @@ async def handle_main_menu_from_results_cb(update: Update, context: CallbackCont
     return ConversationHandler.END
 
 quiz_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$")],
+    entry_points=[
+        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"),
+        CallbackQueryHandler(resume_saved_quiz, pattern="^resume_quiz_")
+    ],
     states={
         SELECT_QUIZ_TYPE: [
             CallbackQueryHandler(select_quiz_type_handler, pattern="^quiz_type_|^quiz_action_main_menu$|^quiz_action_back_to_type_selection$")
