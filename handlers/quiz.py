@@ -561,48 +561,6 @@ async def handle_main_menu_from_results_cb(update: Update, context: CallbackCont
     await main_menu_callback(update, context)
     return ConversationHandler.END
 
-quiz_conv_handler = ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"),
-        CallbackQueryHandler(resume_saved_quiz, pattern="^resume_quiz_")
-    ],
-    states={
-        SELECT_QUIZ_TYPE: [
-            CallbackQueryHandler(select_quiz_type_handler, pattern="^quiz_type_|^quiz_action_main_menu$|^quiz_action_back_to_type_selection$")
-        ],
-        SELECT_COURSE_FOR_RANDOM_QUIZ: [
-            CallbackQueryHandler(select_course_for_random_quiz_handler, pattern="^quiz_random_course_select_|^quiz_random_course_page_|^quiz_action_back_to_type_selection$")
-        ],
-        SELECT_COURSE_FOR_UNIT_QUIZ: [
-            CallbackQueryHandler(select_course_for_unit_quiz_handler, pattern="^quiz_course_select_|^quiz_course_page_|^quiz_action_back_to_type_selection$")
-        ],
-        SELECT_UNIT_FOR_COURSE: [
-            CallbackQueryHandler(select_unit_for_course_handler, pattern="^quiz_unit_select_|^quiz_unit_page_|^quiz_action_back_to_course_selection_")
-        ],
-        ENTER_QUESTION_COUNT: [
-            CallbackQueryHandler(enter_question_count_handler, pattern="^num_questions_|^quiz_action_back_to_unit_selection_|^quiz_action_back_to_type_selection$|^quiz_action_back_to_course_selection_")
-        ],
-        TAKING_QUIZ: [
-            CallbackQueryHandler(handle_quiz_answer_wrapper) 
-        ],
-        SHOWING_RESULTS: [
-            CallbackQueryHandler(handle_restart_quiz_from_results_cb, pattern="^quiz_action_restart_quiz_cb$"),
-            CallbackQueryHandler(handle_show_stats_from_results_cb, pattern="^quiz_action_show_stats_cb$"),
-            CallbackQueryHandler(handle_main_menu_from_results_cb, pattern="^quiz_action_main_menu$"),
-            # Fallback for any other callback in SHOWING_RESULTS, likely an old answer button if message not edited properly
-            CallbackQueryHandler(handle_quiz_answer_wrapper) 
-        ],
-    },
-    fallbacks=[
-        CommandHandler("start", start_command_fallback_for_quiz),
-        # General main menu fallback if user clicks a generic main menu button during quiz setup stages
-        CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^quiz_action_main_menu$"), 
-    ],
-    persistent=False, # Recommended to be False for in-memory ConversationHandlers
-    name="quiz_conversation",
-    allow_reentry=True # Important for restarting quiz from results
-)
-
 # واجهة استكمال الاختبارات المحفوظة
 
 async def show_saved_quizzes_menu(update: Update, context: CallbackContext) -> int:
@@ -732,3 +690,45 @@ async def resume_saved_quiz(update: Update, context: CallbackContext) -> int:
     
     # إرجاع حالة TAKING_QUIZ لتفعيل معالجات الإجابات
     return TAKING_QUIZ
+
+quiz_conv_handler = ConversationHandler(
+    entry_points=[
+        CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"),
+        CallbackQueryHandler(resume_saved_quiz, pattern="^resume_quiz_")
+    ],
+    states={
+        SELECT_QUIZ_TYPE: [
+            CallbackQueryHandler(select_quiz_type_handler, pattern="^quiz_type_|^quiz_action_main_menu$|^quiz_action_back_to_type_selection$")
+        ],
+        SELECT_COURSE_FOR_RANDOM_QUIZ: [
+            CallbackQueryHandler(select_course_for_random_quiz_handler, pattern="^quiz_random_course_select_|^quiz_random_course_page_|^quiz_action_back_to_type_selection$")
+        ],
+        SELECT_COURSE_FOR_UNIT_QUIZ: [
+            CallbackQueryHandler(select_course_for_unit_quiz_handler, pattern="^quiz_course_select_|^quiz_course_page_|^quiz_action_back_to_type_selection$")
+        ],
+        SELECT_UNIT_FOR_COURSE: [
+            CallbackQueryHandler(select_unit_for_course_handler, pattern="^quiz_unit_select_|^quiz_unit_page_|^quiz_action_back_to_course_selection_")
+        ],
+        ENTER_QUESTION_COUNT: [
+            CallbackQueryHandler(enter_question_count_handler, pattern="^num_questions_|^quiz_action_back_to_unit_selection_|^quiz_action_back_to_type_selection$|^quiz_action_back_to_course_selection_")
+        ],
+        TAKING_QUIZ: [
+            CallbackQueryHandler(handle_quiz_answer_wrapper) 
+        ],
+        SHOWING_RESULTS: [
+            CallbackQueryHandler(handle_restart_quiz_from_results_cb, pattern="^quiz_action_restart_quiz_cb$"),
+            CallbackQueryHandler(handle_show_stats_from_results_cb, pattern="^quiz_action_show_stats_cb$"),
+            CallbackQueryHandler(handle_main_menu_from_results_cb, pattern="^quiz_action_main_menu$"),
+            # Fallback for any other callback in SHOWING_RESULTS, likely an old answer button if message not edited properly
+            CallbackQueryHandler(handle_quiz_answer_wrapper) 
+        ],
+    },
+    fallbacks=[
+        CommandHandler("start", start_command_fallback_for_quiz),
+        # General main menu fallback if user clicks a generic main menu button during quiz setup stages
+        CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^quiz_action_main_menu$"), 
+    ],
+    persistent=False, # Recommended to be False for in-memory ConversationHandlers
+    name="quiz_conversation",
+    allow_reentry=True # Important for restarting quiz from results
+)
