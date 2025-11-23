@@ -1,9 +1,0 @@
-python-telegram-bot[job-queue]>=20.7
-pandas
-psycopg2-binary
-openpyxl
-requests
-matplotlib
-arabic_reshaper
-python-bidi
-SQLAlchemy

@@ -25,9 +25,6 @@ from config import (
     DEFAULT_QUESTION_TIME_LIMIT,
     STATS_MENU # MANUS_MODIFIED_V6: Added STATS_MENU for returning state
 )
-
-# إضافة حالة جديدة لاختيار المقرر للاختبار العشوائي
-SELECT_COURSE_FOR_RANDOM_QUIZ = 100
 from utils.helpers import safe_send_message, safe_edit_message_text, get_quiz_type_string, remove_job_if_exists
 from utils.api_client import fetch_from_api, transform_api_question 
 # MANUS_MODIFIED_V6: Removed problematic import of stats_menu_callback
@@ -55,10 +52,7 @@ async def _cleanup_quiz_session_data(user_id: int, chat_id: int, context: Callba
         "current_course_page_for_unit_quiz", "selected_course_name_for_unit_quiz",
         "available_units_for_course", "current_unit_page_for_course",
         "selected_unit_id", "selected_unit_name", "question_count_for_quiz",
-        f"quiz_setup_{QUIZ_TYPE_ALL}_all",
-        "available_courses_for_random_quiz", "current_course_page_for_random_quiz",
-        "selected_course_id_for_random_quiz", "selected_course_name_for_random_quiz",
-        "selected_quiz_scope_id",
+        f"quiz_setup_{QUIZ_TYPE_ALL}_all", 
     ]
     for key in keys_to_pop:
         if key in context.user_data:
@@ -96,29 +90,23 @@ async def go_to_main_menu_from_quiz(update: Update, context: CallbackContext) ->
 def create_quiz_type_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("🎲 اختبار عشوائي شامل (كل المقررات)", callback_data=f"quiz_type_{QUIZ_TYPE_ALL}")],
-        [InlineKeyboardButton("📖 اختبار عشوائي حسب المقرر", callback_data="quiz_type_random_course")],
         [InlineKeyboardButton("📚 حسب الوحدة الدراسية (اختر المقرر ثم الوحدة)", callback_data=f"quiz_type_{QUIZ_TYPE_UNIT}")],
         [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")] 
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def create_course_selection_keyboard(courses: list, current_page: int = 0, for_random_quiz: bool = False) -> InlineKeyboardMarkup:
+def create_course_selection_keyboard(courses: list, current_page: int = 0) -> InlineKeyboardMarkup:
     keyboard = []
     start_index = current_page * ITEMS_PER_PAGE
     end_index = start_index + ITEMS_PER_PAGE
     for i in range(start_index, min(end_index, len(courses))):
         course = courses[i]
-        if for_random_quiz:
-            keyboard.append([InlineKeyboardButton(course.get("name", f"مقرر {course.get('id')}"), callback_data=f"quiz_random_course_select_{course.get('id')}")])  
-        else:
-            keyboard.append([InlineKeyboardButton(course.get("name", f"مقرر {course.get('id')}"), callback_data=f"quiz_course_select_{course.get('id')}")])
+        keyboard.append([InlineKeyboardButton(course.get("name", f"مقرر {course.get('id')}"), callback_data=f"quiz_course_select_{course.get('id')}")])
     pagination_buttons = []
     if current_page > 0:
-        page_callback = f"quiz_random_course_page_{current_page - 1}" if for_random_quiz else f"quiz_course_page_{current_page - 1}"
-        pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=page_callback))
+        pagination_buttons.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"quiz_course_page_{current_page - 1}"))
     if end_index < len(courses):
-        page_callback = f"quiz_random_course_page_{current_page + 1}" if for_random_quiz else f"quiz_course_page_{current_page + 1}"
-        pagination_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=page_callback))
+        pagination_buttons.append(InlineKeyboardButton("التالي ➡️", callback_data=f"quiz_course_page_{current_page + 1}"))
     if pagination_buttons:
         keyboard.append(pagination_buttons)
     keyboard.append([InlineKeyboardButton("🔙 اختيار نوع الاختبار", callback_data="quiz_action_back_to_type_selection")])
@@ -226,21 +214,6 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, f"اختر عدد الأسئلة لاختبار '{quiz_type_display_name}': (المتاح: {max_q})", kbd)
         return ENTER_QUESTION_COUNT
 
-    elif quiz_type_key == "random_course":
-        # اختبار عشوائي حسب المقرر
-        courses = fetch_from_api("api/v1/courses")
-        if courses == "TIMEOUT":
-            await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
-            return SELECT_QUIZ_TYPE
-        if not courses or not isinstance(courses, list) or not courses:
-            await safe_edit_message_text(context.bot, chat_id, query.message.message_id, error_text_no_data("مقررات دراسية"), create_quiz_type_keyboard())
-            return SELECT_QUIZ_TYPE
-        context.user_data["available_courses_for_random_quiz"] = courses
-        context.user_data["current_course_page_for_random_quiz"] = 0
-        kbd = create_course_selection_keyboard(courses, 0, for_random_quiz=True)
-        await safe_edit_message_text(context.bot, chat_id, query.message.message_id, "اختر المقرر للاختبار العشوائي:", kbd)
-        return SELECT_COURSE_FOR_RANDOM_QUIZ
-        
     elif quiz_type_key == QUIZ_TYPE_UNIT:
         courses = fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
@@ -257,64 +230,6 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
     else:
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, "نوع اختبار غير صالح.", create_quiz_type_keyboard())
         return SELECT_QUIZ_TYPE
-
-async def select_course_for_random_quiz_handler(update: Update, context: CallbackContext) -> int:
-    """معالج اختيار المقرر للاختبار العشوائي"""
-    query = update.callback_query
-    user_id = query.from_user.id
-    chat_id = query.message.chat_id
-    await query.answer()
-    callback_data = query.data
-    context.user_data[f"last_quiz_interaction_message_id_{chat_id}"] = query.message.message_id
-
-    # العودة لاختيار نوع الاختبار
-    if callback_data == "quiz_action_back_to_type_selection":
-        keyboard = create_quiz_type_keyboard()
-        await safe_edit_message_text(context.bot, chat_id, query.message.message_id, "🧠 اختر نوع الاختبار:", keyboard)
-        return SELECT_QUIZ_TYPE
-
-    # التنقل بين صفحات المقررات
-    if callback_data.startswith("quiz_random_course_page_"):
-        page = int(callback_data.split("_")[-1])
-        context.user_data["current_course_page_for_random_quiz"] = page
-        courses = context.user_data["available_courses_for_random_quiz"]
-        kbd = create_course_selection_keyboard(courses, page, for_random_quiz=True)
-        await safe_edit_message_text(context.bot, chat_id, query.message.message_id, "اختر المقرر للاختبار العشوائي:", kbd)
-        return SELECT_COURSE_FOR_RANDOM_QUIZ
-
-    # اختيار المقرر
-    selected_course_id = callback_data.replace("quiz_random_course_select_", "", 1)
-    context.user_data["selected_course_id_for_random_quiz"] = selected_course_id
-    courses = context.user_data.get("available_courses_for_random_quiz", [])
-    selected_course_name = next((c.get("name") for c in courses if str(c.get("id")) == str(selected_course_id)), "مقرر غير معروف")
-    context.user_data["selected_course_name_for_random_quiz"] = selected_course_name
-
-    # جلب جميع الأسئلة للمقرر
-    api_response = fetch_from_api(f"api/v1/courses/{selected_course_id}/questions")
-    api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
-    
-    if api_response == "TIMEOUT":
-        await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, 
-                                     create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_random_quiz", 0), for_random_quiz=True))
-        return SELECT_COURSE_FOR_RANDOM_QUIZ
-    
-    if not api_response or not isinstance(api_response, list):
-        await safe_edit_message_text(context.bot, chat_id, query.message.message_id, 
-                                     f"لا توجد أسئلة متاحة للمقرر '{selected_course_name}'.", 
-                                     create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_random_quiz", 0), for_random_quiz=True))
-        return SELECT_COURSE_FOR_RANDOM_QUIZ
-
-    # حفظ الأسئلة
-    context.user_data["questions_for_quiz"] = api_response
-    context.user_data["selected_quiz_scope_id"] = selected_course_id
-    context.user_data["selected_quiz_type_key"] = "random_course"
-    context.user_data["selected_quiz_type_display_name"] = f"اختبار عشوائي - {selected_course_name}"
-    
-    max_q = len(api_response)
-    kbd = create_question_count_keyboard(max_q, "random_course", unit_id=selected_course_id, course_id_for_unit=selected_course_id)
-    await safe_edit_message_text(context.bot, chat_id, query.message.message_id, 
-                                 f"اختر عدد الأسئلة لاختبار '{selected_course_name}': (المتاح: {max_q})", kbd)
-    return ENTER_QUESTION_COUNT
 
 async def select_course_for_unit_quiz_handler(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -475,9 +390,6 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
     if quiz_type == QUIZ_TYPE_UNIT:
         quiz_name_parts.append(context.user_data.get("selected_course_name_for_unit_quiz", ""))
         quiz_name_parts.append(context.user_data.get("selected_unit_name", ""))
-    elif quiz_type == "random_course":
-        # اسم المقرر موجود بالفعل في selected_quiz_type_display_name
-        pass
     quiz_display_name = " - ".join(filter(None, quiz_name_parts))
 
     quiz_logic_instance = QuizLogic(
@@ -556,9 +468,6 @@ quiz_conv_handler = ConversationHandler(
     states={
         SELECT_QUIZ_TYPE: [
             CallbackQueryHandler(select_quiz_type_handler, pattern="^quiz_type_|^quiz_action_main_menu$|^quiz_action_back_to_type_selection$")
-        ],
-        SELECT_COURSE_FOR_RANDOM_QUIZ: [
-            CallbackQueryHandler(select_course_for_random_quiz_handler, pattern="^quiz_random_course_select_|^quiz_random_course_page_|^quiz_action_back_to_type_selection$")
         ],
         SELECT_COURSE_FOR_UNIT_QUIZ: [
             CallbackQueryHandler(select_course_for_unit_quiz_handler, pattern="^quiz_course_select_|^quiz_course_page_|^quiz_action_back_to_type_selection$")
