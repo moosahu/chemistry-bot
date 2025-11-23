@@ -519,13 +519,19 @@ class QuizLogic:
         # إيقاف الاختبار مؤقتاً (لا نغلقه تماماً)
         self.active = False
         
-        # إرسال رسالة تأكيد
-        from handlers.common import main_menu_callback
+        # إرسال رسالة تأكيد مع أزرار القائمة الرئيسية
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = [
+            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")],
+            [InlineKeyboardButton("📚 استكمال الاختبار", callback_data="show_saved_quizzes")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await safe_send_message(context.bot, self.chat_id, 
-                               "✅ تم حفظ الاختبار بنجاح!\n\nيمكنك استكماله في أي وقت من خلال اختيار 'استكمال الاختبار' من القائمة الرئيسية.")
+                               "✅ تم حفظ الاختبار بنجاح!\n\nيمكنك استكماله في أي وقت من خلال الضغط على الزر أدناه.",
+                               reply_markup)
         
         # العودة للقائمة الرئيسية
-        await main_menu_callback(update, context)
         return ConversationHandler.END
 
     
