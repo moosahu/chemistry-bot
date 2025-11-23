@@ -316,7 +316,6 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
         return ConversationHandler.END
     sent_count = 0
     failed_count = 0
-    failed_users = []  # قائمة لتخزين معلومات المستخدمين الذين فشل الإرسال لهم
 
     logger = logging.getLogger(__name__)
     logger.info(f"Broadcasting to user_ids: {user_ids}")
@@ -331,18 +330,8 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
         except Exception as e:
             logger.warning(f"Failed to send broadcast to {user_id}: {e}")
             failed_count += 1
-            failed_users.append({"user_id": user_id, "error": str(e)})  # تخزين معلومات المستخدم والخطأ
     
-    # إنشاء رسالة النتيجة
-    result_message = f"اكتمل الإرسال.\nتم الإرسال بنجاح إلى: {sent_count} مستخدم.\nفشل الإرسال لـ: {failed_count} مستخدم."
-    
-    # إضافة تفاصيل المستخدمين الفاشلين إذا كان هناك فشل
-    if failed_users:
-        result_message += "\n\n📋 قائمة المستخدمين الذين فشل الإرسال لهم:\n"
-        for idx, failed_user in enumerate(failed_users, 1):
-            result_message += f"{idx}. User ID: {failed_user['user_id']}\n   الخطأ: {failed_user['error'][:100]}...\n"  # عرض أول 100 حرف من الخطأ
-    
-    await query.message.reply_text(result_message)
+    await query.message.reply_text(f"اكتمل الإرسال.\nتم الإرسال بنجاح إلى: {sent_count} مستخدم.\nفشل الإرسال لـ: {failed_count} مستخدم.")
     
     del context.user_data["broadcast_text"]
     # Show admin tools menu again
