@@ -708,4 +708,7 @@ async def resume_saved_quiz(update: Update, context: CallbackContext) -> int:
     await asyncio.sleep(1)
     
     # بدء الاختبار من السؤال الحالي
-    return await quiz_logic_instance.send_question(context.bot, context)
+    await quiz_logic_instance.send_question(context.bot, context)
+    
+    # إرجاع حالة TAKING_QUIZ لتفعيل معالجات الإجابات
+    return TAKING_QUIZ
