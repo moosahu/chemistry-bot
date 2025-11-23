@@ -479,12 +479,6 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
         # اسم المقرر موجود بالفعل في selected_quiz_type_display_name
         pass
     quiz_display_name = " - ".join(filter(None, quiz_name_parts))
-    
-    # تحديد إذا كان الاختبار قابل للحفظ والاستكمال
-    # يكون قابل للحفظ فقط عندما يختار "الكل" في الاختبارات العشوائية
-    is_resumable = False
-    if quiz_type in [QUIZ_TYPE_ALL, "random_course"] and num_questions_str == "all":
-        is_resumable = True
 
     quiz_logic_instance = QuizLogic(
         user_id=user_id, chat_id=chat_id,
@@ -493,8 +487,7 @@ async def enter_question_count_handler(update: Update, context: CallbackContext)
         quiz_scope_id=context.user_data.get("selected_quiz_scope_id", "unknown"),
         total_questions_for_db_log=len(transformed_questions),
         time_limit_per_question=DEFAULT_QUESTION_TIME_LIMIT,
-        quiz_instance_id_for_logging=quiz_instance_id,
-        is_resumable=is_resumable
+        quiz_instance_id_for_logging=quiz_instance_id
     )
     context.user_data[f"quiz_logic_instance_{user_id}"] = quiz_logic_instance
     
@@ -520,8 +513,6 @@ async def handle_quiz_answer_wrapper(update: Update, context: CallbackContext) -
             return await quiz_logic_instance.handle_skip_question(update, context, query.data)
         elif query.data.startswith("end_"):
             return await quiz_logic_instance.handle_end_quiz(update, context, query.data)
-        elif query.data.startswith("save_exit_"):
-            return await quiz_logic_instance.handle_save_and_exit(update, context, query.data)
         else:
             return await quiz_logic_instance.handle_answer(update, context, query.data)
     else: 
@@ -599,112 +590,3 @@ quiz_conv_handler = ConversationHandler(
     allow_reentry=True # Important for restarting quiz from results
 )
 
-# واجهة استكمال الاختبارات المحفوظة
-
-async def show_saved_quizzes_menu(update: Update, context: CallbackContext) -> int:
-    """عرض قائمة الاختبارات المحفوظة"""
-    query = update.callback_query if update.callback_query else None
-    if query:
-        await query.answer()
-    
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-    
-    saved_quizzes = context.user_data.get("saved_quizzes", {})
-    
-    if not saved_quizzes:
-        text = "📭 لا توجد اختبارات محفوظة حالياً.\n\nيمكنك حفظ اختبار عند اختيار 'جميع الأسئلة' في الاختبارات العشوائية."
-        keyboard = [[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        if query:
-            await safe_edit_message_text(context.bot, chat_id, query.message.message_id, text, reply_markup)
-        else:
-            await safe_send_message(context.bot, chat_id, text, reply_markup)
-        return MAIN_MENU
-    
-    # إنشاء قائمة بالاختبارات المحفوظة
-    keyboard = []
-    for quiz_id, quiz_data in saved_quizzes.items():
-        quiz_name = quiz_data.get("quiz_name", "اختبار غير مسمى")
-        current_q = quiz_data.get("current_question_index", 0)
-        total_q = quiz_data.get("total_questions", 0)
-        progress = f"({current_q}/{total_q})"
-        
-        button_text = f"📝 {quiz_name} {progress}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"resume_quiz_{quiz_id}")])
-    
-    keyboard.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    text = "📚 الاختبارات المحفوظة:\n\nاختر اختباراً لاستكماله:"
-    
-    if query:
-        await safe_edit_message_text(context.bot, chat_id, query.message.message_id, text, reply_markup)
-    else:
-        await safe_send_message(context.bot, chat_id, text, reply_markup)
-    
-    return MAIN_MENU
-
-
-async def resume_saved_quiz(update: Update, context: CallbackContext) -> int:
-    """استكمال اختبار محفوظ"""
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    chat_id = query.message.chat_id
-    
-    # استخراج معرف الاختبار من callback_data
-    quiz_id = query.data.replace("resume_quiz_", "")
-    
-    saved_quizzes = context.user_data.get("saved_quizzes", {})
-    
-    if quiz_id not in saved_quizzes:
-        await safe_edit_message_text(context.bot, chat_id, query.message.message_id, 
-                                     "❌ الاختبار المحفوظ غير موجود أو تم حذفه.",
-                                     InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="show_saved_quizzes")]]))
-        return MAIN_MENU
-    
-    saved_quiz_data = saved_quizzes[quiz_id]
-    
-    # إعادة بناء QuizLogic من البيانات المحفوظة
-    from datetime import datetime, timezone
-    
-    quiz_logic_instance = QuizLogic(
-        user_id=user_id,
-        chat_id=chat_id,
-        questions=saved_quiz_data["questions_data"],
-        quiz_name=saved_quiz_data["quiz_name"],
-        quiz_type_for_db_log=saved_quiz_data["quiz_type"],
-        quiz_scope_id=saved_quiz_data["quiz_scope_id"],
-        total_questions_for_db_log=saved_quiz_data["total_questions"],
-        time_limit_per_question=DEFAULT_QUESTION_TIME_LIMIT,
-        quiz_instance_id_for_logging=quiz_id,
-        is_resumable=True
-    )
-    
-    # استعادة الحالة
-    quiz_logic_instance.current_question_index = saved_quiz_data["current_question_index"]
-    quiz_logic_instance.score = saved_quiz_data["score"]
-    quiz_logic_instance.answers = saved_quiz_data["answers"]
-    quiz_logic_instance.active = True
-    quiz_logic_instance.db_quiz_session_id = saved_quiz_data.get("db_quiz_session_id")
-    
-    if saved_quiz_data.get("quiz_start_time"):
-        quiz_logic_instance.quiz_actual_start_time_dt = datetime.fromisoformat(saved_quiz_data["quiz_start_time"])
-    
-    # حفظ instance في context
-    context.user_data[f"quiz_logic_instance_{user_id}"] = quiz_logic_instance
-    
-    # حذف الاختبار من القائمة المحفوظة (سيتم حفظه مرة أخرى إذا اختار الحفظ)
-    del saved_quizzes[quiz_id]
-    
-    # إرسال رسالة ترحيب
-    await safe_edit_message_text(context.bot, chat_id, query.message.message_id,
-                                 f"✅ تم استعادة الاختبار!\n\n📝 {saved_quiz_data['quiz_name']}\n📊 التقدم: {saved_quiz_data['current_question_index']}/{saved_quiz_data['total_questions']}\n\nسيتم عرض السؤال التالي...")
-    
-    await asyncio.sleep(1)
-    
-    # بدء الاختبار من السؤال الحالي
-    return await quiz_logic_instance.send_question(context.bot, context)

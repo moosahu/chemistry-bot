@@ -36,7 +36,6 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard."""
     keyboard = [
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
-        [InlineKeyboardButton("📚 استكمال الاختبار", callback_data="show_saved_quizzes")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
         [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
@@ -227,20 +226,7 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
             logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Transitioning to QUIZ_MENU state for quiz handler.")
             # This will be handled by the quiz ConversationHandler's entry point
             # Returning QUIZ_MENU which should be the entry state for quiz selection flow
-            return QUIZ_MENU
-        elif data == "show_saved_quizzes":
-            logger.debug(f"Callback 'show_saved_quizzes' received. Redirecting to saved quizzes menu.")
-            # Import the handler from quiz.py
-            try:
-                from handlers.quiz import show_saved_quizzes_menu
-            except ImportError:
-                try:
-                    from quiz import show_saved_quizzes_menu
-                except ImportError as e:
-                    logger.error(f"Error importing show_saved_quizzes_menu: {e}")
-                    await query.answer("حدث خطأ في الوصول للاختبارات المحفوظة")
-                    return MAIN_MENU
-            return await show_saved_quizzes_menu(update, context)
+            return QUIZ_MENU 
         elif data == "menu_info": 
             state_to_return = INFO_MENU
         elif data == "menu_stats": 

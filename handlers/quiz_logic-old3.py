@@ -35,7 +35,7 @@ class QuizLogic:
 
     def __init__(self, user_id, chat_id, questions, quiz_name,
                  quiz_type_for_db_log, quiz_scope_id, total_questions_for_db_log,
-                 time_limit_per_question, quiz_instance_id_for_logging, is_resumable=False):
+                 time_limit_per_question, quiz_instance_id_for_logging):
         
         self.user_id = user_id
         self.chat_id = chat_id
@@ -61,7 +61,6 @@ class QuizLogic:
         self.sent_option_image_message_ids = [] # IDs of messages sent for image options
         self.active = False
         self.db_quiz_session_id = None
-        self.is_resumable = is_resumable  # إمكانية حفظ واستكمال الاختبار
 
         if not self.db_manager:
             logger.critical(f"[QuizLogic {self.quiz_id}] CRITICAL: Imported DB_MANAGER is None! DB ops will fail.")
@@ -158,14 +157,7 @@ class QuizLogic:
         # إضافة زر تخطي السؤال وزر إنهاء الاختبار
         skip_button = InlineKeyboardButton(text="⏭️ تخطي السؤال", callback_data=f"skip_{self.quiz_id}_{self.current_question_index}")
         end_button = InlineKeyboardButton(text="❌ إنهاء الاختبار", callback_data=f"end_{self.quiz_id}_{self.current_question_index}")
-        
-        # إضافة زر حفظ والخروج للاختبارات القابلة للاستكمال
-        if self.is_resumable:
-            save_button = InlineKeyboardButton(text="💾 حفظ والخروج", callback_data=f"save_exit_{self.quiz_id}_{self.current_question_index}")
-            keyboard_buttons.append([skip_button, save_button])
-            keyboard_buttons.append([end_button])
-        else:
-            keyboard_buttons.append([skip_button, end_button])
+        keyboard_buttons.append([skip_button, end_button])
             
         return InlineKeyboardMarkup(keyboard_buttons), displayable_options
 
@@ -463,71 +455,6 @@ class QuizLogic:
         
         # عرض النتائج
         return await self.show_results(context.bot, context)
-    async def handle_save_and_exit(self, update: Update, context: CallbackContext, callback_data: str) -> int:
-        """معالجة حفظ الاختبار والخروج للاستكمال لاحقاً"""
-        if not self.active:
-            return END
-            
-        query = update.callback_query
-        await query.answer("جاري حفظ الاختبار...")
-        
-        # حفظ حالة الاختبار في context.user_data
-        saved_quiz_data = {
-            "quiz_id": self.quiz_id,
-            "quiz_name": self.quiz_name,
-            "quiz_type": self.quiz_type_for_db,
-            "quiz_scope_id": self.quiz_scope_id_for_db,
-            "questions_data": self.questions_data,
-            "current_question_index": self.current_question_index,
-            "score": self.score,
-            "answers": self.answers,
-            "total_questions": self.total_questions,
-            "quiz_start_time": self.quiz_actual_start_time_dt.isoformat() if self.quiz_actual_start_time_dt else None,
-            "db_quiz_session_id": self.db_quiz_session_id,
-            "saved_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        # حفظ البيانات في user_data
-        if "saved_quizzes" not in context.user_data:
-            context.user_data["saved_quizzes"] = {}
-        
-        context.user_data["saved_quizzes"][self.quiz_id] = saved_quiz_data
-        
-        # إلغاء المؤقتات
-        question_timer_job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
-        remove_job_if_exists(question_timer_job_name, context)
-        
-        update_timer_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
-        remove_job_if_exists(update_timer_job_name, context)
-        
-        # تعديل رسالة السؤال
-        current_question_data = self.questions_data[self.current_question_index]
-        q_text = current_question_data.get('question_text', 'سؤال غير متوفر')
-        
-        if self.last_question_message_id:
-            try:
-                saved_text = f"<s>{q_text}</s>\n\n💾 <b>تم حفظ الاختبار</b>\nيمكنك استكماله لاحقاً من القائمة الرئيسية"
-                if current_question_data.get("image_url"):
-                    await safe_edit_message_caption(context.bot, self.chat_id, self.last_question_message_id, 
-                                                   caption=saved_text, reply_markup=None, parse_mode="HTML")
-                else:
-                    await safe_edit_message_text(context.bot, self.chat_id, self.last_question_message_id, 
-                                                text=saved_text, reply_markup=None, parse_mode="HTML")
-            except Exception as e:
-                logger.warning(f"[QuizLogic {self.quiz_id}] Failed to edit saved Q msg: {e}")
-        
-        # إيقاف الاختبار مؤقتاً (لا نغلقه تماماً)
-        self.active = False
-        
-        # إرسال رسالة تأكيد
-        from handlers.common import main_menu_callback
-        await safe_send_message(context.bot, self.chat_id, 
-                               "✅ تم حفظ الاختبار بنجاح!\n\nيمكنك استكماله في أي وقت من خلال اختيار 'استكمال الاختبار' من القائمة الرئيسية.")
-        
-        # العودة للقائمة الرئيسية
-        await main_menu_callback(update, context)
-        return ConversationHandler.END
-
     
     async def handle_answer(self, update: Update, context: CallbackContext, callback_data: str) -> int:
         query = update.callback_query
