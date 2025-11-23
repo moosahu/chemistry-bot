@@ -487,11 +487,16 @@ class QuizLogic:
             "saved_at": datetime.now(timezone.utc).isoformat()
         }
         
-        # حفظ البيانات في user_data
-        if "saved_quizzes" not in context.user_data:
-            context.user_data["saved_quizzes"] = {}
-        
-        context.user_data["saved_quizzes"][self.quiz_id] = saved_quiz_data
+        # حفظ البيانات في قاعدة البيانات
+        try:
+            from database.saved_quizzes_db import save_quiz_to_db
+            save_success = save_quiz_to_db(self.user_id, saved_quiz_data)
+            if save_success:
+                logger.info(f"[QuizLogic {self.quiz_id}] تم حفظ الاختبار في قاعدة البيانات بنجاح")
+            else:
+                logger.error(f"[QuizLogic {self.quiz_id}] فشل حفظ الاختبار في قاعدة البيانات")
+        except Exception as e:
+            logger.error(f"[QuizLogic {self.quiz_id}] خطأ في حفظ الاختبار: {e}", exc_info=True)
         
         # إلغاء المؤقتات
         question_timer_job_name = f"question_timer_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"

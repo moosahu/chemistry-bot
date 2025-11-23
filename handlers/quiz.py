@@ -611,7 +611,13 @@ async def show_saved_quizzes_menu(update: Update, context: CallbackContext) -> i
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
-    saved_quizzes = context.user_data.get("saved_quizzes", {})
+    # استرجاع الاختبارات المحفوظة من قاعدة البيانات
+    try:
+        from database.saved_quizzes_db import get_saved_quizzes_for_user
+        saved_quizzes = get_saved_quizzes_for_user(user_id)
+    except Exception as e:
+        logger.error(f"[خطأ] فشل استرجاع الاختبارات المحفوظة من قاعدة البيانات: {e}", exc_info=True)
+        saved_quizzes = {}
     
     if not saved_quizzes:
         text = "📭 لا توجد اختبارات محفوظة حالياً.\n\nيمكنك حفظ اختبار عند اختيار 'جميع الأسئلة' في الاختبارات العشوائية."
@@ -659,7 +665,13 @@ async def resume_saved_quiz(update: Update, context: CallbackContext) -> int:
     # استخراج معرف الاختبار من callback_data
     quiz_id = query.data.replace("resume_quiz_", "")
     
-    saved_quizzes = context.user_data.get("saved_quizzes", {})
+    # استرجاع الاختبارات المحفوظة من قاعدة البيانات
+    try:
+        from database.saved_quizzes_db import get_saved_quizzes_for_user
+        saved_quizzes = get_saved_quizzes_for_user(user_id)
+    except Exception as e:
+        logger.error(f"[خطأ] فشل استرجاع الاختبارات المحفوظة: {e}", exc_info=True)
+        saved_quizzes = {}
     
     if quiz_id not in saved_quizzes:
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, 
@@ -698,8 +710,13 @@ async def resume_saved_quiz(update: Update, context: CallbackContext) -> int:
     # حفظ instance في context
     context.user_data[f"quiz_logic_instance_{user_id}"] = quiz_logic_instance
     
-    # حذف الاختبار من القائمة المحفوظة (سيتم حفظه مرة أخرى إذا اختار الحفظ)
-    del saved_quizzes[quiz_id]
+    # حذف الاختبار من قاعدة البيانات (سيتم حفظه مرة أخرى إذا اختار الحفظ)
+    try:
+        from database.saved_quizzes_db import delete_saved_quiz
+        delete_saved_quiz(quiz_id)
+        logger.info(f"[استكمال] تم حذف الاختبار {quiz_id} من قاعدة البيانات")
+    except Exception as e:
+        logger.error(f"[خطأ] فشل حذف الاختبار من قاعدة البيانات: {e}", exc_info=True)
     
     # إرسال رسالة ترحيب
     await safe_edit_message_text(context.bot, chat_id, query.message.message_id,
