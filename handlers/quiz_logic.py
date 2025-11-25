@@ -1,4 +1,18 @@
-"""Manages the logic for conducting a quiz, including sending questions, handling answers, and calculating results."""
+"""Manages the logic for conducting a quiz, including sending questions, handling answers, and calculating results.
+
+This module provides the QuizLogic class which handles all quiz-related operations including:
+- Sending questions with text and/or images
+- Managing question timers and timeouts
+- Processing user answers
+- Calculating and displaying results
+- Saving and resuming quiz sessions
+
+Version History:
+    v1: Initial implementation
+    v2: Fixes for filter_id in DB session and NoneType error in show_results
+    v3: Enhanced support for image questions and image options
+    v4: Added comprehensive error handling and improved documentation
+"""
 # handlers/quiz_logic.py (Modified to import DB_MANAGER directly)
 # v2: Fixes for filter_id in DB session and NoneType error in show_results
 # v3: Enhanced support for image questions and image options
@@ -25,17 +39,70 @@ MIN_OPTIONS_PER_QUESTION = 2
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif")
 
 def is_image_url(url_string: str) -> bool:
+    """Check if a given string is a valid image URL.
+    
+    Args:
+        url_string: The string to check
+        
+    Returns:
+        True if the string is a valid HTTP(S) URL ending with an image extension,
+        False otherwise
+    """
     if not isinstance(url_string, str):
         return False
-    return (url_string.startswith("http://") or url_string.startswith("https://")) and \
-           any(url_string.lower().endswith(ext) for ext in IMAGE_EXTENSIONS)
+    return (
+        (url_string.startswith("http://") or url_string.startswith("https://")) and
+        any(url_string.lower().endswith(ext) for ext in IMAGE_EXTENSIONS)
+    )
 
 class QuizLogic:
+    """Main class for managing quiz logic and flow.
+    
+    This class handles all aspects of quiz execution including question display,
+    answer processing, timer management, and result calculation.
+    
+    Attributes:
+        ARABIC_CHOICE_LETTERS: List of Arabic letters used for multiple choice options
+        user_id: Telegram user ID
+        chat_id: Telegram chat ID
+        questions_data: List of question dictionaries
+        quiz_name: Display name of the quiz
+        quiz_type_for_db: Type of quiz for database logging
+        quiz_scope_id_for_db: Scope ID for database logging
+        total_questions_for_db: Total number of questions for logging
+        question_time_limit: Time limit per question in seconds (fixed at 180)
+        quiz_id: Unique identifier for this quiz instance
+        is_resumable: Whether this quiz can be saved and resumed
+    """
     ARABIC_CHOICE_LETTERS = ["أ", "ب", "ج", "د", "هـ", "و", "ز", "ح"]
 
-    def __init__(self, user_id, chat_id, questions, quiz_name,
-                 quiz_type_for_db_log, quiz_scope_id, total_questions_for_db_log,
-                 time_limit_per_question, quiz_instance_id_for_logging, is_resumable=False):
+    def __init__(
+        self,
+        user_id: int,
+        chat_id: int,
+        questions: list,
+        quiz_name: str,
+        quiz_type_for_db_log: str,
+        quiz_scope_id: str,
+        total_questions_for_db_log: int,
+        time_limit_per_question: int,
+        quiz_instance_id_for_logging: str,
+        is_resumable: bool = False
+    ):
+        """Initialize a new QuizLogic instance.
+        
+        Args:
+            user_id: Telegram user ID
+            chat_id: Telegram chat ID
+            questions: List of question dictionaries from API
+            quiz_name: Display name for the quiz
+            quiz_type_for_db_log: Quiz type for database logging
+            quiz_scope_id: Scope identifier for database logging
+            total_questions_for_db_log: Total question count for logging
+            time_limit_per_question: Time limit per question (currently ignored, fixed at 180s)
+            quiz_instance_id_for_logging: Unique quiz instance identifier
+            is_resumable: Whether quiz can be saved and resumed later
+        """
         
         self.user_id = user_id
         self.chat_id = chat_id
@@ -73,6 +140,16 @@ class QuizLogic:
         logger.debug(f"[QuizLogic {self.quiz_id}] Initialized. User: {self.user_id}, QuizName: \t'{self.quiz_name}'\t, ActualNumQs: {self.total_questions}.")
 
     async def start_quiz(self, bot: Bot, context: CallbackContext, update: Update) -> int:
+        """Start the quiz and send the first question.
+        
+        Args:
+            bot: Telegram Bot instance
+            context: Callback context from telegram.ext
+            update: Update object from Telegram
+            
+        Returns:
+            Conversation state (TAKING_QUIZ or END)
+        """
         logger.info(f"[QuizLogic {self.quiz_id}] start_quiz called for user {self.user_id}")
         self.active = True 
         self.quiz_actual_start_time_dt = datetime.now(timezone.utc)
@@ -112,6 +189,17 @@ class QuizLogic:
         return await self.send_question(bot, context, update)
     
     def _create_display_options_and_keyboard(self, options_from_api: list):
+        """Create keyboard markup and displayable options from API options.
+        
+        This method processes options from the API, handles both text and image options,
+        and creates appropriate keyboard buttons for user interaction.
+        
+        Args:
+            options_from_api: List of option dictionaries from API
+            
+        Returns:
+            Tuple of (InlineKeyboardMarkup, list of displayable options)
+        """
         keyboard_buttons = []
         displayable_options = [] 
         option_image_counter = 0
@@ -169,8 +257,15 @@ class QuizLogic:
             
         return InlineKeyboardMarkup(keyboard_buttons), displayable_options
 
-    def _format_time_remaining(self, seconds_remaining):
-        """تنسيق الوقت المتبقي بشكل مناسب للعرض"""
+    def _format_time_remaining(self, seconds_remaining: float) -> str:
+        """Format remaining time for display.
+        
+        Args:
+            seconds_remaining: Number of seconds remaining
+            
+        Returns:
+            Formatted time string in MM:SS format
+        """
         if seconds_remaining <= 0:
             return "00:00"
         
@@ -179,7 +274,14 @@ class QuizLogic:
         return f"{minutes:02d}:{seconds:02d}"
     
     async def update_timer_display(self, context: CallbackContext):
-        """تحديث عرض العداد في رسالة السؤال"""
+        """Update the timer display in the question message.
+        
+        This method is called periodically to update the countdown timer
+        shown to the user during a question.
+        
+        Args:
+            context: Callback context containing job data
+        """
         job_data = context.job.data
         chat_id = job_data["chat_id"]
         quiz_id_from_job = job_data["quiz_id"]

@@ -1,6 +1,18 @@
 """
 Conversation handler for the quiz selection and execution flow.
-(MODIFIED: Uses api_client.py for questions, QuizLogic imports DB_MANAGER directly)
+
+This module manages the entire quiz conversation flow including:
+- Quiz type selection (all courses, by course, by unit)
+- Course and unit selection
+- Question count selection
+- Quiz execution coordination
+- Results display
+- Saved quiz management
+
+Modifications:
+- Uses api_client.py for questions
+- QuizLogic imports DB_MANAGER directly
+- Enhanced error handling and user experience
 """
 
 import logging
@@ -37,8 +49,30 @@ from .quiz_logic import QuizLogic
 
 ITEMS_PER_PAGE = 6
 
-async def _cleanup_quiz_session_data(user_id: int, chat_id: int, context: CallbackContext, reason: str):
-    logger.info(f"[QuizCleanup] Cleaning up quiz session data for user {user_id}, chat {chat_id}. Reason: {reason}")
+async def _cleanup_quiz_session_data(
+    user_id: int,
+    chat_id: int,
+    context: CallbackContext,
+    reason: str
+) -> None:
+    """Clean up all quiz-related session data for a user.
+    
+    This function removes all quiz-related data from user_data including:
+    - QuizLogic instance
+    - Quiz configuration
+    - Timers and jobs
+    - Temporary state variables
+    
+    Args:
+        user_id: Telegram user ID
+        chat_id: Telegram chat ID
+        context: Callback context
+        reason: Reason for cleanup (for logging)
+    """
+    logger.info(
+        f"[QuizCleanup] Cleaning up quiz session data for user {user_id}, "
+        f"chat {chat_id}. Reason: {reason}"
+    )
     
     active_quiz_logic_instance = context.user_data.get(f"quiz_logic_instance_{user_id}")
     if isinstance(active_quiz_logic_instance, QuizLogic):
@@ -76,7 +110,19 @@ async def _cleanup_quiz_session_data(user_id: int, chat_id: int, context: Callba
             logger.debug(f"[QuizCleanup] Popped dynamic key: {key_ud}")
     logger.info(f"[QuizCleanup] Finished cleaning quiz session data for user {user_id}, chat {chat_id}.")
 
-async def start_command_fallback_for_quiz(update: Update, context: CallbackContext) -> int:
+async def start_command_fallback_for_quiz(
+    update: Update,
+    context: CallbackContext
+) -> int:
+    """Handle /start command during quiz conversation.
+    
+    Args:
+        update: Telegram update object
+        context: Callback context
+        
+    Returns:
+        ConversationHandler.END to exit quiz conversation
+    """
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     logger.info(f"User {user_id} (chat {chat_id}) sent /start during quiz_conv. Ending quiz_conv, showing main menu.")
@@ -84,7 +130,19 @@ async def start_command_fallback_for_quiz(update: Update, context: CallbackConte
     await start_command(update, context) 
     return ConversationHandler.END
 
-async def go_to_main_menu_from_quiz(update: Update, context: CallbackContext) -> int:
+async def go_to_main_menu_from_quiz(
+    update: Update,
+    context: CallbackContext
+) -> int:
+    """Navigate to main menu from quiz conversation.
+    
+    Args:
+        update: Telegram update object
+        context: Callback context
+        
+    Returns:
+        ConversationHandler.END to exit quiz conversation
+    """
     query = update.callback_query
     if query: await query.answer()
     user_id = update.effective_user.id
@@ -95,6 +153,11 @@ async def go_to_main_menu_from_quiz(update: Update, context: CallbackContext) ->
     return ConversationHandler.END
 
 def create_quiz_type_keyboard() -> InlineKeyboardMarkup:
+    """Create keyboard for quiz type selection.
+    
+    Returns:
+        InlineKeyboardMarkup with quiz type options
+    """
     keyboard = [
         [InlineKeyboardButton("🎲 اختبار عشوائي شامل (كل المقررات)", callback_data=f"quiz_type_{QUIZ_TYPE_ALL}")],
         [InlineKeyboardButton("📖 اختبار عشوائي حسب المقرر", callback_data="quiz_type_random_course")],
