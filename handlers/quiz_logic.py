@@ -35,6 +35,17 @@ from utils.helpers import safe_send_message, safe_edit_message_text, safe_edit_m
 from database.manager import DB_MANAGER
 # +++++++++++++++++++++++++++++++++++++++++++++++
 
+# +++ ENHANCEMENTS: Import validation, exceptions, and structured logging +++
+from utils.exceptions import (
+    QuizError,
+    InvalidAnswerError,
+    QuizSessionExpiredError,
+    get_user_friendly_message
+)
+from utils.validators import validate_option_id, validate_time_limit
+from utils.structured_logger import quiz_logger
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 MIN_OPTIONS_PER_QUESTION = 2
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif")
 
@@ -75,6 +86,10 @@ class QuizLogic:
         is_resumable: Whether this quiz can be saved and resumed
     """
     ARABIC_CHOICE_LETTERS = ["أ", "ب", "ج", "د", "هـ", "و", "ز", "ح"]
+    
+    # +++ ENHANCEMENT: Timer update interval (seconds) +++
+    TIMER_UPDATE_INTERVAL = 5  # Update every 5 seconds instead of 1
+    # ++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     def __init__(
         self,
@@ -171,7 +186,18 @@ class QuizLogic:
                     quiz_scope_id=scope_id_for_db_call, quiz_name=self.quiz_name,
                     total_questions=self.total_questions_for_db, start_time=self.quiz_actual_start_time_dt,
                     score=0, initial_percentage=0.0, initial_time_taken_seconds=0)
-                if self.db_quiz_session_id: logger.info(f"[QuizLogic {self.quiz_id}] Quiz session logged to DB: {self.db_quiz_session_id}")
+                if self.db_quiz_session_id: 
+                    logger.info(f"[QuizLogic {self.quiz_id}] Quiz session logged to DB: {self.db_quiz_session_id}")
+                    # +++ ENHANCEMENT: Structured logging +++
+                    quiz_logger.log_quiz_started(
+                        user_id=self.user_id,
+                        quiz_id=self.quiz_id,
+                        quiz_type=self.quiz_type_for_db,
+                        question_count=self.total_questions,
+                        quiz_name=self.quiz_name,
+                        db_session_id=self.db_quiz_session_id
+                    )
+                    # +++++++++++++++++++++++++++++++++++++++
                 else: logger.error(f"[QuizLogic {self.quiz_id}] Failed to log quiz start to DB.")
             except Exception as e: logger.error(f"[QuizLogic {self.quiz_id}] DB exception on quiz start: {e}", exc_info=True)
         else: logger.warning(f"[QuizLogic {self.quiz_id}] db_manager unavailable. Cannot log quiz start.")
@@ -314,16 +340,18 @@ class QuizLogic:
             else:
                 await safe_edit_message_text(context.bot, chat_id, msg_id, text=full_text, reply_markup=options_keyboard, parse_mode="HTML")
                 
+            # +++ ENHANCEMENT: Use TIMER_UPDATE_INTERVAL constant +++
             # جدولة التحديث التالي إذا كان لا يزال هناك وقت متبقي
-            if remaining_time > 5:  # تحديث كل 5 ثوانٍ
+            if remaining_time > self.TIMER_UPDATE_INTERVAL:
                 update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
                 remove_job_if_exists(update_job_name, context)
                 context.job_queue.run_once(
                     self.update_timer_display, 
-                    5.0,  # تحديث كل 5 ثوانٍ لتجنب تجاوز حدود تيليجرام
+                    float(self.TIMER_UPDATE_INTERVAL),  # Use configurable interval
                     data=job_data,
                     name=update_job_name
                 )
+            # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             elif remaining_time > 0:  # تحديث أخير قبل انتهاء الوقت
                 update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
                 remove_job_if_exists(update_job_name, context)
@@ -701,6 +729,18 @@ class QuizLogic:
             "status": "answered"
         })
         
+        # +++ ENHANCEMENT: Structured logging for answer +++
+        quiz_logger.log_question_answered(
+            user_id=self.user_id,
+            quiz_id=self.quiz_id,
+            question_id=q_id_log,
+            is_correct=is_correct_answer,
+            time_taken=time_taken,
+            question_index=self.current_question_index,
+            chosen_option=chosen_option_text_for_log
+        )
+        # +++++++++++++++++++++++++++++++++++++++++++++++++++
+        
         if self.last_question_message_id:
             try:
                 q_text_answered = f"<s>{current_question_data.get('question_text', '')}</s>\n<b>تمت الإجابة.</b>"
@@ -861,6 +901,20 @@ class QuizLogic:
                     answers_details_json=json.dumps(self.answers, ensure_ascii=False)
                 )
                 logger.info(f"[QuizLogic {self.quiz_id}] Quiz session {self.db_quiz_session_id} updated in DB with final results.")
+                
+                # +++ ENHANCEMENT: Structured logging for quiz completion +++
+                quiz_logger.log_quiz_completed(
+                    user_id=self.user_id,
+                    quiz_id=self.quiz_id,
+                    score=self.score,
+                    total_questions=total_processed_questions,
+                    time_taken=total_time_taken_seconds,
+                    percentage=round(percentage, 2),
+                    answered=total_answered,
+                    skipped=total_skipped_questions,
+                    db_session_id=self.db_quiz_session_id
+                )
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             except Exception as e_db_end: logger.error(f"[QuizLogic {self.quiz_id}] DB exception on quiz end update: {e_db_end}", exc_info=True)
         else: logger.warning(f"[QuizLogic {self.quiz_id}] db_manager or session_id unavailable. Cannot log quiz end results.")
 

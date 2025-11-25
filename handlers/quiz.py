@@ -45,7 +45,26 @@ from utils.helpers import safe_send_message, safe_edit_message_text, get_quiz_ty
 from utils.api_client import fetch_from_api, transform_api_question 
 # MANUS_MODIFIED_V6: Removed problematic import of stats_menu_callback
 from handlers.common import main_menu_callback, start_command 
-from .quiz_logic import QuizLogic 
+from .quiz_logic import QuizLogic
+
+# +++ ENHANCEMENTS: Import validation, exceptions, and structured logging +++
+from utils.exceptions import (
+    QuizError,
+    NoQuestionsFoundError,
+    InvalidQuestionCountError,
+    InvalidCourseIdError,
+    InvalidUnitIdError,
+    APIConnectionError,
+    get_user_friendly_message
+)
+from utils.validators import (
+    validate_question_count,
+    validate_course_id,
+    validate_unit_id,
+    sanitize_text_input
+)
+from utils.structured_logger import quiz_logger
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ 
 
 ITEMS_PER_PAGE = 6
 
