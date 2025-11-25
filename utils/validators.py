@@ -8,7 +8,7 @@ and data from external sources are valid, safe, and within acceptable ranges.
 import re
 import html
 from typing import Optional, Union
-from exceptions import (
+from .exceptions import (
     InvalidQuestionCountError,
     InvalidCourseIdError,
     InvalidUnitIdError,
