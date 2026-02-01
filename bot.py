@@ -107,6 +107,16 @@ try:
         logger.warning(f"Could not import Admin Interface V4/V7/V8 handlers from handlers.admin_interface: {ie_v4}. The new admin dashboard will not be available.")
         admin_interface_v4_loaded = False
 
+    # --- Import Custom Period Report System ---
+    custom_report_loaded = False
+    try:
+        from custom_period_report import custom_report_conv_handler
+        logger.info("Successfully imported Custom Period Report system.")
+        custom_report_loaded = True
+    except ImportError as ie_custom_report:
+        logger.warning(f"Could not import Custom Period Report system: {ie_custom_report}. Custom period reports will not be available.")
+        custom_report_loaded = False
+
 except ImportError as e:
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger(__name__)
@@ -417,6 +427,19 @@ def main() -> None:
         logger.warning(f"Could not import Final Weekly Reports System: {ie}. Final reports will not be available.")
     except Exception as e:
         logger.error(f"Error setting up Final Weekly Reports System: {e}", exc_info=True)
+
+    # --- Setup Custom Period Report System ---
+    if custom_report_loaded:
+        logger.info("Adding Custom Period Report ConversationHandler...")
+        try:
+            application.add_handler(custom_report_conv_handler)
+            logger.info("✅ Custom Period Report System activated successfully")
+            logger.info("📊 التقارير المخصصة متاحة الآن")
+            logger.info("🎯 استخدم الأمر: /custom_report")
+        except Exception as e:
+            logger.error(f"Error adding Custom Period Report handler: {e}", exc_info=True)
+    else:
+        logger.warning("Custom Period Report System was not imported, skipping addition.")
 
     # Run the bot
     logger.info("Starting bot polling...")
