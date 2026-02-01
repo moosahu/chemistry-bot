@@ -1,101 +1,166 @@
-# custom_report_admin.py
-# إضافة أمر للأدمن لإصدار تقرير حسب مدة محددة
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+"""
+نظام التقارير حسب فترة مخصصة - نسخة من final_weekly_report.py
+يسمح للأدمن باختيار الفترة الزمنية للتقرير
+"""
+
+import os
 import logging
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler
-
-# States للـ ConversationHandler
-REPORT_SELECT_PERIOD, REPORT_CUSTOM_DAYS = range(2)
+from telegram.ext import (
+    ContextTypes, 
+    ConversationHandler, 
+    CommandHandler, 
+    CallbackQueryHandler,
+    MessageHandler,
+    filters
+)
+from final_weekly_report import FinalWeeklyReportGenerator
 
 logger = logging.getLogger(__name__)
 
-async def admin_custom_report_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """بدء عملية إصدار تقرير مخصص"""
-    query = update.callback_query
-    await query.answer()
-    
-    # التحقق من صلاحيات الأدمن
+# States للـ ConversationHandler
+SELECT_PERIOD, ENTER_CUSTOM_DAYS = range(2)
+
+def is_admin_user(user_id: int, context: ContextTypes.DEFAULT_TYPE = None) -> bool:
+    """التحقق من صلاحيات المدير باستخدام DB_MANAGER"""
+    try:
+        # محاولة استخدام DB_MANAGER من context
+        if context and context.bot_data.get("DB_MANAGER"):
+            db_manager = context.bot_data.get("DB_MANAGER")
+            if hasattr(db_manager, 'is_user_admin'):
+                return db_manager.is_user_admin(user_id)
+        
+        # Fallback: قائمة المدراء المحددة مسبقاً
+        admin_ids = [6448526509, 7640355263]
+        
+        # التحقق من متغير البيئة
+        admin_user_id = os.getenv('ADMIN_USER_ID')
+        if admin_user_id:
+            try:
+                admin_ids.append(int(admin_user_id))
+            except ValueError:
+                pass
+        
+        return user_id in admin_ids
+        
+    except Exception as e:
+        logger.error(f"خطأ في التحقق من صلاحيات المدير: {e}")
+        return False
+
+
+async def custom_report_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """بدء عملية إنشاء تقرير مخصص"""
     user_id = update.effective_user.id
-    db_manager = context.bot_data.get("DB_MANAGER")
     
-    if not db_manager.is_user_admin(user_id):
-        await query.edit_message_text("هذه الأوامر مخصصة للأدمن فقط.")
+    # التحقق من الصلاحيات
+    if not is_admin_user(user_id, context):
+        logger.warning(f"User {user_id} attempted to use custom_report without admin privileges")
+        if update.callback_query:
+            await update.callback_query.answer("هذا الأمر متاح للمدراء فقط")
+            await update.callback_query.message.reply_text(
+                f"❌ عذراً، هذا الأمر متاح للمدراء فقط.\nمعرف المستخدم: {user_id}"
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ عذراً، هذا الأمر متاح للمدراء فقط.\nمعرف المستخدم: {user_id}"
+            )
         return ConversationHandler.END
     
     keyboard = [
-        [InlineKeyboardButton("📅 آخر 3 أيام", callback_data="report_period_3")],
-        [InlineKeyboardButton("📅 آخر 7 أيام (أسبوع)", callback_data="report_period_7")],
-        [InlineKeyboardButton("📅 آخر 14 يوم (أسبوعين)", callback_data="report_period_14")],
-        [InlineKeyboardButton("📅 آخر 30 يوم (شهر)", callback_data="report_period_30")],
-        [InlineKeyboardButton("✏️ إدخال مدة مخصصة", callback_data="report_period_custom")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="admin_show_tools_menu")]
+        [InlineKeyboardButton("📅 آخر 3 أيام", callback_data="period_3")],
+        [InlineKeyboardButton("📅 آخر 7 أيام (أسبوع)", callback_data="period_7")],
+        [InlineKeyboardButton("📅 آخر 14 يوم (أسبوعين)", callback_data="period_14")],
+        [InlineKeyboardButton("📅 آخر 30 يوم (شهر)", callback_data="period_30")],
+        [InlineKeyboardButton("✏️ إدخال فترة مخصصة", callback_data="period_custom")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="period_cancel")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        "📊 *إصدار تقرير مخصص*\n\n"
-        "اختر المدة الزمنية التي تريد إصدار التقرير عنها:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+    message_text = (
+        "📊 *إنشاء تقرير مخصص*\n\n"
+        "اختر الفترة الزمنية التي تريد التقرير عنها:\n\n"
+        "💡 التقرير سيتضمن:\n"
+        "• إحصائيات شاملة للطلاب\n"
+        "• تحليل الأداء والدرجات\n"
+        "• الاختبارات الأكثر صعوبة\n"
+        "• رسوم بيانية تفصيلية\n"
+        "• توصيات ذكية للتحسين"
     )
     
-    return REPORT_SELECT_PERIOD
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text=message_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            text=message_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    return SELECT_PERIOD
 
 
-async def admin_report_period_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """معالجة اختيار المدة المحددة مسبقاً"""
+async def period_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """معالجة اختيار الفترة المحددة"""
     query = update.callback_query
     await query.answer()
     
-    # استخراج عدد الأيام من callback_data
-    period_days = int(query.data.replace("report_period_", ""))
+    # استخراج عدد الأيام
+    period_days = int(query.data.replace("period_", ""))
     
-    # حفظ المدة في context
+    # حفظ في context
     context.user_data['report_days'] = period_days
     
-    # إرسال رسالة انتظار
+    # رسالة انتظار
     await query.edit_message_text(
-        f"⏳ جاري إعداد التقرير لآخر {period_days} يوم...\n"
-        "الرجاء الانتظار..."
+        f"⏳ جاري إنشاء التقرير المخصص لآخر {period_days} يوم...\n\n"
+        "هذا قد يستغرق بضع ثوانٍ، الرجاء الانتظار..."
     )
     
-    # إصدار التقرير
-    await generate_and_send_custom_report(query, context, period_days)
+    # إنشاء التقرير
+    await generate_custom_report(query, context, period_days)
     
     return ConversationHandler.END
 
 
-async def admin_report_custom_days_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """طلب إدخال عدد أيام مخصص"""
+async def request_custom_days(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """طلب إدخال عدد الأيام المخصص"""
     query = update.callback_query
     await query.answer()
     
     await query.edit_message_text(
-        "✏️ *إدخال مدة مخصصة*\n\n"
+        "✏️ *إدخال فترة مخصصة*\n\n"
         "الرجاء إدخال عدد الأيام التي تريد التقرير عنها:\n"
-        "(مثال: 5 أو 15 أو 45)\n\n"
+        "(مثال: 5 أو 15 أو 45 أو 90)\n\n"
+        "💡 الحد الأقصى: 365 يوم\n\n"
         "أرسل /cancel للإلغاء",
         parse_mode='Markdown'
     )
     
-    return REPORT_CUSTOM_DAYS
+    return ENTER_CUSTOM_DAYS
 
 
-async def admin_report_custom_days_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """معالجة عدد الأيام المخصص المدخل"""
+async def custom_days_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """معالجة عدد الأيام المدخل"""
     user_text = update.message.text.strip()
     
-    # التحقق من أن المدخل رقم
     try:
         days = int(user_text)
+        
         if days <= 0:
             await update.message.reply_text(
                 "❌ الرجاء إدخال رقم موجب (أكبر من 0).\n"
                 "حاول مرة أخرى أو أرسل /cancel للإلغاء"
             )
-            return REPORT_CUSTOM_DAYS
+            return ENTER_CUSTOM_DAYS
         
         if days > 365:
             await update.message.reply_text(
@@ -103,7 +168,7 @@ async def admin_report_custom_days_received(update: Update, context: ContextType
                 "الرجاء إدخال مدة أقل من 365 يوم.\n"
                 "حاول مرة أخرى أو أرسل /cancel للإلغاء"
             )
-            return REPORT_CUSTOM_DAYS
+            return ENTER_CUSTOM_DAYS
             
     except ValueError:
         await update.message.reply_text(
@@ -111,229 +176,137 @@ async def admin_report_custom_days_received(update: Update, context: ContextType
             "مثال: 5 أو 10 أو 30\n\n"
             "حاول مرة أخرى أو أرسل /cancel للإلغاء"
         )
-        return REPORT_CUSTOM_DAYS
+        return ENTER_CUSTOM_DAYS
     
     # حفظ المدة
     context.user_data['report_days'] = days
     
-    # إرسال رسالة انتظار
+    # رسالة انتظار
     wait_msg = await update.message.reply_text(
-        f"⏳ جاري إعداد التقرير لآخر {days} يوم...\n"
-        "الرجاء الانتظار..."
+        f"⏳ جاري إنشاء التقرير المخصص لآخر {days} يوم...\n\n"
+        "هذا قد يستغرق بضع ثوانٍ، الرجاء الانتظار..."
     )
     
-    # إصدار التقرير
-    await generate_and_send_custom_report(update, context, days, wait_msg)
+    # إنشاء التقرير
+    await generate_custom_report(update, context, days, wait_msg)
     
     return ConversationHandler.END
 
 
-async def generate_and_send_custom_report(update_or_query, context: ContextTypes.DEFAULT_TYPE, days: int, wait_msg=None):
-    """توليد وإرسال التقرير المخصص"""
-    
-    db_manager = context.bot_data.get("DB_MANAGER")
-    
-    # حساب التواريخ
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
-    
+async def generate_custom_report(update_or_query, context: ContextTypes.DEFAULT_TYPE, days: int, wait_msg=None):
+    """إنشاء التقرير المخصص"""
     try:
-        # الاتصال بقاعدة البيانات مباشرة
-        from database.connection import connect_db
-        conn = connect_db()
-        cursor = conn.cursor()
+        # حساب التواريخ
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
         
-        # جلب إحصائيات الفترة المحددة
-        cursor.execute("""
-            SELECT 
-                u.user_id,
-                u.username,
-                u.first_name,
-                COUNT(qa.id) as total_quizzes,
-                ROUND(AVG(qa.score)::numeric, 2) as avg_score,
-                MAX(qa.score) as max_score,
-                MIN(qa.score) as min_score,
-                ROUND(AVG(qa.time_taken)::numeric, 2) as avg_time,
-                SUM(CASE WHEN qa.score >= 80 THEN 1 ELSE 0 END) as excellent_count,
-                SUM(CASE WHEN qa.score >= 60 AND qa.score < 80 THEN 1 ELSE 0 END) as good_count,
-                SUM(CASE WHEN qa.score < 60 THEN 1 ELSE 0 END) as weak_count
-            FROM users u
-            LEFT JOIN quiz_attempts qa ON u.user_id = qa.user_id 
-                AND qa.completed_at >= %s 
-                AND qa.completed_at <= %s
-                AND qa.status = 'completed'
-            GROUP BY u.user_id, u.username, u.first_name
-            HAVING COUNT(qa.id) > 0
-            ORDER BY total_quizzes DESC, avg_score DESC
-        """, (start_date, end_date))
+        logger.info(f"إنشاء تقرير مخصص للفترة: {start_date} إلى {end_date}")
         
-        results = cursor.fetchall()
+        # إنشاء مولد التقارير
+        report_generator = FinalWeeklyReportGenerator()
         
-        if not results:
-            message = (
-                f"📊 *تقرير الفترة: آخر {days} يوم*\n"
-                f"من {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}\n\n"
-                "❌ لا توجد بيانات لهذه الفترة"
-            )
-            
-            if wait_msg:
-                await wait_msg.edit_text(message, parse_mode='Markdown')
-            elif isinstance(update_or_query, Update):
-                await update_or_query.message.reply_text(message, parse_mode='Markdown')
-            else:
-                await update_or_query.edit_message_text(message, parse_mode='Markdown')
-            
-            cursor.close()
-            conn.close()
-            return
+        # إنشاء التقرير
+        report_path = report_generator.create_final_excel_report(start_date, end_date)
         
-        # بناء رسالة التقرير
-        report_lines = [
-            f"📊 *تقرير الاختبارات - آخر {days} يوم*",
-            f"📅 من: {start_date.strftime('%Y-%m-%d')}",
-            f"📅 إلى: {end_date.strftime('%Y-%m-%d')}",
-            f"👥 عدد الطلاب النشطين: {len(results)}",
-            "━━━━━━━━━━━━━━━━━",
-            ""
-        ]
-        
-        # إحصائيات عامة
-        total_quizzes_all = sum(r[3] for r in results)
-        avg_score_all = sum(r[4] for r in results if r[4]) / len([r for r in results if r[4]])
-        
-        report_lines.extend([
-            f"📝 إجمالي الاختبارات: {total_quizzes_all}",
-            f"📊 متوسط الدرجات العام: {avg_score_all:.1f}%",
-            "",
-            "━━━━━━━━━━━━━━━━━",
-            "*🏆 أفضل 10 طلاب:*",
-            ""
-        ])
-        
-        # عرض أفضل 10 طلاب
-        for idx, row in enumerate(results[:10], 1):
-            user_id, username, first_name, total_quizzes, avg_score, max_score, min_score, avg_time, excellent, good, weak = row
-            
-            name = first_name or username or f"User_{user_id}"
-            
-            # رموز الترتيب
-            rank_emoji = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
-            
-            report_lines.append(
-                f"{rank_emoji} *{name}*\n"
-                f"   📝 اختبارات: {total_quizzes} | "
-                f"📊 معدل: {avg_score or 0:.1f}%\n"
-                f"   ⬆️ أعلى: {max_score or 0}% | "
-                f"⬇️ أقل: {min_score or 0}%\n"
-                f"   ⏱️ متوسط الوقت: {avg_time or 0:.0f} ثانية\n"
-            )
-        
-        # إضافة تفاصيل إضافية
-        if len(results) > 10:
-            report_lines.extend([
-                "",
-                f"_... و {len(results) - 10} طالب آخرين_"
-            ])
-        
-        # إحصائيات حسب مستوى الأداء
-        total_excellent = sum(r[8] for r in results)
-        total_good = sum(r[9] for r in results)
-        total_weak = sum(r[10] for r in results)
-        
-        report_lines.extend([
-            "",
-            "━━━━━━━━━━━━━━━━━",
-            "*📈 توزيع مستويات الأداء:*",
-            f"🟢 ممتاز (80%+): {total_excellent} اختبار",
-            f"🟡 جيد (60-79%): {total_good} اختبار",
-            f"🔴 يحتاج تحسين (<60%): {total_weak} اختبار"
-        ])
-        
-        cursor.close()
-        conn.close()
-        
-        # إرسال التقرير
-        report_text = "\n".join(report_lines)
-        
-        # تقسيم الرسالة إذا كانت طويلة
-        if len(report_text) > 4000:
-            # إرسال على دفعات
-            parts = [report_text[i:i+4000] for i in range(0, len(report_text), 4000)]
-            
-            if wait_msg:
-                await wait_msg.edit_text(parts[0], parse_mode='Markdown')
-                for part in parts[1:]:
-                    if isinstance(update_or_query, Update):
-                        await update_or_query.message.reply_text(part, parse_mode='Markdown')
-                    else:
-                        await context.bot.send_message(
-                            chat_id=update_or_query.message.chat_id,
-                            text=part,
-                            parse_mode='Markdown'
-                        )
-            else:
-                if isinstance(update_or_query, Update):
-                    await update_or_query.message.reply_text(parts[0], parse_mode='Markdown')
-                    for part in parts[1:]:
-                        await update_or_query.message.reply_text(part, parse_mode='Markdown')
-                else:
-                    await update_or_query.edit_message_text(parts[0], parse_mode='Markdown')
-                    for part in parts[1:]:
-                        await context.bot.send_message(
-                            chat_id=update_or_query.message.chat_id,
-                            text=part,
-                            parse_mode='Markdown'
-                        )
-        else:
-            if wait_msg:
-                await wait_msg.edit_text(report_text, parse_mode='Markdown')
-            elif isinstance(update_or_query, Update):
-                await update_or_query.message.reply_text(report_text, parse_mode='Markdown')
-            else:
-                await update_or_query.edit_message_text(report_text, parse_mode='Markdown')
-        
-        # إرسال زر العودة لقائمة الأدمن
-        keyboard = [[InlineKeyboardButton("⬅️ العودة لأدوات الأدمن", callback_data="admin_show_tools_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        if isinstance(update_or_query, Update):
-            await update_or_query.message.reply_text(
-                "✅ تم إنشاء التقرير بنجاح!",
-                reply_markup=reply_markup
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=update_or_query.message.chat_id if hasattr(update_or_query, 'message') else update_or_query.from_user.id,
-                text="✅ تم إنشاء التقرير بنجاح!",
-                reply_markup=reply_markup
-            )
-            
-    except Exception as e:
-        logger.error(f"Error generating custom report: {e}", exc_info=True)
-        error_msg = f"❌ حدث خطأ أثناء إنشاء التقرير:\n{str(e)}"
+        # رسالة النجاح
+        success_message = (
+            f"✅ *تم إنشاء التقرير بنجاح!*\n\n"
+            f"📅 الفترة: {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}\n"
+            f"📊 المدة: {days} يوم\n"
+            f"📁 الملف: {os.path.basename(report_path)}\n\n"
+            f"جاري إرسال التقرير..."
+        )
         
         if wait_msg:
-            await wait_msg.edit_text(error_msg)
+            await wait_msg.edit_text(success_message, parse_mode='Markdown')
         elif isinstance(update_or_query, Update):
-            await update_or_query.message.reply_text(error_msg)
+            await update_or_query.message.reply_text(success_message, parse_mode='Markdown')
         else:
-            await update_or_query.edit_message_text(error_msg)
+            await update_or_query.edit_message_text(success_message, parse_mode='Markdown')
+        
+        # إرسال الملف
+        if os.path.exists(report_path):
+            chat_id = None
+            if isinstance(update_or_query, Update):
+                chat_id = update_or_query.effective_chat.id
+            else:
+                chat_id = update_or_query.message.chat_id
+            
+            caption = (
+                f"📊 التقرير المخصص - آخر {days} يوم\n"
+                f"من {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}\n\n"
+                f"يحتوي التقرير على:\n"
+                f"• ملخص تنفيذي\n"
+                f"• تحليل تقدم الطلاب\n"
+                f"• مقارنة الأداء حسب المستوى\n"
+                f"• الأسئلة الصعبة\n"
+                f"• أنماط النشاط\n"
+                f"• رسوم بيانية تفصيلية\n"
+                f"• توصيات ذكية"
+            )
+            
+            with open(report_path, 'rb') as report_file:
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=report_file,
+                    filename=os.path.basename(report_path),
+                    caption=caption
+                )
+            
+            logger.info(f"تم إرسال التقرير المخصص بنجاح: {report_path}")
+        else:
+            error_msg = "❌ حدث خطأ: لم يتم العثور على ملف التقرير"
+            if wait_msg:
+                await wait_msg.edit_text(error_msg)
+            elif isinstance(update_or_query, Update):
+                await update_or_query.message.reply_text(error_msg)
+            else:
+                await update_or_query.edit_message_text(error_msg)
+        
+    except Exception as e:
+        logger.error(f"خطأ في إنشاء التقرير المخصص: {e}", exc_info=True)
+        
+        error_message = f"❌ حدث خطأ أثناء إنشاء التقرير:\n{str(e)}"
+        
+        if wait_msg:
+            await wait_msg.edit_text(error_message)
+        elif isinstance(update_or_query, Update):
+            await update_or_query.message.reply_text(error_message)
+        else:
+            await update_or_query.edit_message_text(error_message)
 
 
-async def cancel_custom_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """إلغاء عملية إصدار التقرير"""
-    await update.message.reply_text("تم إلغاء إصدار التقرير.")
-    
-    # العودة لقائمة أدوات الأدمن
-    keyboard = [
-        [InlineKeyboardButton("✏️ تعديل رسالة حول البوت", callback_data="admin_edit_specific_msg_about_bot_message")],
-        [InlineKeyboardButton("📝 تعديل رسائل أخرى للبوت", callback_data="admin_edit_other_messages_menu")],
-        [InlineKeyboardButton("📣 إرسال إشعار عام للمستخدمين", callback_data="admin_broadcast_start")],
-        [InlineKeyboardButton("📊 عرض لوحة الإحصائيات", callback_data="stats_admin_panel_v4")],
-        [InlineKeyboardButton("📊 إصدار تقرير مخصص", callback_data="admin_custom_report_start")],
-        [InlineKeyboardButton("⬅️ عودة إلى القائمة الرئيسية", callback_data="admin_back_to_start")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(text="🛠️ أدوات إدارة البوت:", reply_markup=reply_markup)
+async def cancel_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """إلغاء عملية إنشاء التقرير"""
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text("تم إلغاء إنشاء التقرير.")
+    else:
+        await update.message.reply_text("تم إلغاء إنشاء التقرير.")
     
     return ConversationHandler.END
+
+
+# ConversationHandler للتقرير المخصص
+custom_report_conv_handler = ConversationHandler(
+    entry_points=[
+        CommandHandler("custom_report", custom_report_start),
+        CallbackQueryHandler(custom_report_start, pattern="^custom_report_start$")
+    ],
+    states={
+        SELECT_PERIOD: [
+            CallbackQueryHandler(period_selected, pattern="^period_[0-9]+$"),
+            CallbackQueryHandler(request_custom_days, pattern="^period_custom$"),
+            CallbackQueryHandler(cancel_report, pattern="^period_cancel$")
+        ],
+        ENTER_CUSTOM_DAYS: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, custom_days_received)
+        ]
+    },
+    fallbacks=[
+        CommandHandler("cancel", cancel_report),
+        CallbackQueryHandler(cancel_report, pattern="^period_cancel$")
+    ],
+    per_message=False,
+    name="custom_report_conversation"
+)
