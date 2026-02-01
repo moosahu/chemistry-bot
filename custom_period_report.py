@@ -208,21 +208,21 @@ async def generate_custom_report(update_or_query, context: ContextTypes.DEFAULT_
         # إنشاء التقرير
         report_path = report_generator.create_final_excel_report(start_date, end_date)
         
-        # رسالة النجاح
+        # رسالة النجاح (بدون Markdown لتجنب مشاكل التنسيق)
         success_message = (
-            f"✅ *تم إنشاء التقرير بنجاح!*\n\n"
+            f"✅ تم إنشاء التقرير بنجاح\n\n"
             f"📅 الفترة: {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}\n"
             f"📊 المدة: {days} يوم\n"
-            f"📁 الملف: {os.path.basename(report_path)}\n\n"
+            f"📁 الملف جاهز\n\n"
             f"جاري إرسال التقرير..."
         )
         
         if wait_msg:
-            await wait_msg.edit_text(success_message, parse_mode='Markdown')
+            await wait_msg.edit_text(success_message)
         elif isinstance(update_or_query, Update):
-            await update_or_query.message.reply_text(success_message, parse_mode='Markdown')
+            await update_or_query.message.reply_text(success_message)
         else:
-            await update_or_query.edit_message_text(success_message, parse_mode='Markdown')
+            await update_or_query.edit_message_text(success_message)
         
         # إرسال الملف
         if os.path.exists(report_path):
