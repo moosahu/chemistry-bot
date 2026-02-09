@@ -570,7 +570,7 @@ async def admin_my_students_list_callback(update: Update, context: ContextTypes.
                 await _show_empty_my_students(query)
                 return
 
-            # جلب الطلاب
+            # جلب الطلاب — مرتبين حسب الصف ثم الاسم
             cur.execute("""
                 SELECT u.user_id, u.full_name, u.grade,
                        COUNT(qr.id) as quiz_count,
@@ -579,19 +579,38 @@ async def admin_my_students_list_callback(update: Update, context: ContextTypes.
                 LEFT JOIN quiz_results qr ON u.user_id = qr.user_id
                 WHERE u.is_registered = TRUE AND COALESCE(u.is_my_student, FALSE) = TRUE
                 GROUP BY u.user_id, u.full_name, u.grade
-                ORDER BY u.full_name
+                ORDER BY u.grade, u.full_name
                 LIMIT %s OFFSET %s
             """, (PAGE_SIZE, offset))
             students = cur.fetchall()
 
+            # توزيع حسب الصف
+            cur.execute("""
+                SELECT grade, COUNT(*) as cnt
+                FROM users
+                WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE AND grade IS NOT NULL
+                GROUP BY grade ORDER BY grade
+            """)
+            grade_summary = cur.fetchall()
+
         # بناء الرسالة
-        msg = f"⭐ طلابي ({total})\n\n"
+        msg = f"⭐ طلابي ({total})\n"
+        if grade_summary:
+            parts = [f"{g['grade']}: {g['cnt']}" for g in grade_summary]
+            msg += f"({' | '.join(parts)})\n"
+        msg += "\n"
+
+        current_grade = None
         for i, s in enumerate(students, start=offset + 1):
             name = (s['full_name'] or "—")[:20]
             grade = s['grade'] or "—"
             avg = s['avg_score'] or 0
             quizzes = s['quiz_count'] or 0
-            msg += f"{i}. {name} | {grade} | {quizzes}📝 | {avg}%\n"
+            # عنوان الصف
+            if grade != current_grade:
+                msg += f"\n📚 {grade}:\n"
+                current_grade = grade
+            msg += f"  {i}. {name} | {quizzes}📝 | {avg}%\n"
 
         # أزرار إزالة — كل طالب له زر ❌
         keyboard = []
@@ -1056,7 +1075,8 @@ async def admin_broadcast_menu_callback(update: Update, context: ContextTypes.DE
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"📣 إشعار للجميع ({total})", callback_data="admin_broadcast_start")],
         [InlineKeyboardButton(f"⭐ إشعار لطلابي فقط ({my_students_count})", callback_data="admin_broadcast_my_students")],
-        [InlineKeyboardButton("🎓 إشعار حسب الصف", callback_data="admin_broadcast_grade")],
+        [InlineKeyboardButton("⭐🎓 إشعار لطلابي حسب الصف", callback_data="admin_broadcast_my_grade")],
+        [InlineKeyboardButton("🎓 إشعار حسب الصف (الكل)", callback_data="admin_broadcast_grade")],
         [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
     ])
     await query.edit_message_text(msg, reply_markup=keyboard)
@@ -1157,6 +1177,51 @@ async def admin_broadcast_grade_callback(update: Update, context: ContextTypes.D
     return BROADCAST_GRADE_SELECT
 
 
+# --- إشعار لطلابي حسب الصف ---
+async def admin_broadcast_my_grade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """اختيار الصف للإشعار لطلابي فقط"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return ConversationHandler.END
+
+    context.user_data['broadcast_my_students_only'] = True
+
+    grades_info = []
+    conn = None
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("""
+                    SELECT grade, COUNT(*) as cnt 
+                    FROM users WHERE is_registered = TRUE AND grade IS NOT NULL
+                        AND COALESCE(is_my_student, FALSE) = TRUE
+                    GROUP BY grade ORDER BY cnt DESC
+                """)
+                grades_info = cur.fetchall()
+    except Exception:
+        pass
+    finally:
+        if conn:
+            conn.close()
+
+    if not grades_info:
+        await query.edit_message_text("❌ لا يوجد طلاب مميزين", reply_markup=get_admin_menu_keyboard())
+        return ConversationHandler.END
+
+    keyboard = []
+    for g in grades_info:
+        keyboard.append([InlineKeyboardButton(
+            f"⭐ {g['grade']} ({g['cnt']} طالب)",
+            callback_data=f"bcast_grade_{g['grade']}"
+        )])
+    keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data="bcast_grade_cancel")])
+
+    await query.edit_message_text("🎓 اختر الصف الدراسي:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return BROADCAST_GRADE_SELECT
+
+
 async def broadcast_grade_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """بعد اختيار الصف"""
     query = update.callback_query
@@ -1168,6 +1233,7 @@ async def broadcast_grade_selected(update: Update, context: ContextTypes.DEFAULT
 
     grade = query.data.replace("bcast_grade_", "")
     context.user_data['broadcast_grade_filter'] = grade
+    my_students_only = context.user_data.get('broadcast_my_students_only', False)
 
     conn = None
     count = 0
@@ -1175,7 +1241,10 @@ async def broadcast_grade_selected(update: Update, context: ContextTypes.DEFAULT
         conn = connect_db()
         if conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND grade = %s", (grade,))
+                if my_students_only:
+                    cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND grade = %s AND COALESCE(is_my_student, FALSE) = TRUE", (grade,))
+                else:
+                    cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND grade = %s", (grade,))
                 count = cur.fetchone()[0]
     except Exception:
         pass
@@ -1183,13 +1252,26 @@ async def broadcast_grade_selected(update: Update, context: ContextTypes.DEFAULT
         if conn:
             conn.close()
 
+    target_label = f"⭐ طلابي في {grade}" if my_students_only else f"طلاب {grade}"
     await query.edit_message_text(
-        f"🎓 إشعار لطلاب: {grade}\n"
+        f"🎓 إشعار لـ: {target_label}\n"
         f"👥 عدد المستهدفين: {count}\n\n"
         f"أرسل نص الإشعار:\n"
         f"(/cancel_broadcast للإلغاء)"
     )
     return BROADCAST_MESSAGE_TEXT
+
+
+def _get_broadcast_target_text(my_students_only, grade_filter):
+    """تحديد نص الهدف للإشعار"""
+    if my_students_only and grade_filter:
+        return f"⭐ طلابي في {grade_filter}"
+    elif my_students_only:
+        return "⭐ طلابي فقط"
+    elif grade_filter:
+        return f"طلاب {grade_filter}"
+    else:
+        return "جميع المسجلين"
 
 
 async def received_broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1202,12 +1284,7 @@ async def received_broadcast_text(update: Update, context: ContextTypes.DEFAULT_
     grade_filter = context.user_data.get('broadcast_grade_filter')
     my_students_only = context.user_data.get('broadcast_my_students_only', False)
 
-    if my_students_only:
-        target = "⭐ طلابي فقط"
-    elif grade_filter:
-        target = f"طلاب {grade_filter}"
-    else:
-        target = "جميع المسجلين"
+    target = _get_broadcast_target_text(my_students_only, grade_filter)
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ نعم، إرسال", callback_data="admin_broadcast_confirm")],
@@ -1245,11 +1322,17 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
         conn = connect_db()
         if conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                if my_students_only:
+                if my_students_only and grade_filter:
+                    # طلابي في صف معين
+                    cur.execute("SELECT user_id FROM users WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE AND grade = %s", (grade_filter,))
+                elif my_students_only:
+                    # طلابي فقط (كل الصفوف)
                     cur.execute("SELECT user_id FROM users WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE")
                 elif grade_filter:
+                    # كل طلاب صف معين
                     cur.execute("SELECT user_id FROM users WHERE is_registered = TRUE AND grade = %s", (grade_filter,))
                 else:
+                    # الكل
                     cur.execute("SELECT user_id FROM users WHERE is_registered = TRUE")
                 rows = cur.fetchall()
                 if rows:
@@ -1284,12 +1367,7 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
             failed_users.append({"user_id": user_id, "error": str(e)[:80]})
 
     # تحديد الهدف للعرض
-    if my_students_only:
-        target = "⭐ طلابي فقط"
-    elif grade_filter:
-        target = f"طلاب {grade_filter}"
-    else:
-        target = "جميع المسجلين"
+    target = _get_broadcast_target_text(my_students_only, grade_filter)
 
     result = (
         f"اكتمل الإرسال.\n"

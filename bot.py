@@ -87,6 +87,7 @@ try:
             admin_broadcast_menu_callback,
             admin_broadcast_grade_callback,
             admin_broadcast_my_students_callback,
+            admin_broadcast_my_grade_callback,
             broadcast_grade_selected,
             admin_edit_messages_menu_callback,
             admin_stats_panel_button_callback,
@@ -397,6 +398,7 @@ def main() -> None:
                 CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$"),
                 CallbackQueryHandler(admin_broadcast_grade_callback, pattern=r"^admin_broadcast_grade$"),
                 CallbackQueryHandler(admin_broadcast_my_students_callback, pattern=r"^admin_broadcast_my_students$"),
+                CallbackQueryHandler(admin_broadcast_my_grade_callback, pattern=r"^admin_broadcast_my_grade$"),
             ],
             states={
                 BROADCAST_GRADE_SELECT: [
