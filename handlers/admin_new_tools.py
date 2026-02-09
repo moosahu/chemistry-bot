@@ -741,18 +741,20 @@ async def admin_grade_students_list_callback(update: Update, context: ContextTyp
     query = update.callback_query
     await query.answer()
 
-    # استخراج الصف ورقم الصفحة
-    data = query.data  # grade_students_ثانوي 1 أو grade_students_page_ثانوي 1_2
+    # استخراج الصف ورقم الصفحة من callback_data أو من context
+    data = query.data
     if data.startswith("grade_students_page_"):
-        # grade_students_page_ثانوي 1_2
         parts = data.replace("grade_students_page_", "")
-        # آخر _ بعده الرقم
         last_underscore = parts.rfind("_")
         grade = parts[:last_underscore]
         page = int(parts[last_underscore + 1:])
-    else:
+    elif data.startswith("grade_students_"):
         grade = data.replace("grade_students_", "")
         page = 0
+    else:
+        # fallback من context (عند التبديل)
+        grade = context.user_data.get('grade_browse_grade', '')
+        page = context.user_data.get('grade_browse_page', 0)
 
     context.user_data['grade_browse_page'] = page
     context.user_data['grade_browse_grade'] = grade
@@ -875,8 +877,6 @@ async def admin_grade_toggle_student_callback(update: Update, context: ContextTy
     # إعادة عرض نفس الصفحة
     context.user_data['grade_browse_grade'] = grade
     context.user_data['grade_browse_page'] = page
-    # نحتاج نعيد بناء الـ callback data
-    query.data = f"grade_students_page_{grade}_{page}"
     await admin_grade_students_list_callback(update, context)
 
 
