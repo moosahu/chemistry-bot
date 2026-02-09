@@ -1584,7 +1584,7 @@ async def admin_report_monthly_callback(update: Update, context: ContextTypes.DE
 
 
 async def admin_report_certificates_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """إنشاء وإرسال شهادات التفوق للطلاب المتميزين"""
+    """عرض الطلاب المؤهلين للشهادات مع اختيار فردي"""
     query = update.callback_query
     await query.answer()
     if not await check_admin_privileges(update, context):
@@ -1617,44 +1617,12 @@ async def admin_report_certificates_callback(update: Update, context: ContextTyp
             )
             return
         
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=f"🏆 تم إنشاء {len(certificates)} شهادة\nجاري الإرسال للطلاب..."
-        )
+        # حفظ الشهادات مع حالة التحديد
+        context.user_data['pending_certificates'] = certificates
+        context.user_data['cert_selected'] = [True] * len(certificates)
         
-        sent = 0
-        failed = 0
+        await _show_cert_selection(context, query.message.chat_id)
         
-        for cert in certificates:
-            try:
-                telegram_id = cert['telegram_id']
-                
-                # إرسال الرسالة التشجيعية
-                await context.bot.send_message(chat_id=telegram_id, text=cert['message'])
-                
-                # إرسال الشهادة PDF
-                import os
-                if os.path.exists(cert['pdf_path']):
-                    with open(cert['pdf_path'], 'rb') as pdf_file:
-                        await context.bot.send_document(
-                            chat_id=telegram_id,
-                            document=pdf_file,
-                            filename=f"شهادة_{cert['name']}.pdf",
-                            caption=f"🏆 شهادة {cert['cert_type']}"
-                        )
-                sent += 1
-            except Exception as se:
-                failed += 1
-                logger.warning(f"فشل إرسال شهادة لـ {cert.get('name', '?')}: {se}")
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]
-        ])
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=f"✅ تم إرسال الشهادات\n📨 نجح: {sent}\n❌ فشل: {failed}",
-            reply_markup=keyboard
-        )
     except Exception as e:
         logger.error(f"خطأ في الشهادات: {e}")
         await context.bot.send_message(
@@ -1664,8 +1632,139 @@ async def admin_report_certificates_callback(update: Update, context: ContextTyp
         )
 
 
+async def _show_cert_selection(context, chat_id, message_id=None):
+    """عرض قائمة الشهادات مع أزرار تحديد فردية"""
+    certificates = context.user_data.get('pending_certificates', [])
+    selected = context.user_data.get('cert_selected', [])
+    
+    cert_emoji = {'متفوق': '🥇', 'متميز': '🥈', 'أكثر تحسناً': '📈'}
+    selected_count = sum(selected)
+    
+    text = f"🏆 شهادات التفوق — اختر اللي تبي ترسل لهم:\n"
+    text += f"(محدد: {selected_count}/{len(certificates)})\n\n"
+    
+    keyboard = []
+    for i, c in enumerate(certificates):
+        check = "✅" if selected[i] else "⬜"
+        emoji = cert_emoji.get(c['cert_type'], '🏅')
+        btn_text = f"{check} {c['name']} — {emoji}{c['cert_type']} ({c['avg_score']}%)"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"ctoggle_{i}")])
+    
+    # أزرار التحكم
+    keyboard.append([
+        InlineKeyboardButton("☑️ تحديد الكل", callback_data="cert_select_all"),
+        InlineKeyboardButton("⬜ إلغاء الكل", callback_data="cert_deselect_all"),
+    ])
+    
+    if selected_count > 0:
+        keyboard.append([InlineKeyboardButton(f"📨 إرسال الشهادات ({selected_count})", callback_data="admin_report_cert_confirm")])
+    
+    keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data="admin_show_tools_menu")])
+    
+    markup = InlineKeyboardMarkup(keyboard)
+    
+    if message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text=text, reply_markup=markup
+            )
+            return
+        except Exception:
+            pass
+    
+    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
+
+
+async def admin_cert_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تبديل تحديد طالب في الشهادات"""
+    query = update.callback_query
+    await query.answer()
+    
+    idx = int(query.data.replace("ctoggle_", ""))
+    selected = context.user_data.get('cert_selected', [])
+    
+    if 0 <= idx < len(selected):
+        selected[idx] = not selected[idx]
+        context.user_data['cert_selected'] = selected
+    
+    await _show_cert_selection(context, query.message.chat_id, query.message.message_id)
+
+
+async def admin_cert_select_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تحديد كل الشهادات"""
+    query = update.callback_query
+    await query.answer()
+    n = len(context.user_data.get('pending_certificates', []))
+    context.user_data['cert_selected'] = [True] * n
+    await _show_cert_selection(context, query.message.chat_id, query.message.message_id)
+
+
+async def admin_cert_deselect_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """إلغاء تحديد كل الشهادات"""
+    query = update.callback_query
+    await query.answer()
+    n = len(context.user_data.get('pending_certificates', []))
+    context.user_data['cert_selected'] = [False] * n
+    await _show_cert_selection(context, query.message.chat_id, query.message.message_id)
+
+
+async def admin_report_cert_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """إرسال الشهادات المحددة فقط"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+    
+    certificates = context.user_data.get('pending_certificates', [])
+    selected = context.user_data.get('cert_selected', [])
+    
+    if not certificates or not any(selected):
+        await query.edit_message_text("❌ لم تحدد أي طالب", reply_markup=get_admin_menu_keyboard())
+        return
+    
+    to_send = [c for i, c in enumerate(certificates) if i < len(selected) and selected[i]]
+    
+    await query.edit_message_text(f"📨 جاري إرسال {len(to_send)} شهادة...")
+    
+    sent = 0
+    failed = 0
+    
+    for cert in to_send:
+        try:
+            telegram_id = cert['telegram_id']
+            
+            await context.bot.send_message(chat_id=telegram_id, text=cert['message'])
+            
+            import os
+            if os.path.exists(cert['pdf_path']):
+                with open(cert['pdf_path'], 'rb') as pdf_file:
+                    await context.bot.send_document(
+                        chat_id=telegram_id,
+                        document=pdf_file,
+                        filename=f"شهادة_{cert['name']}.pdf",
+                        caption=f"🏆 شهادة {cert['cert_type']}"
+                    )
+            sent += 1
+        except Exception as se:
+            failed += 1
+            logger.warning(f"فشل إرسال شهادة لـ {cert.get('name', '?')}: {se}")
+    
+    context.user_data['pending_certificates'] = []
+    context.user_data['cert_selected'] = []
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]
+    ])
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=f"✅ تم إرسال الشهادات\n📨 نجح: {sent}\n❌ فشل: {failed}",
+        reply_markup=keyboard
+    )
+
+
 async def admin_report_notify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """عرض الطلاب الضعاف مع خيار إرسال إشعارات"""
+    """عرض الطلاب الضعاف مع خيار اختيار فردي"""
     query = update.callback_query
     await query.answer()
     if not await check_admin_privileges(update, context):
@@ -1694,23 +1793,12 @@ async def admin_report_notify_callback(update: Update, context: ContextTypes.DEF
             )
             return
         
-        # حفظ الإشعارات
+        # حفظ الإشعارات مع حالة التحديد (الكل محدد افتراضياً)
         context.user_data['pending_notifications'] = notifications
+        context.user_data['notify_selected'] = [True] * len(notifications)
         
-        summary = f"📋 تم تحديد {len(notifications)} طالب:\n\n"
-        for n in notifications:
-            emoji = {'ضعيف': '🔴', 'متسرع': '⚡', 'متوسط': '🟡', 'متراجع': '📉'}.get(n['type'], '📌')
-            summary += f"{emoji} {n['name']} — {n['type']} ({n['avg_score']}%)\n"
+        await _show_notify_selection(context, query.message.chat_id)
         
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ إرسال الإشعارات", callback_data="admin_report_notify_confirm")],
-            [InlineKeyboardButton("❌ إلغاء", callback_data="admin_show_tools_menu")]
-        ])
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=summary,
-            reply_markup=keyboard
-        )
     except Exception as e:
         logger.error(f"خطأ في تحديد الإشعارات: {e}")
         await context.bot.send_message(
@@ -1720,28 +1808,109 @@ async def admin_report_notify_callback(update: Update, context: ContextTypes.DEF
         )
 
 
+async def _show_notify_selection(context, chat_id, message_id=None):
+    """عرض قائمة الطلاب مع أزرار تحديد فردية"""
+    notifications = context.user_data.get('pending_notifications', [])
+    selected = context.user_data.get('notify_selected', [])
+    
+    type_emoji = {'ضعيف': '🔴', 'متسرع': '⚡', 'متوسط': '🟡', 'متراجع': '📉'}
+    selected_count = sum(selected)
+    
+    text = f"📱 إشعارات الطلاب — اختر اللي تبي ترسل لهم:\n"
+    text += f"(محدد: {selected_count}/{len(notifications)})\n\n"
+    
+    keyboard = []
+    for i, n in enumerate(notifications):
+        check = "✅" if selected[i] else "⬜"
+        emoji = type_emoji.get(n['type'], '📌')
+        btn_text = f"{check} {n['name']} — {emoji}{n['type']} ({n['avg_score']}%)"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"ntoggle_{i}")])
+    
+    # أزرار التحكم
+    keyboard.append([
+        InlineKeyboardButton("☑️ تحديد الكل", callback_data="notify_select_all"),
+        InlineKeyboardButton("⬜ إلغاء الكل", callback_data="notify_deselect_all"),
+    ])
+    
+    if selected_count > 0:
+        keyboard.append([InlineKeyboardButton(f"📨 إرسال ({selected_count})", callback_data="admin_report_notify_confirm")])
+    
+    keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data="admin_show_tools_menu")])
+    
+    markup = InlineKeyboardMarkup(keyboard)
+    
+    if message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text=text, reply_markup=markup
+            )
+            return
+        except Exception:
+            pass
+    
+    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
+
+
+async def admin_notify_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تبديل تحديد طالب في الإشعارات"""
+    query = update.callback_query
+    await query.answer()
+    
+    idx = int(query.data.replace("ntoggle_", ""))
+    selected = context.user_data.get('notify_selected', [])
+    
+    if 0 <= idx < len(selected):
+        selected[idx] = not selected[idx]
+        context.user_data['notify_selected'] = selected
+    
+    await _show_notify_selection(context, query.message.chat_id, query.message.message_id)
+
+
+async def admin_notify_select_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تحديد الكل"""
+    query = update.callback_query
+    await query.answer()
+    n = len(context.user_data.get('pending_notifications', []))
+    context.user_data['notify_selected'] = [True] * n
+    await _show_notify_selection(context, query.message.chat_id, query.message.message_id)
+
+
+async def admin_notify_deselect_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """إلغاء تحديد الكل"""
+    query = update.callback_query
+    await query.answer()
+    n = len(context.user_data.get('pending_notifications', []))
+    context.user_data['notify_selected'] = [False] * n
+    await _show_notify_selection(context, query.message.chat_id, query.message.message_id)
+
+
 async def admin_report_notify_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """تأكيد وإرسال الإشعارات للطلاب الضعاف"""
+    """إرسال الإشعارات المحددة فقط"""
     query = update.callback_query
     await query.answer()
     if not await check_admin_privileges(update, context):
         return
     
     notifications = context.user_data.get('pending_notifications', [])
+    selected = context.user_data.get('notify_selected', [])
     
-    if not notifications:
+    if not notifications or not any(selected):
         await query.edit_message_text(
-            "❌ لا توجد إشعارات معلقة — اضغط 📱 إشعار الضعاف أولاً",
+            "❌ لم تحدد أي طالب",
             reply_markup=get_admin_menu_keyboard()
         )
         return
     
-    await query.edit_message_text(f"📨 جاري إرسال {len(notifications)} إشعار...")
+    # فلترة المحددين فقط
+    to_send = [n for i, n in enumerate(notifications) if i < len(selected) and selected[i]]
+    
+    await query.edit_message_text(f"📨 جاري إرسال {len(to_send)} إشعار...")
     
     sent = 0
     failed = 0
     
-    for notif in notifications:
+    for notif in to_send:
         try:
             await context.bot.send_message(chat_id=notif['telegram_id'], text=notif['message'])
             sent += 1
@@ -1750,6 +1919,7 @@ async def admin_report_notify_confirm_callback(update: Update, context: ContextT
             logger.warning(f"فشل إرسال إشعار لـ {notif.get('name', '?')}: {se}")
     
     context.user_data['pending_notifications'] = []
+    context.user_data['notify_selected'] = []
     
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]
