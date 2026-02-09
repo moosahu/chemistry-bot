@@ -295,7 +295,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
 
     if quiz_type_key == QUIZ_TYPE_ALL:
-        api_response = fetch_from_api("api/v1/questions/all")
+        api_response = await fetch_from_api("api/v1/questions/all")
         if api_response == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE 
@@ -312,7 +312,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
 
     elif quiz_type_key == "random_course":
         # اختبار عشوائي حسب المقرر
-        courses = fetch_from_api("api/v1/courses")
+        courses = await fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
@@ -326,7 +326,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
         return SELECT_COURSE_FOR_RANDOM_QUIZ
         
     elif quiz_type_key == QUIZ_TYPE_UNIT:
-        courses = fetch_from_api("api/v1/courses")
+        courses = await fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
@@ -374,7 +374,7 @@ async def select_course_for_random_quiz_handler(update: Update, context: Callbac
     context.user_data["selected_course_name_for_random_quiz"] = selected_course_name
 
     # جلب جميع الأسئلة للمقرر
-    api_response = fetch_from_api(f"api/v1/courses/{selected_course_id}/questions")
+    api_response = await fetch_from_api(f"api/v1/courses/{selected_course_id}/questions")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     
     if api_response == "TIMEOUT":
@@ -427,7 +427,7 @@ async def select_course_for_unit_quiz_handler(update: Update, context: CallbackC
     selected_course_name = next((c.get("name") for c in courses if str(c.get("id")) == str(selected_course_id)), "مقرر غير معروف")
     context.user_data["selected_course_name_for_unit_quiz"] = selected_course_name
 
-    units = fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
+    units = await fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     if units == "TIMEOUT":
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_unit_quiz",0)))
@@ -475,7 +475,7 @@ async def select_unit_for_course_handler(update: Update, context: CallbackContex
     selected_unit_name = next((u.get("name") for u in units if str(u.get("id")) == str(selected_unit_id)), "وحدة غير معروفة")
     context.user_data["selected_unit_name"] = selected_unit_name
 
-    api_response = fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
+    api_response = await fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     current_unit_page = context.user_data.get("current_unit_page_for_course", 0)
 
@@ -784,7 +784,7 @@ def _weakness_bar(error_rate: float, width: int = 6) -> str:
     return "🟥" * filled + "⬜" * empty
 
 
-def _fetch_course_weakness(courses: list, weak_question_ids: set) -> tuple:
+async def _fetch_course_weakness(courses: list, weak_question_ids: set) -> tuple:
     """
     المرحلة 1: جلب أسئلة كل مقرر ومطابقتها مع أسئلة الضعف.
     يرسل API call واحد لكل مقرر (عادة 2-3 مقررات فقط).
@@ -804,7 +804,7 @@ def _fetch_course_weakness(courses: list, weak_question_ids: set) -> tuple:
             continue
         
         # جلب كل أسئلة المقرر
-        questions = fetch_from_api(f"api/v1/courses/{c_id}/questions")
+        questions = await fetch_from_api(f"api/v1/courses/{c_id}/questions")
         if not questions or questions == "TIMEOUT" or not isinstance(questions, list):
             logger.warning(f"[Weakness] Could not fetch questions for course {c_id} ({c_name})")
             continue
@@ -834,7 +834,7 @@ def _fetch_course_weakness(courses: list, weak_question_ids: set) -> tuple:
     return course_weakness, all_matched
 
 
-def _fetch_unit_weakness(course_id: str, weak_question_ids: set) -> tuple:
+async def _fetch_unit_weakness(course_id: str, weak_question_ids: set) -> tuple:
     """
     المرحلة 2: جلب وحدات مقرر محدد ومطابقة الأسئلة الضعيفة لكل وحدة.
     يُستدعى فقط عند اختيار المقرر.
@@ -847,7 +847,7 @@ def _fetch_unit_weakness(course_id: str, weak_question_ids: set) -> tuple:
     unit_weakness = {}
     unit_matched = {}
     
-    units = fetch_from_api(f"api/v1/courses/{course_id}/units")
+    units = await fetch_from_api(f"api/v1/courses/{course_id}/units")
     if not units or units == "TIMEOUT" or not isinstance(units, list):
         logger.warning(f"[Weakness] Could not fetch units for course {course_id}")
         return unit_weakness, unit_matched
@@ -858,7 +858,7 @@ def _fetch_unit_weakness(course_id: str, weak_question_ids: set) -> tuple:
         if not u_id:
             continue
         
-        questions = fetch_from_api(f"api/v1/units/{u_id}/questions")
+        questions = await fetch_from_api(f"api/v1/units/{u_id}/questions")
         if not questions or questions == "TIMEOUT" or not isinstance(questions, list):
             continue
         
@@ -950,7 +950,7 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
     logger.info(f"[Weakness] User {user_id}: {len(weak_question_ids)} weak question IDs from DB")
     
     # 2. جلب المقررات
-    courses = fetch_from_api("api/v1/courses")
+    courses = await fetch_from_api("api/v1/courses")
     if not courses or courses == "TIMEOUT" or not isinstance(courses, list):
         kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
         if message_id:
@@ -960,7 +960,7 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
     context.user_data["weakness_courses"] = courses
     
     # 3. جلب أسئلة كل مقرر ومطابقتها (2-3 API calls فقط)
-    course_weakness, all_matched = _fetch_course_weakness(courses, weak_question_ids)
+    course_weakness, all_matched = await _fetch_course_weakness(courses, weak_question_ids)
     
     if not course_weakness or not all_matched:
         logger.warning(f"[Weakness] No matches found. weak_ids sample: {list(weak_question_ids)[:3]}")
@@ -1075,7 +1075,7 @@ async def handle_weakness_course_selection(update: Update, context: CallbackCont
         if info["course_id"] == selected_course_id
     )
     
-    unit_weakness, unit_matched = _fetch_unit_weakness(selected_course_id, course_weak_ids)
+    unit_weakness, unit_matched = await _fetch_unit_weakness(selected_course_id, course_weak_ids)
     
     if not unit_weakness:
         # ما لقينا وحدات — نبدأ مباشرة بأسئلة المقرر
