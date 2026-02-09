@@ -95,21 +95,24 @@ class FinalWeeklyReportGenerator:
                         COUNT(CASE WHEN last_activity >= :start_date THEN 1 END) as active_users_previous_week,
                         COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_previous_week
                     FROM users
+                    WHERE COALESCE(grade, '') != 'معلم'
                 """)
                 
                 users_result = conn.execute(users_query, {
                     'start_date': previous_start
                 }).fetchone()
                 
-                # إحصائيات الاختبارات للأسبوع السابق
+                # إحصائيات الاختبارات للأسبوع السابق (بدون معلمين)
                 quiz_query = text("""
                     SELECT 
                         COUNT(*) as total_quizzes_previous_week,
-                        COUNT(DISTINCT user_id) as unique_users_previous_week,
-                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_previous_week,
-                        SUM(total_questions) as total_questions_previous_week
-                    FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                        COUNT(DISTINCT qr.user_id) as unique_users_previous_week,
+                        AVG(CASE WHEN qr.percentage IS NOT NULL AND qr.percentage > 0 THEN qr.percentage END) as avg_percentage_previous_week,
+                        SUM(qr.total_questions) as total_questions_previous_week
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
                 """)
                 
                 quiz_result = conn.execute(quiz_query, {
@@ -196,10 +199,16 @@ class FinalWeeklyReportGenerator:
             logger.error(f"خطأ في حساب المقارنة الأسبوعية: {e}")
             return {}
 
-    def calculate_kpis(self, stats: Dict[str, Any]) -> Dict[str, Any]:
-        """حساب مؤشرات الأداء الرئيسية (KPIs)"""
+    def calculate_kpis(self, stats: Dict[str, Any], start_date=None, end_date=None) -> Dict[str, Any]:
+        """حساب مؤشرات الأداء الرئيسية (KPIs) - يستبعد المعلمين"""
         try:
             kpis = {}
+            
+            # تحديد التواريخ
+            if start_date is None:
+                start_date = datetime.now() - timedelta(days=7)
+            if end_date is None:
+                end_date = datetime.now()
             
             # معدل المشاركة
             total_users = float(stats.get('total_registered_users', 0))
@@ -217,48 +226,31 @@ class FinalWeeklyReportGenerator:
             else:
                 kpis['completion_rate'] = 0
             
-            # معدل التفوق (درجات أعلى من 80%)
+            # معدل التفوق + معدل الخطر (بدون معلمين)
             with self.engine.connect() as conn:
-                excellence_query = text("""
+                kpi_query = text("""
                     SELECT 
-                        COUNT(CASE WHEN percentage >= 80 THEN 1 END) as excellent_results,
+                        COUNT(CASE WHEN qr.percentage >= 80 THEN 1 END) as excellent_results,
+                        COUNT(CASE WHEN qr.percentage < 50 THEN 1 END) as at_risk_results,
                         COUNT(*) as total_results
-                    FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
                 """)
                 
-                # استخدام التواريخ من الإحصائيات
-                start_date = datetime.now() - timedelta(days=7)
-                end_date = datetime.now()
-                
-                excellence_result = conn.execute(excellence_query, {
+                kpi_result = conn.execute(kpi_query, {
                     'start_date': start_date,
                     'end_date': end_date
                 }).fetchone()
                 
-                if excellence_result.total_results > 0:
-                    kpis['excellence_rate'] = round((float(excellence_result.excellent_results) / float(excellence_result.total_results)) * 100, 2)
+                if kpi_result.total_results > 0:
+                    total = float(kpi_result.total_results)
+                    kpis['excellence_rate'] = round(float(kpi_result.excellent_results) / total * 100, 2)
+                    kpis['at_risk_rate'] = round(float(kpi_result.at_risk_results) / total * 100, 2)
                 else:
                     kpis['excellence_rate'] = 0
-            
-            # معدل الخطر (درجات أقل من 50%)
-            with self.engine.connect() as conn:
-                risk_query = text("""
-                    SELECT 
-                        COUNT(CASE WHEN percentage < 50 THEN 1 END) as at_risk_results,
-                        COUNT(*) as total_results
-                    FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
-                """)
-                
-                risk_result = conn.execute(risk_query, {
-                    'start_date': start_date,
-                    'end_date': end_date
-                }).fetchone()
-                
-                if risk_result.total_results > 0:
-                    kpis['at_risk_rate'] = round((float(risk_result.at_risk_results) / float(risk_result.total_results)) * 100, 2)
-                else:
                     kpis['at_risk_rate'] = 0
             
             # متوسط الوقت لكل سؤال
@@ -275,13 +267,9 @@ class FinalWeeklyReportGenerator:
             
         except Exception as e:
             logger.error(f"خطأ في حساب مؤشرات الأداء الرئيسية: {e}")
-            # إرجاع المؤشرات الأساسية حتى لو فشلت بعض الاستعلامات
             return {
-                'participation_rate': round((float(stats.get('active_users_this_week', 0)) / float(stats.get('total_registered_users', 1))) * 100, 2) if stats.get('total_registered_users', 0) > 0 else 0,
-                'completion_rate': round(float(stats.get('total_quizzes_this_week', 0)) / float(stats.get('active_users_this_week', 1)), 2) if stats.get('active_users_this_week', 0) > 0 else 0,
-                'excellence_rate': 0,
-                'at_risk_rate': 0,
-                'avg_time_per_question': 0
+                'participation_rate': 0, 'completion_rate': 0,
+                'excellence_rate': 0, 'at_risk_rate': 0, 'avg_time_per_question': 0
             }
 
     def predict_performance_trend(self, current_stats: Dict[str, Any], previous_stats: Dict[str, Any], comparison: Dict[str, Any]) -> Dict[str, Any]:
@@ -356,29 +344,32 @@ class FinalWeeklyReportGenerator:
         """الحصول على إحصائيات شاملة"""
         try:
             with self.engine.connect() as conn:
-                # إحصائيات المستخدمين
+                # إحصائيات المستخدمين (بدون معلمين)
                 users_query = text("""
                     SELECT 
                         COUNT(*) as total_registered_users,
                         COUNT(CASE WHEN last_activity >= :start_date THEN 1 END) as active_users_this_week,
                         COUNT(CASE WHEN registration_date >= :start_date THEN 1 END) as new_users_this_week
                     FROM users
+                    WHERE COALESCE(grade, '') != 'معلم'
                 """)
                 
                 users_result = conn.execute(users_query, {
                     'start_date': start_date
                 }).fetchone()
                 
-                # إحصائيات الاختبارات
+                # إحصائيات الاختبارات (بدون معلمين)
                 quiz_query = text("""
                     SELECT 
                         COUNT(*) as total_quizzes_this_week,
-                        COUNT(DISTINCT user_id) as unique_users_this_week,
-                        AVG(CASE WHEN percentage IS NOT NULL AND percentage > 0 THEN percentage END) as avg_percentage_this_week,
-                        SUM(total_questions) as total_questions_this_week,
-                        AVG(time_taken_seconds) as avg_time_taken
-                    FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
+                        COUNT(DISTINCT qr.user_id) as unique_users_this_week,
+                        AVG(CASE WHEN qr.percentage IS NOT NULL AND qr.percentage > 0 THEN qr.percentage END) as avg_percentage_this_week,
+                        SUM(qr.total_questions) as total_questions_this_week,
+                        AVG(qr.time_taken_seconds) as avg_time_taken
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
                 """)
                 
                 quiz_result = conn.execute(quiz_query, {
@@ -386,58 +377,13 @@ class FinalWeeklyReportGenerator:
                     'end_date': end_date
                 }).fetchone()
                 
-                # تسجيل تفصيلي لتشخيص المشكلة
-                logger.info(f"نتائج استعلام الاختبارات:")
-                logger.info(f"- إجمالي الاختبارات: {quiz_result.total_quizzes_this_week}")
-                logger.info(f"- المستخدمين الفريدين: {quiz_result.unique_users_this_week}")
-                logger.info(f"- متوسط الدرجات الخام: {quiz_result.avg_percentage_this_week}")
-                logger.info(f"- إجمالي الأسئلة: {quiz_result.total_questions_this_week}")
-                logger.info(f"- متوسط الوقت: {quiz_result.avg_time_taken}")
-                
-                # فحص إضافي للبيانات
-                debug_query = text("""
-                    SELECT 
-                        COUNT(*) as total_records,
-                        MIN(percentage) as min_percentage,
-                        MAX(percentage) as max_percentage,
-                        COUNT(CASE WHEN percentage > 0 THEN 1 END) as non_zero_records
-                    FROM quiz_results 
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
-                """)
-                
-                debug_result = conn.execute(debug_query, {
-                    'start_date': start_date,
-                    'end_date': end_date
-                }).fetchone()
-                
-                logger.info(f"فحص إضافي للبيانات:")
-                logger.info(f"- إجمالي السجلات: {debug_result.total_records}")
-                logger.info(f"- أقل نسبة: {debug_result.min_percentage}")
-                logger.info(f"- أعلى نسبة: {debug_result.max_percentage}")
-                logger.info(f"- السجلات غير الصفرية: {debug_result.non_zero_records}")
-                
-                # فحص بنية الجدول
-                try:
-                    structure_query = text("SELECT * FROM quiz_results LIMIT 1")
-                    sample_result = conn.execute(structure_query).fetchone()
-                    if sample_result:
-                        logger.info(f"عينة من البيانات: {dict(sample_result._mapping)}")
-                    else:
-                        logger.warning("لا توجد بيانات في جدول quiz_results")
-                except Exception as struct_error:
-                    logger.error(f"خطأ في فحص بنية الجدول: {struct_error}")
-                
                 # حساب معدل المشاركة
                 total_users = users_result.total_registered_users or 0
                 active_users = users_result.active_users_this_week or 0
                 engagement_rate = (active_users / total_users * 100) if total_users > 0 else 0
                 
-                # معالجة خاصة عندما تكون جميع النتائج صفر
+                # معالجة متوسط الدرجات
                 avg_percentage_final = quiz_result.avg_percentage_this_week or 0
-                if avg_percentage_final == 0 and debug_result.total_records > 0:
-                    logger.warning("⚠️ تحذير: جميع نتائج الاختبارات في قاعدة البيانات صفر!")
-                    logger.warning("هذا يشير إلى مشكلة في كود حفظ نتائج الاختبارات")
-                    avg_percentage_final = 0  # سنعرض 0 مع رسالة تحذيرية
                 
                 return {
                     'total_registered_users': total_users,
@@ -448,7 +394,6 @@ class FinalWeeklyReportGenerator:
                     'avg_percentage_this_week': round(avg_percentage_final, 2),
                     'total_questions_this_week': quiz_result.total_questions_this_week or 0,
                     'avg_time_taken': round(quiz_result.avg_time_taken or 0, 2),
-                    'data_quality_warning': avg_percentage_final == 0 and debug_result.total_records > 0
                 }
                 
         except Exception as e:
@@ -568,38 +513,71 @@ class FinalWeeklyReportGenerator:
                 
                 users_analysis = []
                 for row in result:
-                    # تحديد مستوى الأداء بناءً على معايير عادلة (الأداء + الاستمرارية + الجهد)
                     avg_percentage = row.overall_avg_percentage or 0
                     total_quizzes = row.total_quizzes or 0
                     total_questions = row.total_questions_answered or 0
+                    user_grade = row.grade or 'غير محدد'
                     
-                    # معايير عادلة تأخذ في الاعتبار الأداء والاستمرارية والجهد
-                    if avg_percentage >= 85 and total_quizzes >= 3 and total_questions >= 30:
-                        performance_level = "ممتاز"
-                    elif avg_percentage >= 75 and total_quizzes >= 2 and total_questions >= 20:
-                        performance_level = "جيد جداً"
-                    elif avg_percentage >= 65 and total_quizzes >= 1:
-                        performance_level = "جيد"
-                    elif avg_percentage >= 50:
-                        performance_level = "متوسط"
-                    elif avg_percentage > 0:
-                        performance_level = "ضعيف"
-                    else:
+                    # ══ مستوى الأداء: يعتمد على عدد الأسئلة (مو الاختبارات) ══
+                    if total_questions == 0:
                         performance_level = "لا يوجد نشاط"
-                    
-                    # تحديد مستوى النشاط
-                    if total_quizzes >= 10:
-                        activity_level = "نشط جداً"
-                    elif total_quizzes >= 5:
-                        activity_level = "نشط"
-                    elif total_quizzes >= 1:
-                        activity_level = "قليل النشاط"
+                        confidence_level = "—"
+                    elif total_questions < 5:
+                        # بيانات غير كافية للتقييم
+                        performance_level = "بيانات قليلة"
+                        confidence_level = "غير كافية"
+                    elif total_questions < 15:
+                        # تقييم مبدئي
+                        confidence_level = "مبدئي"
+                        if avg_percentage >= 70:
+                            performance_level = "واعد"
+                        elif avg_percentage >= 50:
+                            performance_level = "مقبول"
+                        else:
+                            performance_level = "يحتاج متابعة"
+                    elif total_questions < 30:
+                        # تقييم أولي
+                        confidence_level = "أولي"
+                        if avg_percentage >= 80:
+                            performance_level = "جيد جداً"
+                        elif avg_percentage >= 65:
+                            performance_level = "جيد"
+                        elif avg_percentage >= 50:
+                            performance_level = "متوسط"
+                        else:
+                            performance_level = "ضعيف"
                     else:
-                        activity_level = "غير نشط"
+                        # تقييم موثوق (30+ سؤال)
+                        confidence_level = "موثوق"
+                        if avg_percentage >= 85:
+                            performance_level = "ممتاز"
+                        elif avg_percentage >= 75:
+                            performance_level = "جيد جداً"
+                        elif avg_percentage >= 65:
+                            performance_level = "جيد"
+                        elif avg_percentage >= 50:
+                            performance_level = "متوسط"
+                        else:
+                            performance_level = "ضعيف"
                     
-                    # تحليل الاتجاه المحسن
-                    if total_quizzes >= 3:
-                        # حساب اتجاه التحسن بناءً على آخر 3 اختبارات
+                    # ══ مستوى النشاط: نسبي حسب فترة التقرير ══
+                    period_days = max((end_date - start_date).days, 1)
+                    period_weeks = max(period_days / 7, 1)
+                    quizzes_per_week = total_quizzes / period_weeks
+                    
+                    if total_quizzes == 0:
+                        activity_level = "غير نشط"
+                    elif quizzes_per_week < 1:
+                        activity_level = "متقطع"
+                    elif quizzes_per_week < 3:
+                        activity_level = "منتظم"
+                    elif quizzes_per_week < 6:
+                        activity_level = "نشط"
+                    else:
+                        activity_level = "نشط جداً"
+                    
+                    # تحليل الاتجاه: يكفي 2 اختبار
+                    if total_quizzes >= 2:
                         trend_query = text("""
                             SELECT percentage
                             FROM quiz_results 
@@ -607,8 +585,7 @@ class FinalWeeklyReportGenerator:
                                 AND completed_at >= :start_date 
                                 AND completed_at <= :end_date
                                 AND percentage IS NOT NULL
-                            ORDER BY completed_at DESC 
-                            LIMIT 3
+                            ORDER BY completed_at ASC
                         """)
                         
                         trend_result = conn.execute(trend_query, {
@@ -618,17 +595,33 @@ class FinalWeeklyReportGenerator:
                         }).fetchall()
                         
                         if len(trend_result) >= 2:
-                            recent_scores = [self.safe_convert(r.percentage) for r in trend_result]
-                            if recent_scores[0] > recent_scores[-1]:
-                                trend = "تحسن"
-                            elif recent_scores[0] < recent_scores[-1]:
-                                trend = "تراجع"
+                            scores = [self.safe_convert(r.percentage) for r in trend_result]
+                            mid = len(scores) // 2
+                            first_half_avg = sum(scores[:mid]) / mid if mid > 0 else 0
+                            second_half_avg = sum(scores[mid:]) / (len(scores) - mid) if (len(scores) - mid) > 0 else 0
+                            diff = second_half_avg - first_half_avg
+                            
+                            # الحد الأدنى للتغيير يعتمد على المستوى
+                            # طالب مستواه 90% → تغيير 3% يعتبر ملحوظ
+                            # طالب مستواه 40% → يحتاج 8% عشان يعتبر تحسن حقيقي
+                            avg_overall = (first_half_avg + second_half_avg) / 2
+                            if avg_overall >= 75:
+                                threshold = 3
+                            elif avg_overall >= 50:
+                                threshold = 5
+                            else:
+                                threshold = 8
+                            
+                            if diff > threshold:
+                                trend = "متحسن"
+                            elif diff < -threshold:
+                                trend = "متراجع"
                             else:
                                 trend = "مستقر"
                         else:
-                            trend = "غير كافي للتقييم"
+                            trend = "غير كافي"
                     else:
-                        trend = "غير كافي للتقييم"
+                        trend = "غير كافي"
                     
                     # تحديد الاسم الكامل
                     full_name = row.full_name
@@ -681,7 +674,9 @@ class FinalWeeklyReportGenerator:
                         'correct_answer_rate': correct_answer_rate,
                         'avg_time_per_quiz': round(self.safe_convert(row.avg_time_per_quiz), 2),
                         'performance_level': performance_level,
+                        'confidence_level': confidence_level,
                         'activity_level': activity_level,
+                        'improvement_trend': trend,
                         'last_quiz_date': last_quiz_clean,
                         'first_quiz_date': first_quiz_clean
                     })
@@ -707,7 +702,7 @@ class FinalWeeklyReportGenerator:
                     LEFT JOIN quiz_results qr ON u.user_id = qr.user_id 
                         AND qr.completed_at >= :start_date 
                         AND qr.completed_at <= :end_date
-                    WHERE u.grade IS NOT NULL AND u.grade != ''
+                    WHERE u.grade IS NOT NULL AND u.grade != '' AND u.grade != 'معلم'
                     GROUP BY u.grade
                     ORDER BY u.grade
                 """)
@@ -922,16 +917,18 @@ class FinalWeeklyReportGenerator:
         """تحليل أنماط الوقت والنشاط"""
         try:
             with self.engine.connect() as conn:
-                # النشاط اليومي
+                # النشاط اليومي (بدون معلمين)
                 daily_query = text("""
                     SELECT 
-                        DATE(completed_at) as quiz_date,
+                        DATE(qr.completed_at) as quiz_date,
                         COUNT(*) as quiz_count,
-                        COUNT(DISTINCT user_id) as unique_users
-                    FROM quiz_results
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
-                    GROUP BY DATE(completed_at)
-                    ORDER BY DATE(completed_at)
+                        COUNT(DISTINCT qr.user_id) as unique_users
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
+                    GROUP BY DATE(qr.completed_at)
+                    ORDER BY DATE(qr.completed_at)
                 """)
                 
                 daily_result = conn.execute(daily_query, {
@@ -939,14 +936,16 @@ class FinalWeeklyReportGenerator:
                     'end_date': end_date
                 }).fetchall()
                 
-                # النشاط حسب الساعة
+                # النشاط حسب الساعة (بدون معلمين)
                 hourly_query = text("""
                     SELECT 
-                        EXTRACT(HOUR FROM completed_at) as hour,
+                        EXTRACT(HOUR FROM qr.completed_at) as hour,
                         COUNT(*) as quiz_count
-                    FROM quiz_results
-                    WHERE completed_at >= :start_date AND completed_at <= :end_date
-                    GROUP BY EXTRACT(HOUR FROM completed_at)
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
+                    GROUP BY EXTRACT(HOUR FROM qr.completed_at)
                     ORDER BY quiz_count DESC
                     LIMIT 5
                 """)
@@ -985,49 +984,103 @@ class FinalWeeklyReportGenerator:
     def generate_smart_recommendations(self, general_stats: Dict, user_progress: List, 
                                      grade_analysis: List, difficult_questions: List, 
                                      time_patterns: Dict) -> Dict[str, List[str]]:
-        """إنشاء توصيات ذكية"""
+        """إنشاء توصيات ذكية ومخصصة"""
         recommendations = {
-            'الإدارة': [],
-            'المعلمين': [],
-            'المحتوى': [],
-            'النظام': []
+            'تنبيهات عاجلة': [],
+            'متابعة الطلاب': [],
+            'تحسين المحتوى': [],
+            'تفعيل الطلاب': []
         }
         
         try:
-            # توصيات للإدارة
-            engagement_rate = general_stats.get('engagement_rate', 0)
-            if engagement_rate < 50:
-                recommendations['الإدارة'].append(f"معدل المشاركة منخفض ({engagement_rate}%). يُنصح بتطبيق استراتيجيات تحفيزية")
-            elif engagement_rate > 80:
-                recommendations['الإدارة'].append(f"معدل مشاركة ممتاز ({engagement_rate}%). حافظ على الاستراتيجيات الحالية")
+            # فصل الطلاب عن المعلمين
+            students_only = [u for u in user_progress if u.get('grade', '') != 'معلم']
+            active_students = [u for u in students_only if (u.get('total_quizzes') or 0) > 0]
+            inactive_students = [u for u in students_only if (u.get('total_quizzes') or 0) == 0]
             
-            # توصيات للمعلمين
-            weak_users = [u for u in user_progress if u['performance_level'] == 'ضعيف']
-            if len(weak_users) > 0:
-                recommendations['المعلمين'].append(f"{len(weak_users)} طالب يحتاج دعم إضافي")
+            # ═══ تنبيهات عاجلة ═══
+            # طلاب متعثرين (أقل من 50% مع 10+ أسئلة)
+            struggling = [u for u in active_students 
+                         if (u.get('overall_avg_percentage') or 0) < 50 
+                         and (u.get('total_questions_answered') or 0) >= 10]
+            if struggling:
+                names = [f"{s['full_name']} ({round(s.get('overall_avg_percentage', 0), 0):.0f}%)" for s in struggling[:5]]
+                recommendations['تنبيهات عاجلة'].append(f"طلاب يحتاجون دعم عاجل: {' ، '.join(names)}")
             
-            excellent_users = [u for u in user_progress if u['performance_level'] == 'ممتاز']
-            if len(excellent_users) > 0:
-                recommendations['المعلمين'].append(f"{len(excellent_users)} طالب متفوق يمكن إعطاؤه تحديات متقدمة")
+            # معدل مشاركة منخفض
+            total_students = len(students_only)
+            if total_students > 0:
+                participation = len(active_students) / total_students * 100
+                if participation < 20:
+                    recommendations['تنبيهات عاجلة'].append(
+                        f"معدل المشاركة منخفض جداً ({participation:.0f}%) — {len(inactive_students)} طالب لم يختبر")
             
-            # توصيات للمحتوى
-            high_priority_questions = [q for q in difficult_questions if q['review_priority'] == 'عالية']
-            if len(high_priority_questions) > 0:
-                recommendations['المحتوى'].append(f"{len(high_priority_questions)} سؤال يحتاج مراجعة عاجلة")
+            # ═══ متابعة الطلاب ═══
+            # طلاب ببيانات قليلة (أقل من 5 أسئلة)
+            low_data = [u for u in active_students if (u.get('total_questions_answered') or 0) < 5]
+            if low_data:
+                names = [s['full_name'] for s in low_data[:5]]
+                recommendations['متابعة الطلاب'].append(
+                    f"{len(low_data)} طالب أجاب أقل من 5 أسئلة — شجعهم يكملون: {' ، '.join(names)}")
             
-            # توصيات للنظام
-            avg_time = general_stats.get('avg_time_taken', 0)
-            if avg_time > 300:  # أكثر من 5 دقائق
-                recommendations['النظام'].append(f"متوسط وقت الاختبار مرتفع ({avg_time/60:.1f} دقيقة). فكر في اختبارات أقصر")
+            # طلاب سووا اختبار واحد
+            one_quiz = [u for u in active_students if (u.get('total_quizzes') or 0) == 1]
+            if one_quiz and len(one_quiz) != len(low_data):  # تجنب التكرار
+                count = len(one_quiz)
+                recommendations['متابعة الطلاب'].append(
+                    f"{count} طالب اختبر مرة واحدة فقط — يحتاجون تشجيع للاستمرار")
             
-            # توصيات الوقت
+            # طلاب متفوقين
+            excellent = [u for u in active_students 
+                        if (u.get('overall_avg_percentage') or 0) >= 80 
+                        and (u.get('total_questions_answered') or 0) >= 15]
+            if excellent:
+                names = [s['full_name'] for s in excellent[:3]]
+                recommendations['متابعة الطلاب'].append(
+                    f"طلاب متفوقين: {' ، '.join(names)} — يمكن إعطاؤهم تحديات متقدمة")
+            
+            # ═══ تحسين المحتوى ═══
+            high_priority_questions = [q for q in difficult_questions if q.get('review_priority') == 'عالية']
+            if high_priority_questions:
+                recommendations['تحسين المحتوى'].append(
+                    f"{len(high_priority_questions)} اختبار بمعدل نجاح منخفض — يحتاج مراجعة الأسئلة")
+            
+            # ═══ تفعيل الطلاب ═══
+            if inactive_students:
+                # تجميع حسب الصف
+                grade_counts = {}
+                for s in inactive_students:
+                    g = s.get('grade', 'أخرى')
+                    grade_counts[g] = grade_counts.get(g, 0) + 1
+                
+                parts = [f"{g}: {c}" for g, c in sorted(grade_counts.items(), key=lambda x: x[1], reverse=True)]
+                recommendations['تفعيل الطلاب'].append(
+                    f"{len(inactive_students)} طالب مسجل ولم يختبر ({' ، '.join(parts)})")
+            
+            # أكثر/أقل صف نشاط
+            if grade_analysis:
+                student_grades = [g for g in grade_analysis if g.get('grade', '') not in ('معلم', 'طالب جامعي', 'أخرى')]
+                active_grades = [g for g in student_grades if (g.get('active_students') or 0) > 0]
+                if active_grades:
+                    best = max(active_grades, key=lambda x: x.get('participation_rate', 0))
+                    recommendations['تفعيل الطلاب'].append(
+                        f"أنشط صف: {best['grade']} ({round(best.get('participation_rate', 0), 0):.0f}% مشاركة)")
+                
+                zero_grades = [g for g in student_grades if (g.get('active_students') or 0) == 0 and (g.get('student_count') or 0) > 0]
+                if zero_grades:
+                    names = [g['grade'] for g in zero_grades]
+                    recommendations['تفعيل الطلاب'].append(
+                        f"صفوف بدون نشاط: {' ، '.join(names)}")
+            
+            # ساعة الذروة
             peak_hours = time_patterns.get('peak_hours', [])
             if peak_hours:
                 best_hour = peak_hours[0]['hour']
-                recommendations['النظام'].append(f"ذروة النشاط في الساعة {best_hour}:00. جدول المحتوى الجديد وفقاً لذلك")
+                recommendations['تفعيل الطلاب'].append(
+                    f"ذروة النشاط الساعة {best_hour}:00 — أفضل وقت لإرسال التذكيرات")
             
         except Exception as e:
-            logger.error(f"خطأ في إنشاء التوصيات الذكية: {e}")
+            logger.error(f"خطأ في إنشاء التوصيات: {e}")
         
         return recommendations
     
@@ -1254,33 +1307,43 @@ class FinalWeeklyReportGenerator:
     #  تصنيف الطلاب المحسن (يتجاهل غير النشطين)
     # ============================================================
     def analyze_student_performance_categories(self, user_progress: List) -> Dict[str, List]:
-        """تصنيف الطلاب حسب مستوى الأداء - فقط من أكمل اختبار واحد على الأقل"""
+        """تصنيف الطلاب حسب مستوى الأداء — يعتمد على عدد الأسئلة ويستبعد المعلمين"""
         categories = {
             'متفوقين': [],
             'جيدين': [],
             'متوسطين': [],
             'متعثرين': [],
+            'بيانات قليلة': [],
         }
         
         try:
             for user in user_progress:
+                grade = user.get('grade', '')
+                if grade == 'معلم':
+                    continue
+                
+                total_questions = user.get('total_questions_answered', 0) or 0
                 total_quizzes = user.get('total_quizzes', 0) or 0
                 if total_quizzes == 0:
                     continue
                 
                 avg_percentage = user.get('overall_avg_percentage', 0) or 0
-                total_questions = user.get('total_questions_answered', 0) or 0
 
                 user_info = {
                     'الاسم': user.get('full_name', 'غير محدد'),
-                    'الصف': user.get('grade', 'غير محدد'),
+                    'الصف': grade or 'غير محدد',
                     'متوسط الدرجات': round(avg_percentage, 1),
                     'عدد الاختبارات': total_quizzes,
                     'إجمالي الأسئلة': total_questions,
                     'مستوى الأداء': user.get('performance_level', ''),
+                    'مستوى النشاط': user.get('activity_level', ''),
+                    'درجة الثقة': user.get('confidence_level', ''),
                 }
                 
-                if avg_percentage >= 80:
+                # التصنيف يعتمد على عدد الأسئلة
+                if total_questions < 5:
+                    categories['بيانات قليلة'].append(user_info)
+                elif avg_percentage >= 80 and total_questions >= 15:
                     categories['متفوقين'].append(user_info)
                 elif avg_percentage >= 65:
                     categories['جيدين'].append(user_info)
@@ -1322,7 +1385,7 @@ class FinalWeeklyReportGenerator:
         return analysis
 
     def analyze_student_improvement_trends(self, user_progress: List) -> Dict[str, List]:
-        """تحليل اتجاهات تحسن الطلاب - فقط من لديه 2+ اختبار"""
+        """تحليل اتجاهات تحسن الطلاب - من لديه 2+ اختبار، بدون معلمين"""
         trends = {
             'متحسنين': [],
             'متراجعين': [],
@@ -1331,6 +1394,8 @@ class FinalWeeklyReportGenerator:
         
         try:
             for user in user_progress:
+                if user.get('grade', '') == 'معلم':
+                    continue
                 total_quizzes = user.get('total_quizzes', 0) or 0
                 if total_quizzes < 2:
                     continue
@@ -1341,7 +1406,9 @@ class FinalWeeklyReportGenerator:
                     'الصف': user.get('grade', 'غير محدد'),
                     'متوسط الدرجات': round(user.get('overall_avg_percentage', 0) or 0, 1),
                     'عدد الاختبارات': total_quizzes,
+                    'الأسئلة المجابة': user.get('total_questions_answered', 0) or 0,
                     'الاتجاه': improvement,
+                    'درجة الثقة': user.get('confidence_level', ''),
                 }
                 
                 if improvement == 'متحسن':
@@ -1373,21 +1440,23 @@ class FinalWeeklyReportGenerator:
             
             previous_stats = self.get_previous_week_stats(start_date, end_date)
             weekly_comparison = self.calculate_weekly_comparison(general_stats, previous_stats)
-            kpis = self.calculate_kpis(general_stats)
+            kpis = self.calculate_kpis(general_stats, start_date, end_date)
             
             smart_recommendations = self.generate_smart_recommendations(
                 general_stats, user_progress, grade_analysis, difficult_questions, time_patterns
             )
             
-            student_categories = self.analyze_student_performance_categories(user_progress)
-            improvement_trends = self.analyze_student_improvement_trends(user_progress)
-            
-            chart_paths = self.create_performance_charts(user_progress, grade_analysis, time_patterns)
-            
-            # فصل الطلاب النشطين وغير النشطين
-            active_students = [u for u in user_progress if (u.get('total_quizzes') or 0) > 0]
-            inactive_students = [u for u in user_progress if (u.get('total_quizzes') or 0) == 0]
+            # فصل الطلاب عن المعلمين أولاً
+            students_only = [u for u in user_progress if u.get('grade', '') != 'معلم']
+            teacher_accounts = [u for u in user_progress if u.get('grade', '') == 'معلم']
+            active_students = [u for u in students_only if (u.get('total_quizzes') or 0) > 0]
+            inactive_students = [u for u in students_only if (u.get('total_quizzes') or 0) == 0]
             active_students.sort(key=lambda x: (x.get('overall_avg_percentage') or 0), reverse=True)
+            
+            student_categories = self.analyze_student_performance_categories(students_only)
+            improvement_trends = self.analyze_student_improvement_trends(students_only)
+            
+            chart_paths = self.create_performance_charts(students_only, grade_analysis, time_patterns)
             
             # إنشاء ملف Excel
             report_filename = f"final_weekly_report_{start_date.strftime('%Y-%m-%d')}.xlsx"
@@ -1399,20 +1468,34 @@ class FinalWeeklyReportGenerator:
                 # ═══════════ 1. لوحة المعلومات ═══════════
                 dashboard_data = []
                 
+                # حساب إحصائيات الطلاب فقط (بدون معلمين)
+                total_students = len(students_only)
+                total_active = len(active_students)
+                participation_rate = round(total_active / total_students * 100, 1) if total_students > 0 else 0
+                
+                # متوسط درجات الطلاب فقط
+                student_avgs = [s.get('overall_avg_percentage', 0) or 0 for s in active_students]
+                student_avg_score = round(sum(student_avgs) / len(student_avgs), 1) if student_avgs else 0
+                
                 dashboard_data.append(['📊 نظرة عامة', ''])
                 dashboard_data.append(['الفترة', f"{start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')} ({days_count} يوم)"])
-                dashboard_data.append(['إجمالي المسجلين', general_stats.get('total_registered_users', 0)])
-                dashboard_data.append(['الطلاب النشطين', f"{general_stats.get('active_users_this_week', 0)} ({round(kpis.get('participation_rate', 0), 1)}%)"])
+                dashboard_data.append(['إجمالي الطلاب المسجلين', total_students])
+                dashboard_data.append(['الطلاب النشطين', f"{total_active} ({participation_rate}%)"])
                 dashboard_data.append(['الطلاب الجدد', general_stats.get('new_users_this_week', 0)])
+                if teacher_accounts:
+                    dashboard_data.append(['حسابات معلمين (مستبعدة)', len(teacher_accounts)])
                 dashboard_data.append(['', ''])
                 
-                dashboard_data.append(['🎯 الاختبارات', ''])
-                dashboard_data.append(['إجمالي الاختبارات', general_stats.get('total_quizzes_this_week', 0)])
-                dashboard_data.append(['متوسط الدرجات', f"{round(general_stats.get('avg_percentage_this_week', 0), 1)}%"])
+                dashboard_data.append(['🎯 الاختبارات (طلاب فقط)', ''])
+                student_quizzes = sum(s.get('total_quizzes', 0) or 0 for s in active_students)
+                student_questions = sum(s.get('total_questions_answered', 0) or 0 for s in active_students)
+                dashboard_data.append(['إجمالي الاختبارات', student_quizzes])
+                dashboard_data.append(['إجمالي الأسئلة المجابة', student_questions])
+                dashboard_data.append(['متوسط الدرجات', f"{student_avg_score}%"])
                 dashboard_data.append(['معدل التفوق (80%+)', f"{round(kpis.get('excellence_rate', 0), 1)}%"])
                 dashboard_data.append(['معدل الخطر (أقل من 50%)', f"{round(kpis.get('at_risk_rate', 0), 1)}%"])
-                dashboard_data.append(['اختبارات/طالب', round(kpis.get('completion_rate', 0), 1)])
-                dashboard_data.append(['متوسط الوقت/سؤال (ثانية)', round(kpis.get('avg_time_per_question', 0), 1)])
+                if total_active > 0:
+                    dashboard_data.append(['اختبارات/طالب', round(student_quizzes / total_active, 1)])
                 dashboard_data.append(['', ''])
                 
                 dashboard_data.append(['📈 مقارنة مع الفترة السابقة', ''])
@@ -1425,27 +1508,49 @@ class FinalWeeklyReportGenerator:
                 dashboard_data.append(['الاختبارات (سابق ← حالي)', f"{prev_quizzes} ← {curr_quizzes}"])
                 dashboard_data.append(['التغيير', f"{round(weekly_comparison.get('quizzes_change', 0), 1)}% ({weekly_comparison.get('quizzes_trend', '-')})"])
                 prev_avg = round(previous_stats.get('avg_percentage_previous_week', 0), 1)
-                curr_avg = round(general_stats.get('avg_percentage_this_week', 0), 1)
-                dashboard_data.append(['متوسط الدرجات (سابق ← حالي)', f"{prev_avg}% ← {curr_avg}%"])
+                dashboard_data.append(['متوسط الدرجات (سابق ← حالي)', f"{prev_avg}% ← {student_avg_score}%"])
                 dashboard_data.append(['التغيير', f"{round(weekly_comparison.get('avg_percentage_change', 0), 1)}% ({weekly_comparison.get('avg_percentage_trend', '-')})"])
                 dashboard_data.append(['', ''])
                 
                 dashboard_data.append(['🏆 تصنيف الطلاب النشطين', ''])
-                dashboard_data.append(['متفوقين (80%+)', len(student_categories.get('متفوقين', []))])
-                dashboard_data.append(['جيدين (65-79%)', len(student_categories.get('جيدين', []))])
+                dashboard_data.append(['متفوقين (80%+ مع 15+ سؤال)', len(student_categories.get('متفوقين', []))])
+                dashboard_data.append(['جيدين (65%+)', len(student_categories.get('جيدين', []))])
                 dashboard_data.append(['متوسطين (50-64%)', len(student_categories.get('متوسطين', []))])
                 dashboard_data.append(['متعثرين (أقل من 50%)', len(student_categories.get('متعثرين', []))])
-                dashboard_data.append(['غير نشطين (بدون اختبار)', len(inactive_students)])
+                dashboard_data.append(['بيانات قليلة (أقل من 5 أسئلة)', len(student_categories.get('بيانات قليلة', []))])
+                dashboard_data.append(['غير نشطين', len(inactive_students)])
+                dashboard_data.append(['', ''])
+                
+                # أفضل 3 طلاب
+                top3 = [s for s in active_students if (s.get('total_questions_answered') or 0) >= 5][:3]
+                if top3:
+                    dashboard_data.append(['⭐ أفضل الطلاب', ''])
+                    for i, s in enumerate(top3, 1):
+                        name = s.get('full_name', '')
+                        avg = round(s.get('overall_avg_percentage', 0) or 0, 1)
+                        qs = s.get('total_questions_answered', 0) or 0
+                        dashboard_data.append([f"  {i}. {name}", f"{avg}% ({qs} سؤال)"])
                 
                 dashboard_df = pd.DataFrame(dashboard_data, columns=['المؤشر', 'القيمة'])
                 dashboard_df.to_excel(writer, sheet_name='لوحة المعلومات', index=False)
                 
                 # ═══════════ 2. ترتيب الطلاب ═══════════
                 if active_students:
+                    # ترتيب مرجح: الدرجة × معامل ثقة حسب عدد الأسئلة
+                    def weighted_score(s):
+                        avg = s.get('overall_avg_percentage', 0) or 0
+                        qs = s.get('total_questions_answered', 0) or 0
+                        # معامل الثقة: يبدأ من 0.3 ويصل 1.0 عند 30+ سؤال
+                        confidence = min(1.0, 0.3 + (qs / 30) * 0.7) if qs > 0 else 0
+                        return avg * confidence
+                    
+                    active_students.sort(key=weighted_score, reverse=True)
+                    
                     leaderboard = []
                     for rank, s in enumerate(active_students, 1):
                         avg = s.get('overall_avg_percentage', 0) or 0
                         quizzes = s.get('total_quizzes', 0) or 0
+                        questions = s.get('total_questions_answered', 0) or 0
                         correct = s.get('total_correct_answers', 0) or 0
                         wrong = s.get('total_wrong_answers', 0) or 0
                         
@@ -1454,10 +1559,14 @@ class FinalWeeklyReportGenerator:
                             'الاسم': s.get('full_name', 'غير محدد'),
                             'الصف': s.get('grade', '-'),
                             'متوسط الدرجات (%)': round(avg, 1),
+                            'الأسئلة المجابة': questions,
                             'عدد الاختبارات': quizzes,
                             'صحيحة': correct,
                             'خاطئة': wrong,
                             'مستوى الأداء': s.get('performance_level', '-'),
+                            'درجة الثقة': s.get('confidence_level', '-'),
+                            'النشاط': s.get('activity_level', '-'),
+                            'الاتجاه': s.get('improvement_trend', '-'),
                         })
                     
                     lb_df = pd.DataFrame(leaderboard)
@@ -1489,6 +1598,12 @@ class FinalWeeklyReportGenerator:
                 if excellent:
                     exc_df = pd.DataFrame(excellent)
                     exc_df.to_excel(writer, sheet_name='الطلاب المتفوقين', index=False)
+                
+                # ═══════════ 5.5 بيانات قليلة (أقل من 5 أسئلة) ═══════════
+                low_data_students = student_categories.get('بيانات قليلة', [])
+                if low_data_students:
+                    ld_df = pd.DataFrame(low_data_students)
+                    ld_df.to_excel(writer, sheet_name='بيانات قليلة', index=False)
                 
                 # ═══════════ 6. اتجاهات التحسن ═══════════
                 all_trends = []
@@ -1644,6 +1759,8 @@ class FinalWeeklyReportGenerator:
                             color = '2E7D32'
                         elif sheet_name == 'طلاب غير نشطين':
                             color = '757575'
+                        elif sheet_name == 'بيانات قليلة':
+                            color = 'F57F17'
                         self._format_excel_sheet(ws, header_color=color)
             
             logger.info(f"تم إنشاء التقرير المحسن: {report_path}")
@@ -1862,7 +1979,7 @@ class FinalWeeklyReportGenerator:
             # مقارنات
             previous_stats = self._recalc_previous_stats_filtered(filtered_ids, start_date, end_date)
             weekly_comparison = self.calculate_weekly_comparison(general_stats, previous_stats)
-            kpis = self.calculate_kpis(general_stats)
+            kpis = self.calculate_kpis(general_stats, start_date, end_date)
             performance_predictions = self.predict_performance_trend(general_stats, previous_stats, weekly_comparison)
             
             # تحليلات
@@ -1978,14 +2095,12 @@ class FinalWeeklyReportGenerator:
                 
                 # التوصيات
                 if smart_recommendations:
-                    recs = []
-                    for i, rec in enumerate(smart_recommendations, 1):
-                        if isinstance(rec, dict):
-                            recs.append([i, rec.get('category', ''), rec.get('recommendation', '')])
-                        else:
-                            recs.append([i, '', str(rec)])
-                    if recs:
-                        recs_df = pd.DataFrame(recs, columns=['#', 'الفئة', 'التوصية'])
+                    recs_data = []
+                    for category, recs_list in smart_recommendations.items():
+                        for rec in recs_list:
+                            recs_data.append({'الفئة': category, 'التوصية': rec})
+                    if recs_data:
+                        recs_df = pd.DataFrame(recs_data)
                         recs_df.to_excel(writer, sheet_name='التوصيات', index=False)
                 
                 # إضافة الرسوم البيانية
@@ -2004,6 +2119,18 @@ class FinalWeeklyReportGenerator:
                                 wb[safe_name].add_image(img, 'A1')
                     except Exception as chart_err:
                         logger.warning(f"خطأ في إضافة الرسوم البيانية: {chart_err}")
+                
+                # تطبيق التنسيق
+                wb = writer.book
+                for sheet_name in wb.sheetnames:
+                    ws = wb[sheet_name]
+                    if sheet_name not in ('الرسوم البيانية',):
+                        color = '1F4E79'
+                        if 'متعثرين' in sheet_name:
+                            color = 'C62828'
+                        elif 'متفوقين' in sheet_name:
+                            color = '2E7D32'
+                        self._format_excel_sheet(ws, header_color=color)
             
             logger.info(f"تم إنشاء التقرير المفلتر بنجاح: {report_path}")
             return report_path
