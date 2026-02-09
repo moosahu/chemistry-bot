@@ -2278,7 +2278,15 @@ class FinalWeeklyReportGenerator:
                 # ── قراءة البيانات ──
                 col_max_lens = [0] * num_cols
                 raw_rows = []
-                max_text = 45 if num_cols > 8 else 55
+                # حد القص حسب عدد الأعمدة — أعمدة أقل = نص أطول
+                if num_cols <= 2:
+                    max_text = 300  # لا قص تقريباً — التوصيات والملخص
+                elif num_cols <= 5:
+                    max_text = 120
+                elif num_cols <= 8:
+                    max_text = 80
+                else:
+                    max_text = 60
                 
                 for r in range(1, min(ws.max_row + 1, 50)):
                     row = []
