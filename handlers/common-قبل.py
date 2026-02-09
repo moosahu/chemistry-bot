@@ -7,7 +7,7 @@ from telegram.ext import CallbackContext, CommandHandler, CallbackQueryHandler
 
 # Import necessary components from other modules
 try:
-    from config import logger, MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END # Added END
+    from config import logger, MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END, REGISTRATION_NAME # Added END and REGISTRATION_NAME
     from utils.helpers import safe_send_message, safe_edit_message_text # Ensure these are async
     from database.manager import DB_MANAGER # Import the initialized DB_MANAGER instance
 except ImportError as e:
@@ -16,7 +16,7 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.error(f"Error importing modules in handlers.common: {e}. Using placeholders.")
     # Define placeholders for constants and functions
-    MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END = 0, 1, 7, 8, -1 # Match config.py, added END
+    MAIN_MENU, QUIZ_MENU, INFO_MENU, STATS_MENU, END, REGISTRATION_NAME = 0, 1, 7, 8, -1, 20 # Match config.py, added END and REGISTRATION_NAME
     async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
         logger.error("Placeholder safe_send_message called!")
         try: await bot.send_message(chat_id=chat_id, text="Error: Bot function unavailable.")
@@ -30,12 +30,14 @@ except ImportError as e:
     class DummyDBManager:
         def register_or_update_user(*args, **kwargs): logger.warning("Dummy DB_MANAGER.register_or_update_user called"); return True
         def is_user_admin(*args, **kwargs): logger.warning("Dummy DB_MANAGER.is_user_admin called"); return False
+        def get_user_info(*args, **kwargs): logger.warning("Dummy DB_MANAGER.get_user_info called"); return None
     DB_MANAGER = DummyDBManager()
 
 def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard."""
     keyboard = [
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
+        [InlineKeyboardButton("📚 استكمال الاختبار", callback_data="show_saved_quizzes")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
         [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
@@ -226,7 +228,20 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
             logger.debug(f"Callback 'start_quiz' received in main_menu_callback. Transitioning to QUIZ_MENU state for quiz handler.")
             # This will be handled by the quiz ConversationHandler's entry point
             # Returning QUIZ_MENU which should be the entry state for quiz selection flow
-            return QUIZ_MENU 
+            return QUIZ_MENU
+        elif data == "show_saved_quizzes":
+            logger.debug(f"Callback 'show_saved_quizzes' received. Redirecting to saved quizzes menu.")
+            # Import the handler from quiz.py
+            try:
+                from handlers.quiz import show_saved_quizzes_menu
+            except ImportError:
+                try:
+                    from quiz import show_saved_quizzes_menu
+                except ImportError as e:
+                    logger.error(f"Error importing show_saved_quizzes_menu: {e}")
+                    await query.answer("حدث خطأ في الوصول للاختبارات المحفوظة")
+                    return MAIN_MENU
+            return await show_saved_quizzes_menu(update, context)
         elif data == "menu_info": 
             state_to_return = INFO_MENU
         elif data == "menu_stats": 

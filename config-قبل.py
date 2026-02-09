@@ -49,9 +49,6 @@ SELECT_COURSE_FOR_UNIT_QUIZ, SELECT_UNIT_FOR_COURSE = range(12) # Extended range
 
 ADMIN_STATS_MENU = 12 # Added for admin stats menu (placeholder if not used directly by conv handler)
 
-# --- Weakness Quiz States ---
-WEAKNESS_QUIZ_CONFIRM = 13  # تأكيد بدء اختبار نقاط الضعف
-
 # --- Registration States ---
 # تعريف ثوابت حالات التسجيل
 REGISTRATION_NAME = 20

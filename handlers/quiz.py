@@ -225,7 +225,7 @@ def create_unit_selection_keyboard(units: list, course_id: str, current_page: in
     return InlineKeyboardMarkup(keyboard)
 
 def create_question_count_keyboard(max_questions: int, quiz_type: str, unit_id: str = None, course_id_for_unit: str = None) -> InlineKeyboardMarkup:
-    counts = [1, 5, 10, 20, min(max_questions, 50)] 
+    counts = [10, 20, 30, min(max_questions, 50)] 
     if max_questions > 0 and max_questions not in counts and max_questions <= 50:
         counts.append(max_questions)
     counts = sorted(list(set(c for c in counts if c <= max_questions and c > 0)))
@@ -294,7 +294,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
 
     if quiz_type_key == QUIZ_TYPE_ALL:
-        api_response = fetch_from_api("api/v1/questions/all")
+        api_response = await fetch_from_api("api/v1/questions/all")
         if api_response == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE 
@@ -311,7 +311,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
 
     elif quiz_type_key == "random_course":
         # اختبار عشوائي حسب المقرر
-        courses = fetch_from_api("api/v1/courses")
+        courses = await fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
@@ -325,7 +325,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
         return SELECT_COURSE_FOR_RANDOM_QUIZ
         
     elif quiz_type_key == QUIZ_TYPE_UNIT:
-        courses = fetch_from_api("api/v1/courses")
+        courses = await fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
@@ -373,7 +373,7 @@ async def select_course_for_random_quiz_handler(update: Update, context: Callbac
     context.user_data["selected_course_name_for_random_quiz"] = selected_course_name
 
     # جلب جميع الأسئلة للمقرر
-    api_response = fetch_from_api(f"api/v1/courses/{selected_course_id}/questions")
+    api_response = await fetch_from_api(f"api/v1/courses/{selected_course_id}/questions")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     
     if api_response == "TIMEOUT":
@@ -426,7 +426,7 @@ async def select_course_for_unit_quiz_handler(update: Update, context: CallbackC
     selected_course_name = next((c.get("name") for c in courses if str(c.get("id")) == str(selected_course_id)), "مقرر غير معروف")
     context.user_data["selected_course_name_for_unit_quiz"] = selected_course_name
 
-    units = fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
+    units = await fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     if units == "TIMEOUT":
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_unit_quiz",0)))
@@ -474,7 +474,7 @@ async def select_unit_for_course_handler(update: Update, context: CallbackContex
     selected_unit_name = next((u.get("name") for u in units if str(u.get("id")) == str(selected_unit_id)), "وحدة غير معروفة")
     context.user_data["selected_unit_name"] = selected_unit_name
 
-    api_response = fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
+    api_response = await fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     current_unit_page = context.user_data.get("current_unit_page_for_course", 0)
 
@@ -773,10 +773,122 @@ async def resume_saved_quiz(update: Update, context: CallbackContext) -> int:
     # إرجاع حالة TAKING_QUIZ لتفعيل معالجات الإجابات
     return TAKING_QUIZ
 
+
+# === اختبار نقاط الضعف ===
+async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
+    """بدء اختبار نقاط الضعف - أسئلة غلط فيها الطالب سابقاً"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+    
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    message_id = query.message.message_id if query else None
+    
+    # تنظيف أي اختبار سابق
+    await _cleanup_quiz_session_data(user_id, chat_id, context, "weakness_quiz_start")
+    
+    # استيراد DB_MANAGER
+    from database.manager import DB_MANAGER
+    
+    if not DB_MANAGER:
+        error_text = "عذراً، لا يمكن الوصول لقاعدة البيانات حالياً."
+        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
+        if message_id:
+            await safe_edit_message_text(context.bot, chat_id, message_id, error_text, kbd)
+        else:
+            await safe_send_message(context.bot, chat_id, error_text, kbd)
+        return SELECT_QUIZ_TYPE
+    
+    # جلب الأسئلة الضعيفة للطالب
+    weak_questions = DB_MANAGER.get_user_weak_questions(user_id, limit=50)
+    
+    if not weak_questions or len(weak_questions) == 0:
+        no_data_text = "🎉 ممتاز! لا توجد نقاط ضعف مسجلة.\n\nإما أنك لم تختبر بعد، أو أنك أجبت على كل الأسئلة بشكل صحيح!"
+        kbd = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
+            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
+        ])
+        if message_id:
+            await safe_edit_message_text(context.bot, chat_id, message_id, no_data_text, kbd)
+        else:
+            await safe_send_message(context.bot, chat_id, no_data_text, kbd)
+        return ConversationHandler.END
+    
+    # جمع question_ids الضعيفة
+    weak_question_ids = [str(wq.get("question_id")) for wq in weak_questions if wq.get("question_id")]
+    
+    # جلب الأسئلة الكاملة من الـ API
+    all_questions = await fetch_from_api("api/v1/questions/all")
+    if not all_questions or all_questions == "TIMEOUT" or not isinstance(all_questions, list):
+        error_text = "عذراً، لا يمكن جلب الأسئلة من الخادم حالياً."
+        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
+        if message_id:
+            await safe_edit_message_text(context.bot, chat_id, message_id, error_text, kbd)
+        else:
+            await safe_send_message(context.bot, chat_id, error_text, kbd)
+        return ConversationHandler.END
+    
+    # تصفية الأسئلة الضعيفة فقط
+    weakness_questions = [
+        q for q in all_questions 
+        if str(q.get("question_id", q.get("id", ""))) in weak_question_ids
+    ]
+    
+    if not weakness_questions:
+        no_match_text = "لم يتم العثور على أسئلة نقاط الضعف في بنك الأسئلة الحالي."
+        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
+        if message_id:
+            await safe_edit_message_text(context.bot, chat_id, message_id, no_match_text, kbd)
+        else:
+            await safe_send_message(context.bot, chat_id, no_match_text, kbd)
+        return ConversationHandler.END
+    
+    # خلط الأسئلة وتحديد العدد (حد أقصى 30)
+    random.shuffle(weakness_questions)
+    num_questions = min(len(weakness_questions), 30)
+    selected_questions = weakness_questions[:num_questions]
+    
+    # إنشاء الاختبار
+    quiz_instance_id = str(uuid.uuid4())
+    quiz_name = f"🎯 تقوية نقاط الضعف ({num_questions} سؤال)"
+    
+    quiz_logic_instance = QuizLogic(
+        user_id=user_id,
+        chat_id=chat_id,
+        questions=selected_questions,
+        quiz_name=quiz_name,
+        quiz_type_for_db_log="weakness_quiz",
+        quiz_scope_id="weakness",
+        total_questions_for_db_log=num_questions,
+        time_limit_per_question=DEFAULT_QUESTION_TIME_LIMIT,
+        quiz_instance_id_for_logging=quiz_instance_id
+    )
+    
+    context.user_data[f"quiz_logic_instance_{user_id}"] = quiz_logic_instance
+    
+    # عرض رسالة معلومات قبل البدء
+    info_text = (
+        f"🎯 <b>اختبار تقوية نقاط الضعف</b>\n\n"
+        f"📊 تم تحليل إجاباتك السابقة\n"
+        f"📝 عدد الأسئلة: {num_questions}\n"
+        f"⚠️ هذه أسئلة غلطت فيها سابقاً\n\n"
+        f"جاري بدء الاختبار..."
+    )
+    
+    if message_id:
+        await safe_edit_message_text(context.bot, chat_id, message_id, info_text, parse_mode="HTML")
+    else:
+        await safe_send_message(context.bot, chat_id, info_text, parse_mode="HTML")
+    
+    return await quiz_logic_instance.start_quiz(context.bot, context, update)
+
+
 quiz_conv_handler = ConversationHandler(
     entry_points=[
         CallbackQueryHandler(quiz_menu_entry, pattern="^start_quiz$"),
-        CallbackQueryHandler(resume_saved_quiz, pattern="^resume_quiz_")
+        CallbackQueryHandler(resume_saved_quiz, pattern="^resume_quiz_"),
+        CallbackQueryHandler(start_weakness_quiz, pattern="^start_weakness_quiz$"),
     ],
     states={
         SELECT_QUIZ_TYPE: [
@@ -799,18 +911,17 @@ quiz_conv_handler = ConversationHandler(
         ],
         SHOWING_RESULTS: [
             CallbackQueryHandler(handle_restart_quiz_from_results_cb, pattern="^quiz_action_restart_quiz_cb$"),
+            CallbackQueryHandler(start_weakness_quiz, pattern="^start_weakness_quiz$"),
             CallbackQueryHandler(handle_show_stats_from_results_cb, pattern="^quiz_action_show_stats_cb$"),
             CallbackQueryHandler(handle_main_menu_from_results_cb, pattern="^quiz_action_main_menu$"),
-            # Fallback for any other callback in SHOWING_RESULTS, likely an old answer button if message not edited properly
             CallbackQueryHandler(handle_quiz_answer_wrapper) 
         ],
     },
     fallbacks=[
         CommandHandler("start", start_command_fallback_for_quiz),
-        # General main menu fallback if user clicks a generic main menu button during quiz setup stages
         CallbackQueryHandler(go_to_main_menu_from_quiz, pattern="^quiz_action_main_menu$"), 
     ],
-    persistent=False, # Recommended to be False for in-memory ConversationHandlers
+    persistent=False,
     name="quiz_conversation",
-    allow_reentry=True # Important for restarting quiz from results
+    allow_reentry=True
 )

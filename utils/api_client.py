@@ -1,85 +1,102 @@
 # -*- coding: utf-8 -*-
 """Handles communication with the external Chemistry API.
-MODIFIED v1: transform_api_question now creates a structured 'options' list 
-             to support text/image options robustly for QuizLogic.
+MODIFIED v2: Converted to async using aiohttp for better performance.
+             Kept sync fallback (fetch_from_api_sync) for backward compatibility.
 """
 
 import logging
-import requests # Using requests library
-from requests.exceptions import RequestException, Timeout
-import uuid # For generating option_ids if not provided
+import aiohttp
+import uuid
 
 # Import config variables
 try:
     from config import API_BASE_URL, API_TIMEOUT, logger
 except ImportError:
-    # Fallback if config is not available (should not happen in normal operation)
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
     logger.error("Failed to import config. Using fallback settings for API client.")
-    API_BASE_URL = "http://localhost:8000/api" # Dummy URL
+    API_BASE_URL = "http://localhost:8000/api"
     API_TIMEOUT = 10
 
-def fetch_from_api(endpoint: str, params: dict = None):
-    """Fetches data from the specified API endpoint.
+# === Synchronous fallback using requests (kept for backward compatibility) ===
+import requests
+from requests.exceptions import RequestException, Timeout
+
+def fetch_from_api_sync(endpoint: str, params: dict = None):
+    """Synchronous version - kept for backward compatibility."""
+    if not API_BASE_URL or API_BASE_URL.startswith("http://your-api-base-url.com"):
+        logger.error(f"[API-SYNC] Invalid API_BASE_URL: '{API_BASE_URL}'")
+        return None
+
+    url = f"{API_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+    logger.debug(f"[API-SYNC] Fetching: {url}")
+
+    try:
+        response = requests.get(url, params=params, timeout=API_TIMEOUT)
+        response.raise_for_status()
+        return response.json()
+    except Timeout:
+        logger.error(f"[API-SYNC] Timeout: {url}")
+        return "TIMEOUT"
+    except RequestException as e:
+        logger.error(f"[API-SYNC] Error: {url}: {e}")
+        return None
+    except Exception as e:
+        logger.exception(f"[API-SYNC] Unexpected: {url}: {e}")
+        return None
+
+
+# === Async version using aiohttp ===
+async def fetch_from_api(endpoint: str, params: dict = None):
+    """Fetches data from the specified API endpoint asynchronously.
 
     Args:
-        endpoint: The API endpoint path (e.g., 
-'/questions
-', 
-'/courses/1/units
-').
+        endpoint: The API endpoint path.
         params: Optional dictionary of query parameters.
 
     Returns:
-        The JSON response as a dictionary or list if successful,
+        The JSON response if successful,
         "TIMEOUT" if the request times out,
         None if any other error occurs.
     """
     if not API_BASE_URL or API_BASE_URL.startswith("http://your-api-base-url.com"):
-        logger.error(f"[API] Invalid or missing API_BASE_URL (	'{API_BASE_URL}	'). Cannot fetch from endpoint: {endpoint}")
+        logger.error(f"[API-ASYNC] Invalid API_BASE_URL: '{API_BASE_URL}'")
         return None
 
     url = f"{API_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
-    logger.debug(f"[API] Fetching data from: {url} with params: {params}")
+    logger.debug(f"[API-ASYNC] Fetching: {url} params: {params}")
+
+    timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
 
     try:
-        response = requests.get(url, params=params, timeout=API_TIMEOUT)
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-        logger.debug(f"[API] Received response status: {response.status_code}")
-        try:
-            json_response = response.json()
-            return json_response
-        except requests.exceptions.JSONDecodeError:
-            logger.error(f"[API] Failed to decode JSON response from {url}. Response text: {response.text[:200]}...")
-            return None
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, params=params) as response:
+                logger.debug(f"[API-ASYNC] Status: {response.status}")
 
-    except Timeout:
-        logger.error(f"[API] Timeout error when fetching from {url} after {API_TIMEOUT} seconds.")
+                if response.status >= 400:
+                    logger.error(f"[API-ASYNC] HTTP {response.status} from {url}")
+                    return None
+
+                try:
+                    return await response.json()
+                except Exception:
+                    text = await response.text()
+                    logger.error(f"[API-ASYNC] JSON decode failed: {url}. Text: {text[:200]}")
+                    return None
+
+    except aiohttp.ServerTimeoutError:
+        logger.error(f"[API-ASYNC] Timeout: {url} after {API_TIMEOUT}s")
         return "TIMEOUT"
-    except RequestException as e:
-        logger.error(f"[API] Request error fetching from {url}: {e}")
+    except aiohttp.ClientError as e:
+        logger.error(f"[API-ASYNC] Client error: {url}: {e}")
         return None
     except Exception as e:
-        logger.exception(f"[API] Unexpected error fetching from {url}: {e}")
+        logger.exception(f"[API-ASYNC] Unexpected: {url}: {e}")
         return None
 
+
 def transform_api_question(api_question: dict) -> dict | None:
-    """Transforms a question dictionary from the API format to the internal format
-    that QuizLogic expects. Specifically, it creates an 'options' list where each
-    option is a dict: {'option_id': str, 'option_text': str (text or URL), 'is_correct': bool}.
-
-    Args:
-        api_question: A dictionary representing a question from the API.
-                      Expected format includes 'id', 'question_text', 'image_url' (optional),
-                      'explanation' (optional), and 'options' (list of dicts).
-                      Each API option dict should have 'option_text' (optional for text content),
-                      'image_url' (optional for image URL content), and 'is_correct' (boolean).
-                      An API option might also have an 'id' or 'option_id'.
-
-    Returns:
-        A dictionary in the internal format, or None if the input is invalid.
-    """
+    """Transforms a question from API format to internal QuizLogic format."""
     if not isinstance(api_question, dict):
         logger.warning(f"[API_TRANSFORM] Invalid input: Expected dict, got {type(api_question)}")
         return None
@@ -87,72 +104,52 @@ def transform_api_question(api_question: dict) -> dict | None:
     try:
         question_id = api_question.get('id') or api_question.get('question_id')
         question_text = api_question.get('question_text')
-        question_image_url = api_question.get('image_url') # Main question image
+        question_image_url = api_question.get('image_url')
         explanation = api_question.get('explanation')
 
         if not question_id:
-            logger.warning(f"[API_TRANSFORM] Missing question_id in API data: {api_question}")
             return None
         if not question_text and not question_image_url:
-            logger.warning(f"[API_TRANSFORM] Missing both question_text and image_url for q_id: {question_id}. Data: {api_question}")
             return None
 
-        api_options_from_payload = api_question.get('options')
-        if not isinstance(api_options_from_payload, list) or not api_options_from_payload:
-            logger.warning(f"[API_TRANSFORM] Missing or invalid 'options' list for q_id: {question_id}. Data: {api_question}")
+        api_options = api_question.get('options')
+        if not isinstance(api_options, list) or not api_options:
             return None
 
-        internal_options_list = []
-        correct_answer_found_in_options = False
+        internal_options = []
+        has_correct = False
 
-        for i, api_opt_data in enumerate(api_options_from_payload):
-            if not isinstance(api_opt_data, dict):
-                logger.warning(f"[API_TRANSFORM] Invalid item in API 'options' list (not a dict) for q_id: {question_id}. Item: {api_opt_data}")
+        for i, opt in enumerate(api_options):
+            if not isinstance(opt, dict):
                 continue
 
-            option_content = None
-            # Prefer image_url if present for the option's content
-            if api_opt_data.get('image_url'):
-                option_content = api_opt_data['image_url']
-            elif api_opt_data.get('option_text'):
-                option_content = api_opt_data['option_text']
-            
-            if option_content is None:
-                logger.warning(f"[API_TRANSFORM] API Option {i} for q_id: {question_id} has no 'image_url' or 'option_text'. Skipping. Data: {api_opt_data}")
+            content = opt.get('image_url') or opt.get('option_text')
+            if content is None:
                 continue
 
-            is_correct = api_opt_data.get('is_correct', False)
+            is_correct = opt.get('is_correct', False)
             if is_correct:
-                correct_answer_found_in_options = True
-            
-            # Get option_id from API if available, otherwise generate one
-            option_id = api_opt_data.get('id') or api_opt_data.get('option_id') or f"gen_opt_{question_id}_{i}_{uuid.uuid4().hex[:6]}"
+                has_correct = True
 
-            internal_options_list.append({
-                "option_id": str(option_id),
-                "option_text": option_content, # This will be processed by QuizLogic (text or URL)
+            opt_id = opt.get('id') or opt.get('option_id') or f"gen_opt_{question_id}_{i}_{uuid.uuid4().hex[:6]}"
+
+            internal_options.append({
+                "option_id": str(opt_id),
+                "option_text": content,
                 "is_correct": bool(is_correct)
             })
 
-        if len(internal_options_list) < 2:
-            logger.warning(f"[API_TRANSFORM] Less than 2 valid options constructed for q_id: {question_id}. Found {len(internal_options_list)}. API Data: {api_question}")
-            return None
-        
-        if not correct_answer_found_in_options:
-            logger.warning(f"[API_TRANSFORM] No correct answer (is_correct: True) found among valid options for q_id: {question_id}. API Data: {api_question}")
+        if len(internal_options) < 2 or not has_correct:
             return None
 
-        internal_question = {
+        return {
             "question_id": str(question_id),
             "question_text": question_text,
-            "image_url": question_image_url, # Main question image
+            "image_url": question_image_url,
             "explanation": explanation,
-            "options": internal_options_list # Structured list of options for QuizLogic
+            "options": internal_options
         }
-        # logger.debug(f"[API_TRANSFORM] Transformed question (id: {question_id}): {internal_question}")
-        return internal_question
 
     except Exception as e:
-        logger.exception(f"[API_TRANSFORM] Error transforming API question data: {api_question}. Error: {e}")
+        logger.exception(f"[API_TRANSFORM] Error transforming question: {e}")
         return None
-

@@ -199,8 +199,7 @@ def generate_line_chart_performance_trend(user_id: int, quiz_history: list) -> s
 def create_stats_menu_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("📊 إحصائياتي", callback_data="stats_my_stats")],
-        [InlineKeyboardButton("🏆 لوحة الصدارة (الكل)", callback_data="stats_leaderboard")],
-        [InlineKeyboardButton("🏆 لوحة الصدارة (هذا الأسبوع)", callback_data="stats_leaderboard_weekly")],
+        [InlineKeyboardButton("🏆 لوحة الصدارة", callback_data="stats_leaderboard")],
         [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -326,48 +325,12 @@ async def show_leaderboard(update: Update, context: CallbackContext) -> int:
                     user_name_val = "مستخدم {}".format(entry.get("user_id"))
                 avg_score = entry.get("average_score_percentage", 0.0)
                 quizzes_taken = entry.get("total_quizzes_taken", 0)
-                medal = "🥇" if i == 0 else ("🥈" if i == 1 else ("🥉" if i == 2 else "{}. ".format(i+1)))
-                leaderboard_text += "{} {} - متوسط: {:.1f}% (من {} اختبارات)\n".format(medal, user_name_val, avg_score, quizzes_taken)
+                leaderboard_text += "{}. {} - متوسط: {:.1f}% (من {} اختبارات)\n".format(i+1, user_name_val, avg_score, quizzes_taken)
         else:
             leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
     leaderboard_text += "\n══════════════════════"
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
-    return STATS_MENU
-
-
-async def show_weekly_leaderboard(update: Update, context: CallbackContext) -> int:
-    """عرض لوحة المتصدرين الأسبوعية"""
-    query = update.callback_query
-    await query.answer()
-    user_id = update.effective_user.id
-    logger.info("User {} requested weekly leaderboard.".format(user_id))
-    
-    leaderboard_text = "🏆 *لوحة الصدارة الأسبوعية* 🏆\n_(آخر 7 أيام)_\n\n"
-    db_manager = DB_MANAGER
-    
-    if not db_manager:
-        leaderboard_text += "عذراً، خدمة لوحة الصدارة غير متاحة حالياً."
-    else:
-        leaderboard_data = db_manager.get_weekly_leaderboard(limit=LEADERBOARD_LIMIT)
-        if leaderboard_data:
-            for i, entry in enumerate(leaderboard_data):
-                user_name_val = entry.get("user_display_name")
-                if not user_name_val:
-                    user_name_val = "مستخدم {}".format(entry.get("user_id"))
-                avg_score = entry.get("average_score_percentage", 0.0)
-                quizzes_taken = entry.get("total_quizzes_taken", 0)
-                total_correct = entry.get("total_correct", 0)
-                medal = "🥇" if i == 0 else ("🥈" if i == 1 else ("🥉" if i == 2 else "{}. ".format(i+1)))
-                leaderboard_text += "{} {} - متوسط: {:.1f}% ({} اختبارات, {} إجابة صحيحة)\n".format(
-                    medal, user_name_val, avg_score, quizzes_taken, total_correct)
-        else:
-            leaderboard_text += "لا توجد بيانات لهذا الأسبوع بعد. كن أول المتصدرين! 🚀"
-    
-    leaderboard_text += "\n══════════════════════"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, 
-                                  text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
     return STATS_MENU
 
 # --- Admin Statistics --- 
@@ -521,8 +484,7 @@ stats_conv_handler = ConversationHandler(
         STATS_MENU: [
             CallbackQueryHandler(show_my_stats, pattern="^stats_my_stats$"),
             CallbackQueryHandler(show_leaderboard, pattern="^stats_leaderboard$"),
-            CallbackQueryHandler(show_weekly_leaderboard, pattern="^stats_leaderboard_weekly$"),
-            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"),
+            CallbackQueryHandler(stats_menu, pattern="^stats_menu$"),  # Added this line to handle returning to stats menu
             CallbackQueryHandler(main_menu_callback, pattern="^main_menu$")
         ]
     },

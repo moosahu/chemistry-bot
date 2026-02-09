@@ -37,6 +37,7 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Creates the main menu keyboard."""
     keyboard = [
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
+        [InlineKeyboardButton("🎯 تقوية نقاط ضعفي", callback_data="start_weakness_quiz")],
         [InlineKeyboardButton("📚 استكمال الاختبار", callback_data="show_saved_quizzes")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
@@ -299,6 +300,18 @@ async def main_menu_callback(update: Update, context: CallbackContext) -> int:
                     menu_text = db_welcome
             except Exception as e:
                 logger.error(f"Error getting welcome message from DB: {e}")
+        
+        # إضافة عرض الـ Streak اليومي
+        try:
+            if db_manager and hasattr(db_manager, 'get_user_streak'):
+                streak_data = db_manager.get_user_streak(user.id)
+                current_streak = streak_data.get("current_streak", 0)
+                if current_streak >= 2:
+                    menu_text += f"\n\n🔥 سلسلة {current_streak} أيام متتالية! استمر!"
+                elif current_streak == 1:
+                    menu_text += f"\n\n🔥 يوم واحد نشط! كمّل باكر عشان تبني سلسلتك!"
+        except Exception as e:
+            logger.error(f"Error getting streak for user {user.id}: {e}")
         
         keyboard = create_main_menu_keyboard(user.id)
         if query and query.message: # Ensure query.message exists

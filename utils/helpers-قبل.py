@@ -167,33 +167,3 @@ def get_quiz_type_string(type_display_name: str) -> str:
 
 logger.info("utils/helpers.py loaded with corrected safe_edit_message_text and added safe_edit_message_caption.")
 
-
-def generate_progress_bar(current: int, total: int, correct: int, wrong: int, skipped: int, bar_length: int = 10) -> str:
-    """Generate a visual progress bar with live stats for quiz.
-    
-    Args:
-        current: Current question index (0-based)
-        total: Total number of questions
-        correct: Number of correct answers so far
-        wrong: Number of wrong answers so far
-        skipped: Number of skipped answers so far
-        bar_length: Length of the progress bar in characters
-        
-    Returns:
-        Formatted string with progress bar and stats
-    """
-    if total <= 0:
-        return ""
-    
-    progress = current / total
-    filled = int(bar_length * progress)
-    empty = bar_length - filled
-    bar = "▓" * filled + "░" * empty
-    percentage = int(progress * 100)
-    
-    stats_line = f"✅ {correct}  ❌ {wrong}"
-    if skipped > 0:
-        stats_line += f"  ⏭️ {skipped}"
-    
-    return f"{bar} {percentage}%\n{stats_line}"
-

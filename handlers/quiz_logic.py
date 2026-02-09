@@ -30,6 +30,7 @@ from telegram.ext import ConversationHandler, CallbackContext, JobQueue
 
 from config import logger, TAKING_QUIZ, END, MAIN_MENU, SHOWING_RESULTS # SHOWING_RESULTS is used by this module
 from utils.helpers import safe_send_message, safe_edit_message_text, safe_edit_message_caption, remove_job_if_exists
+from utils.helpers import generate_progress_bar
 
 # +++ MODIFICATION: Import DB_MANAGER directly +++
 from database.manager import DB_MANAGER
@@ -87,9 +88,10 @@ class QuizLogic:
     """
     ARABIC_CHOICE_LETTERS = ["أ", "ب", "ج", "د", "هـ", "و", "ز", "ح"]
     
-    # +++ ENHANCEMENT: Timer update interval (seconds) +++
-    TIMER_UPDATE_INTERVAL = 5  # Update every 5 seconds instead of 1
-    # ++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # +++ ENHANCEMENT: Timer settings +++
+    TIMER_UPDATE_INTERVAL = 5  # Update every 5 seconds when active
+    TIMER_ACTIVE_THRESHOLD = 30  # Only start live timer updates in last 30 seconds
+    # ++++++++++++++++++++++++++++++++++
 
     def __init__(
         self,
@@ -327,11 +329,17 @@ class QuizLogic:
         elapsed_time = time.time() - self.question_start_time
         remaining_time = max(0, self.question_time_limit - elapsed_time)
         
-        # تنسيق الوقت المتبقي
+        # تنسيق الوقت المتبقي مع تنبيه بصري
         time_display = self._format_time_remaining(remaining_time)
         
-        # إضافة عداد الوقت إلى نص السؤال
-        timer_text = f"⏱️ الوقت المتبقي: {time_display}"
+        # إضافة تنبيه بصري حسب الوقت المتبقي
+        if remaining_time <= 10:
+            timer_text = f"🔴 الوقت المتبقي: {time_display} ⚠️"
+        elif remaining_time <= 20:
+            timer_text = f"🟡 الوقت المتبقي: {time_display}"
+        else:
+            timer_text = f"⏱️ الوقت المتبقي: {time_display}"
+        
         full_text = f"{header}{question_text}\n\n{timer_text}"
         
         try:
@@ -364,6 +372,161 @@ class QuizLogic:
         except Exception as e:
             logger.warning(f"[QuizLogic {self.quiz_id}] Failed to update timer display: {e}")
     
+    def _get_live_stats(self) -> dict:
+        """Get current quiz stats from answers list."""
+        correct = sum(1 for a in self.answers if a.get("is_correct"))
+        wrong = sum(1 for a in self.answers if a.get("status") == "answered" and not a.get("is_correct"))
+        skipped = sum(1 for a in self.answers if a.get("status") in ("skipped_auto", "skipped_by_user", "timed_out"))
+        return {"correct": correct, "wrong": wrong, "skipped": skipped}
+
+    def _build_progress_header(self) -> str:
+        """Build progress bar header for current question."""
+        stats = self._get_live_stats()
+        progress_bar = generate_progress_bar(
+            current=self.current_question_index,
+            total=self.total_questions,
+            correct=stats["correct"],
+            wrong=stats["wrong"],
+            skipped=stats["skipped"]
+        )
+        header = f"<b>السؤال {self.current_question_index + 1} من {self.total_questions}:</b>\n"
+        header += f"<code>{progress_bar}</code>\n\n"
+        return header
+
+    @staticmethod
+    def _format_answer_status(ans: dict, include_detail: bool = True) -> str:
+        """Format the status text for a single answer entry.
+        
+        Args:
+            ans: Answer dictionary from self.answers
+            include_detail: Whether to include chosen/correct option details
+            
+        Returns:
+            Formatted status string
+        """
+        text = ""
+        status = ans.get("status", "unknown")
+        
+        if status == "answered":
+            if include_detail:
+                chosen = ans.get("chosen_option_text", "")
+                chosen_short = (chosen[:50] + "...") if len(chosen) > 50 else chosen
+                correct_text = ans.get("correct_option_text", "")
+                correct_short = (correct_text[:50] + "...") if len(correct_text) > 50 else correct_text
+                is_correct = ans.get("is_correct", False)
+                text += f" - اخترت: {chosen_short} ({'صحيح ✅' if is_correct else 'خطأ ❌'})\n"
+                if not is_correct:
+                    text += f" - الصحيح: {correct_short}\n"
+            else:
+                text += " - {'صحيح ✅' if ans.get('is_correct') else 'خطأ ❌'}\n"
+        elif status == "timed_out":
+            text += " - الحالة: انتهى الوقت ⌛\n"
+        elif status == "skipped_auto":
+            text += " - الحالة: تم التخطي (خيارات غير كافية) ⏭️\n"
+        elif status == "skipped_by_user":
+            text += " - الحالة: تم التخطي بواسطة المستخدم ⏭️\n"
+        elif status == "quiz_ended_by_user":
+            text += " - الحالة: تم إنهاء الاختبار بواسطة المستخدم ❌\n"
+        elif status == "not_reached_quiz_ended":
+            text += " - الحالة: لم يتم الوصول للسؤال (تم إنهاء الاختبار) ❌\n"
+        elif status == "error_sending":
+            text += " - الحالة: خطأ في إرسال السؤال ⚠️\n"
+        else:
+            text += f" - الحالة: {status}\n"
+        
+        return text
+
+    def _build_question_detail(self, index: int, ans: dict) -> str:
+        """Build formatted detail text for a single question in results.
+        
+        Args:
+            index: Question index (0-based)
+            ans: Answer dictionary
+            
+        Returns:
+            Formatted question detail string
+        """
+        q_text = ans.get('question_text')
+        q_text_short = (q_text[:50] + "...") if q_text and len(q_text) > 50 else (q_text or "سؤال غير متوفر")
+        
+        detail = f"\n<b>سؤال {index + 1}:</b> \"{q_text_short}\"\n"
+        detail += self._format_answer_status(ans)
+        
+        # إضافة شرح للإجابات الخاطئة فقط
+        if ans.get("status") == "answered" and not ans.get("is_correct"):
+            question_id = ans.get("question_id")
+            if question_id:
+                question_data = next(
+                    (q for q in self.questions_data if str(q.get('question_id')) == str(question_id)),
+                    None
+                )
+                if question_data:
+                    explanation = question_data.get('explanation')
+                    explanation_image = question_data.get('explanation_image_path')
+                    if explanation:
+                        detail += f" - <b>الشرح:</b> {explanation}\n"
+                    if explanation_image:
+                        detail += f" - <b>صورة توضيحية:</b> {explanation_image}\n"
+        
+        return detail
+
+    def _check_achievements(self, percentage: float, total_answered: int, avg_time: float) -> str:
+        """Check for achievements earned in this quiz and return display text.
+        
+        Args:
+            percentage: Score percentage
+            total_answered: Total questions answered
+            avg_time: Average time per question in seconds
+            
+        Returns:
+            Formatted achievements text, or empty string if none earned
+        """
+        earned = []
+        
+        # شارة النتيجة الكاملة
+        if percentage == 100 and total_answered >= 10:
+            earned.append("🏆 نتيجة مثالية! 100% — أداء استثنائي!")
+        elif percentage >= 90:
+            earned.append("🥇 ممتاز! نتيجة أعلى من 90%")
+        elif percentage >= 80:
+            earned.append("🥈 جيد جداً! نتيجة أعلى من 80%")
+        elif percentage >= 70:
+            earned.append("🥉 جيد! نتيجة أعلى من 70%")
+        
+        # شارة السرعة
+        if avg_time > 0 and avg_time < 10 and total_answered >= 5:
+            earned.append("⚡ سريع البرق! متوسط أقل من 10 ثواني لكل سؤال")
+        elif avg_time > 0 and avg_time < 20 and total_answered >= 5:
+            earned.append("🏃 سريع! متوسط أقل من 20 ثانية لكل سؤال")
+        
+        # شارة سلسلة الإجابات الصحيحة المتتالية
+        max_streak = 0
+        current_streak = 0
+        for ans in self.answers:
+            if ans.get("status") == "answered" and ans.get("is_correct"):
+                current_streak += 1
+                max_streak = max(max_streak, current_streak)
+            else:
+                current_streak = 0
+        
+        if max_streak >= 10:
+            earned.append(f"🔥 سلسلة نارية! {max_streak} إجابات صحيحة متتالية")
+        elif max_streak >= 5:
+            earned.append(f"🔥 سلسلة ممتازة! {max_streak} إجابات صحيحة متتالية")
+        
+        # شارة الماراثون
+        if total_answered >= 50:
+            earned.append("🏅 ماراثوني! أجبت على 50 سؤال أو أكثر في اختبار واحد")
+        
+        if not earned:
+            return ""
+        
+        text = "\n🎖️ <b>إنجازات هذا الاختبار:</b>\n"
+        for achievement in earned:
+            text += f"  {achievement}\n"
+        
+        return text
+
     async def send_question(self, bot: Bot, context: CallbackContext, update: Update = None):
         if not self.active: return END 
 
@@ -399,7 +562,7 @@ class QuizLogic:
                     except Exception as e_img_opt:
                         logger.error(f"[QuizLogic {self.quiz_id}] Failed to send image option (URL: {option_detail['original_content']}), q_id {q_id_log}: {e_img_opt}")
             
-            header = f"<b>السؤال {self.current_question_index + 1} من {self.total_questions}:</b>\n"
+            header = self._build_progress_header()
             main_q_image_url = current_question_data.get("image_url")
             main_q_text_from_data = current_question_data.get("question_text") or ""
             main_q_text_from_data = str(main_q_text_from_data).strip()
@@ -438,12 +601,17 @@ class QuizLogic:
                     data={"chat_id": self.chat_id, "user_id": self.user_id, "quiz_id": self.quiz_id, "question_index_at_timeout": self.current_question_index, "main_question_message_id": self.last_question_message_id, "option_image_ids": list(self.sent_option_image_message_ids)}, name=job_name)
                 logger.info(f"[QuizLogic {self.quiz_id}] Timer set for Q{self.current_question_index}, job: {job_name}")
                 
-                # إعداد مؤقت تحديث العداد
+                # إعداد مؤقت تحديث العداد - يبدأ فقط آخر 30 ثانية لتقليل الضغط على API
                 update_job_name = f"timer_update_{self.chat_id}_{self.quiz_id}_{self.current_question_index}"
                 remove_job_if_exists(update_job_name, context)
+                
+                # حساب متى يبدأ التحديث المرئي
+                time_until_active = max(0, self.question_time_limit - self.TIMER_ACTIVE_THRESHOLD)
+                first_update_delay = max(5.0, time_until_active)
+                
                 context.job_queue.run_once(
                     self.update_timer_display, 
-                    5.0,  # تحديث أول بعد 5 ثوانٍ
+                    first_update_delay,
                     data={
                         "chat_id": self.chat_id,
                         "quiz_id": self.quiz_id,
@@ -452,7 +620,7 @@ class QuizLogic:
                         "is_image": bool(main_q_image_url),
                         "question_text": question_display_text,
                         "header": header,
-                        "options_keyboard": options_keyboard  # تخزين لوحة المفاتيح لاستخدامها في التحديثات
+                        "options_keyboard": options_keyboard
                     },
                     name=update_job_name
                 )
@@ -926,147 +1094,37 @@ class QuizLogic:
         results_text += f"📊 النسبة المئوية: {percentage:.2f}%\n"
         if avg_time_per_q_seconds > 0:
             results_text += f"⏱️ متوسط وقت الإجابة للسؤال: {avg_time_per_q_seconds:.2f} ثانية\n"
-        results_text += "\n📜 <b>تفاصيل الإجابات:</b>\n"
-
-        for i, ans in enumerate(self.answers):
-            q_text = ans.get('question_text')
-            if q_text:
-                q_text_short = q_text[:50] + ("..." if len(q_text) > 50 else "")
-            else:
-                q_text_short = "سؤال غير متوفر"
-            results_text += f"\n<b>سؤال {i+1}:</b> \"{q_text_short}\"\n"
-            if ans['status'] == 'answered':
-                chosen_text_short = ans['chosen_option_text'][:50] + ("..." if len(ans['chosen_option_text']) > 50 else "")
-                correct_text_short = ans['correct_option_text'][:50] + ("..." if len(ans['correct_option_text']) > 50 else "")
-                results_text += f" - اخترت: {chosen_text_short} ({'صحيح ✅' if ans['is_correct'] else 'خطأ ❌'})\n"
-                if not ans['is_correct']:
-                    results_text += f" - الصحيح: {correct_text_short}\n"
-                    
-                    # إضافة شرح للإجابات الخاطئة فقط
-                    question_id = ans.get('question_id')
-                    if question_id:
-                        # البحث عن السؤال في questions_data باستخدام question_id
-                        question_data = None
-                        for q in self.questions_data:
-                            if str(q.get('question_id')) == str(question_id):
-                                question_data = q
-                                break
-                        
-                        if question_data:
-                            # إضافة الشرح إذا كان متوفراً
-                            explanation = question_data.get('explanation')
-                            explanation_image = question_data.get('explanation_image_path')
-                            
-                            if explanation:
-                                results_text += f" - <b>الشرح:</b> {explanation}\n"
-                            
-                            if explanation_image:
-                                results_text += f" - <b>صورة توضيحية:</b> {explanation_image}\n"
-            elif ans['status'] == 'timed_out':
-                results_text += " - الحالة: انتهى الوقت ⌛\n"
-            elif ans['status'] == 'skipped_auto':
-                results_text += " - الحالة: تم التخطي (خيارات غير كافية) ⏭️\n"
-            elif ans['status'] == 'skipped_by_user':
-                results_text += " - الحالة: تم التخطي بواسطة المستخدم ⏭️\n"
-            elif ans['status'] == 'quiz_ended_by_user':
-                results_text += " - الحالة: تم إنهاء الاختبار بواسطة المستخدم ❌\n"
-            elif ans['status'] == 'not_reached_quiz_ended':
-                results_text += " - الحالة: لم يتم الوصول للسؤال (تم إنهاء الاختبار) ❌\n"
-            elif ans['status'] == 'error_sending':
-                results_text += " - الحالة: خطأ في إرسال السؤال ⚠️\n"
-            else:
-                results_text += f" - الحالة: {ans['status']}\n"
 
         # تقسيم النتائج الطويلة إلى عدة رسائل إذا تجاوزت الحد المسموح به
-        # الحد الأقصى لطول رسالة تيليجرام هو 4096 حرف
-        MAX_MESSAGE_LENGTH = 4000  # نستخدم 4000 بدلاً من 4096 للأمان
+        MAX_MESSAGE_LENGTH = 4000
         
-        # إنشاء أجزاء الرسالة
         message_parts = []
+        message_parts.append(results_text)
         
-        # الجزء الأول دائماً يحتوي على ملخص النتائج
-        summary_text = f"🏁 <b>نتائج اختبار '{self.quiz_name}'</b> 🏁\n\n"
-        summary_text += f"🎯 نتيجتك: {self.score} من {total_processed_questions}\n"
-        summary_text += f"✅ الإجابات الصحيحة: {self.score}\n"
-        summary_text += f"❌ الإجابات الخاطئة: {total_answered - self.score}\n" 
-        summary_text += f"⏭️ الأسئلة المتخطاة/المهملة: {total_skipped_questions}\n"
-        summary_text += f"📊 النسبة المئوية: {percentage:.2f}%\n"
-        if avg_time_per_q_seconds > 0:
-            summary_text += f"⏱️ متوسط وقت الإجابة للسؤال: {avg_time_per_q_seconds:.2f} ثانية\n"
-        
-        message_parts.append(summary_text)
-        
-        # تقسيم تفاصيل الإجابات إلى أجزاء
+        # تقسيم تفاصيل الإجابات إلى أجزاء باستخدام الدالة المساعدة
         current_part = "\n📜 <b>تفاصيل الإجابات:</b>\n"
         
         for i, ans in enumerate(self.answers):
-            # إنشاء نص تفاصيل السؤال الحالي
-            question_detail = ""
-            q_text = ans.get('question_text')
-            if q_text:
-                q_text_short = q_text[:50] + ("..." if len(q_text) > 50 else "")
-            else:
-                q_text_short = "سؤال غير متوفر"
-            question_detail += f"\n<b>سؤال {i+1}:</b> \"{q_text_short}\"\n"
+            question_detail = self._build_question_detail(i, ans)
             
-            if ans['status'] == 'answered':
-                chosen_text_short = ans['chosen_option_text'][:50] + ("..." if len(ans['chosen_option_text']) > 50 else "")
-                correct_text_short = ans['correct_option_text'][:50] + ("..." if len(ans['correct_option_text']) > 50 else "")
-                question_detail += f" - اخترت: {chosen_text_short} ({'صحيح ✅' if ans['is_correct'] else 'خطأ ❌'})\n"
-                if not ans['is_correct']:
-                    question_detail += f" - الصحيح: {correct_text_short}\n"
-                    
-                    # إضافة شرح للإجابات الخاطئة فقط
-                    question_id = ans.get('question_id')
-                    if question_id:
-                        # البحث عن السؤال في questions_data باستخدام question_id
-                        question_data = None
-                        for q in self.questions_data:
-                            if str(q.get('question_id')) == str(question_id):
-                                question_data = q
-                                break
-                        
-                        if question_data:
-                            # إضافة الشرح إذا كان متوفراً
-                            explanation = question_data.get('explanation')
-                            explanation_image = question_data.get('explanation_image_path')
-                            
-                            if explanation:
-                                question_detail += f" - <b>الشرح:</b> {explanation}\n"
-                            
-                            if explanation_image:
-                                question_detail += f" - <b>صورة توضيحية:</b> {explanation_image}\n"
-            elif ans['status'] == 'timed_out':
-                question_detail += " - الحالة: انتهى الوقت ⌛\n"
-            elif ans['status'] == 'skipped_auto':
-                question_detail += " - الحالة: تم التخطي (خيارات غير كافية) ⏭️\n"
-            elif ans['status'] == 'skipped_by_user':
-                question_detail += " - الحالة: تم التخطي بواسطة المستخدم ⏭️\n"
-            elif ans['status'] == 'quiz_ended_by_user':
-                question_detail += " - الحالة: تم إنهاء الاختبار بواسطة المستخدم ❌\n"
-            elif ans['status'] == 'not_reached_quiz_ended':
-                question_detail += " - الحالة: لم يتم الوصول للسؤال (تم إنهاء الاختبار) ❌\n"
-            elif ans['status'] == 'error_sending':
-                question_detail += " - الحالة: خطأ في إرسال السؤال ⚠️\n"
-            else:
-                question_detail += f" - الحالة: {ans['status']}\n"
-            
-            # التحقق مما إذا كان إضافة تفاصيل السؤال الحالي سيتجاوز الحد الأقصى
             if len(current_part) + len(question_detail) > MAX_MESSAGE_LENGTH:
-                # إضافة الجزء الحالي إلى قائمة الأجزاء وبدء جزء جديد
                 message_parts.append(current_part)
                 current_part = f"📜 <b>تفاصيل الإجابات (تابع):</b>\n{question_detail}"
             else:
-                # إضافة تفاصيل السؤال الحالي إلى الجزء الحالي
                 current_part += question_detail
         
-        # إضافة الجزء الأخير إذا كان غير فارغ
         if current_part:
             message_parts.append(current_part)
         
         # إرسال جميع أجزاء الرسالة
+        # === فحص الإنجازات والشارات ===
+        achievements_text = self._check_achievements(percentage, total_answered, avg_time_per_q_seconds)
+        if achievements_text:
+            message_parts.append(achievements_text)
+        
         keyboard = [
             [InlineKeyboardButton("✨ ابدأ اختباراً جديداً", callback_data="quiz_action_restart_quiz_cb")],
+            [InlineKeyboardButton("🎯 اختبار نقاط ضعفي", callback_data="start_weakness_quiz")],
             [InlineKeyboardButton("📊 عرض الإحصائيات", callback_data="menu_stats")],
             [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
         ]
