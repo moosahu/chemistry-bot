@@ -91,6 +91,14 @@ try:
             admin_edit_messages_menu_callback,
             admin_stats_panel_button_callback,
             admin_toggle_my_student_callback,
+            admin_my_students_list_callback,
+            admin_untag_student_from_list_callback,
+            admin_tag_by_grade_callback,
+            admin_tag_grade_action_callback,
+            admin_grade_students_list_callback,
+            admin_grade_toggle_student_callback,
+            admin_untag_all_confirm_callback,
+            admin_untag_all_execute_callback,
             # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
@@ -439,6 +447,21 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_edit_messages_menu_callback, pattern=r"^admin_edit_messages_menu$"))
         application.add_handler(CallbackQueryHandler(admin_stats_panel_button_callback, pattern=r"^stats_admin_panel_v4$"))
         application.add_handler(CallbackQueryHandler(admin_toggle_my_student_callback, pattern=r"^toggle_my_student_"))
+        # === طلابي handlers ===
+        application.add_handler(CallbackQueryHandler(admin_my_students_list_callback, pattern=r"^admin_my_students_list$"))
+        application.add_handler(CallbackQueryHandler(admin_my_students_list_callback, pattern=r"^my_students_page_"))
+        application.add_handler(CallbackQueryHandler(admin_untag_student_from_list_callback, pattern=r"^untag_student_"))
+        application.add_handler(CallbackQueryHandler(admin_tag_by_grade_callback, pattern=r"^admin_tag_by_grade$"))
+        application.add_handler(CallbackQueryHandler(admin_tag_grade_action_callback, pattern=r"^tag_grade_"))
+        application.add_handler(CallbackQueryHandler(admin_tag_grade_action_callback, pattern=r"^untag_grade_"))
+        application.add_handler(CallbackQueryHandler(admin_grade_students_list_callback, pattern=r"^grade_students_"))
+        application.add_handler(CallbackQueryHandler(admin_grade_toggle_student_callback, pattern=r"^gtoggle_"))
+        application.add_handler(CallbackQueryHandler(admin_untag_all_confirm_callback, pattern=r"^admin_untag_all_confirm$"))
+        application.add_handler(CallbackQueryHandler(admin_untag_all_execute_callback, pattern=r"^admin_untag_all_execute$"))
+        # noop handler for page number display
+        async def noop_callback(update, context):
+            await update.callback_query.answer()
+        application.add_handler(CallbackQueryHandler(noop_callback, pattern=r"^noop$"))
 
         # Add export users command handler if available
         try:

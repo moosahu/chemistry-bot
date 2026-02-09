@@ -73,7 +73,8 @@ def get_admin_menu_keyboard():
     """إنشاء لوحة أزرار الأدمن الموحدة"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 ملخص سريع", callback_data="admin_quick_summary")],
-        [InlineKeyboardButton("🔍 بحث عن طالب", callback_data="admin_search_student")],
+        [InlineKeyboardButton("🔍 بحث عن طالب", callback_data="admin_search_student"),
+         InlineKeyboardButton("⭐ طلابي", callback_data="admin_my_students_list")],
         [InlineKeyboardButton("📈 لوحة الإحصائيات", callback_data="stats_admin_panel_v4")],
         [InlineKeyboardButton("📁 تصدير المسجلين Excel", callback_data="admin_export_users")],
         [InlineKeyboardButton("📋 تقرير مخصص", callback_data="custom_report_start")],
@@ -527,6 +528,437 @@ async def admin_toggle_my_student_callback(update: Update, context: ContextTypes
     finally:
         if conn:
             conn.close()
+
+
+# ============================================================
+#  4b. قائمة طلابي (عرض + إزالة سريعة + تمييز حسب الصف)
+# ============================================================
+async def admin_my_students_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """عرض قائمة طلابي مع أزرار إزالة سريعة"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    # جلب الصفحة
+    page = context.user_data.get('my_students_page', 0)
+    # لو الضغطة فيها رقم صفحة
+    if query.data.startswith("my_students_page_"):
+        try:
+            page = int(query.data.replace("my_students_page_", ""))
+        except ValueError:
+            page = 0
+    context.user_data['my_students_page'] = page
+
+    PAGE_SIZE = 10
+    offset = page * PAGE_SIZE
+
+    conn = None
+    try:
+        conn = connect_db()
+        if not conn:
+            await query.edit_message_text("❌ خطأ في الاتصال", reply_markup=get_admin_menu_keyboard())
+            return
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            # العدد الكلي
+            cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE")
+            total = cur.fetchone()[0]
+
+            if total == 0:
+                # عرض خيارات التمييز
+                await _show_empty_my_students(query)
+                return
+
+            # جلب الطلاب
+            cur.execute("""
+                SELECT u.user_id, u.full_name, u.grade,
+                       COUNT(qr.id) as quiz_count,
+                       ROUND(AVG(qr.score_percentage)::numeric, 1) as avg_score
+                FROM users u
+                LEFT JOIN quiz_results qr ON u.user_id = qr.user_id
+                WHERE u.is_registered = TRUE AND COALESCE(u.is_my_student, FALSE) = TRUE
+                GROUP BY u.user_id, u.full_name, u.grade
+                ORDER BY u.full_name
+                LIMIT %s OFFSET %s
+            """, (PAGE_SIZE, offset))
+            students = cur.fetchall()
+
+        # بناء الرسالة
+        msg = f"⭐ طلابي ({total})\n\n"
+        for i, s in enumerate(students, start=offset + 1):
+            name = (s['full_name'] or "—")[:20]
+            grade = s['grade'] or "—"
+            avg = s['avg_score'] or 0
+            quizzes = s['quiz_count'] or 0
+            msg += f"{i}. {name} | {grade} | {quizzes}📝 | {avg}%\n"
+
+        # أزرار إزالة — كل طالب له زر ❌
+        keyboard = []
+        row = []
+        for s in students:
+            short_name = (s['full_name'] or "—")[:10]
+            row.append(InlineKeyboardButton(f"❌ {short_name}", callback_data=f"untag_student_{s['user_id']}"))
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+
+        # صفحات
+        nav_row = []
+        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("◀️ السابق", callback_data=f"my_students_page_{page - 1}"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("التالي ▶️", callback_data=f"my_students_page_{page + 1}"))
+        if nav_row:
+            keyboard.append(nav_row)
+
+        msg += f"\nصفحة {page + 1}/{total_pages}"
+
+        keyboard.append([InlineKeyboardButton("➕ تمييز حسب الصف", callback_data="admin_tag_by_grade")])
+        keyboard.append([InlineKeyboardButton("🗑️ إزالة الكل", callback_data="admin_untag_all_confirm")])
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")])
+
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    except Exception as e:
+        logger.error(f"Error listing my students: {e}", exc_info=True)
+        await query.edit_message_text(f"❌ خطأ: {str(e)[:200]}", reply_markup=get_admin_menu_keyboard())
+    finally:
+        if conn:
+            conn.close()
+
+
+async def _show_empty_my_students(query):
+    """عرض رسالة لا يوجد طلاب مع خيار تمييز حسب الصف"""
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ تمييز حسب الصف", callback_data="admin_tag_by_grade")],
+        [InlineKeyboardButton("🔍 بحث وتمييز", callback_data="admin_search_student")],
+        [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
+    ])
+    await query.edit_message_text(
+        "⭐ طلابي (0)\n\n"
+        "لا يوجد طلاب مميزين حالياً.\n\n"
+        "طرق التمييز:\n"
+        "• ➕ تمييز حسب الصف — تميز كل طلاب صف معين\n"
+        "• 🔍 بحث وتمييز — تبحث عن طالب وتميزه",
+        reply_markup=keyboard
+    )
+
+
+async def admin_untag_student_from_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """إزالة تمييز طالب من القائمة وتحديثها"""
+    query = update.callback_query
+
+    try:
+        target_user_id = int(query.data.replace("untag_student_", ""))
+    except ValueError:
+        await query.answer("❌ خطأ", show_alert=True)
+        return
+
+    conn = None
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET is_my_student = FALSE WHERE user_id = %s RETURNING full_name", (target_user_id,))
+                result = cur.fetchone()
+                conn.commit()
+                name = result[0] if result else str(target_user_id)
+                await query.answer(f"☆ تم إزالة {name}")
+    except Exception as e:
+        logger.error(f"Error untagging: {e}")
+        await query.answer("❌ خطأ", show_alert=True)
+        return
+    finally:
+        if conn:
+            conn.close()
+
+    # تحديث القائمة
+    await admin_my_students_list_callback(update, context)
+
+
+# --- تمييز حسب الصف ---
+async def admin_tag_by_grade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """عرض الصفوف لاختيار طلاب منها"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    conn = None
+    try:
+        conn = connect_db()
+        if not conn:
+            await query.edit_message_text("❌ خطأ", reply_markup=get_admin_menu_keyboard())
+            return
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute("""
+                SELECT grade, 
+                       COUNT(*) as total,
+                       COUNT(*) FILTER (WHERE COALESCE(is_my_student, FALSE) = TRUE) as tagged
+                FROM users 
+                WHERE is_registered = TRUE AND grade IS NOT NULL
+                GROUP BY grade ORDER BY grade
+            """)
+            grades = cur.fetchall()
+
+        if not grades:
+            await query.edit_message_text("❌ لا توجد صفوف", reply_markup=get_admin_menu_keyboard())
+            return
+
+        msg = "🎓 اختر الصف لعرض طلابه:\n\n"
+        keyboard = []
+        for g in grades:
+            msg += f"• {g['grade']}: {g['tagged']}⭐ / {g['total']} طالب\n"
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{g['grade']} ({g['tagged']}⭐/{g['total']})",
+                    callback_data=f"grade_students_{g['grade']}"
+                ),
+                InlineKeyboardButton(
+                    f"⭐ الكل",
+                    callback_data=f"tag_grade_{g['grade']}"
+                ),
+            ])
+
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_my_students_list")])
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    except Exception as e:
+        logger.error(f"Error showing grades for tagging: {e}")
+        await query.edit_message_text(f"❌ خطأ: {str(e)[:200]}", reply_markup=get_admin_menu_keyboard())
+    finally:
+        if conn:
+            conn.close()
+
+
+async def admin_grade_students_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """عرض طلاب صف معين مع أزرار تمييز فردية ⭐/☆"""
+    query = update.callback_query
+    await query.answer()
+
+    # استخراج الصف ورقم الصفحة
+    data = query.data  # grade_students_ثانوي 1 أو grade_students_page_ثانوي 1_2
+    if data.startswith("grade_students_page_"):
+        # grade_students_page_ثانوي 1_2
+        parts = data.replace("grade_students_page_", "")
+        # آخر _ بعده الرقم
+        last_underscore = parts.rfind("_")
+        grade = parts[:last_underscore]
+        page = int(parts[last_underscore + 1:])
+    else:
+        grade = data.replace("grade_students_", "")
+        page = 0
+
+    context.user_data['grade_browse_page'] = page
+    context.user_data['grade_browse_grade'] = grade
+
+    PAGE_SIZE = 8
+    offset = page * PAGE_SIZE
+
+    conn = None
+    try:
+        conn = connect_db()
+        if not conn:
+            await query.edit_message_text("❌ خطأ", reply_markup=get_admin_menu_keyboard())
+            return
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            # العدد الكلي
+            cur.execute(
+                "SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND grade = %s",
+                (grade,)
+            )
+            total = cur.fetchone()[0]
+
+            # الطلاب
+            cur.execute("""
+                SELECT user_id, full_name, COALESCE(is_my_student, FALSE) as is_my_student
+                FROM users
+                WHERE is_registered = TRUE AND grade = %s
+                ORDER BY full_name
+                LIMIT %s OFFSET %s
+            """, (grade, PAGE_SIZE, offset))
+            students = cur.fetchall()
+
+            # عدد المميزين
+            cur.execute(
+                "SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND grade = %s AND COALESCE(is_my_student, FALSE) = TRUE",
+                (grade,)
+            )
+            tagged_count = cur.fetchone()[0]
+
+        total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        msg = f"🎓 {grade} — {tagged_count}⭐ / {total} طالب\n"
+        msg += f"صفحة {page + 1}/{total_pages}\n\n"
+        msg += "اضغط على الطالب لتمييزه/إزالته:\n\n"
+
+        keyboard = []
+        for s in students:
+            name = s['full_name'] or str(s['user_id'])
+            if s['is_my_student']:
+                btn_text = f"⭐ {name}"
+            else:
+                btn_text = f"☆ {name}"
+            keyboard.append([InlineKeyboardButton(
+                btn_text,
+                callback_data=f"gtoggle_{grade}_{page}_{s['user_id']}"
+            )])
+
+        # صفحات
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("◀️", callback_data=f"grade_students_page_{grade}_{page - 1}"))
+        nav_row.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("▶️", callback_data=f"grade_students_page_{grade}_{page + 1}"))
+        keyboard.append(nav_row)
+
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع للصفوف", callback_data="admin_tag_by_grade")])
+
+        await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    except Exception as e:
+        logger.error(f"Error listing grade students: {e}", exc_info=True)
+        await query.edit_message_text(f"❌ خطأ: {str(e)[:200]}", reply_markup=get_admin_menu_keyboard())
+    finally:
+        if conn:
+            conn.close()
+
+
+async def admin_grade_toggle_student_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تبديل تمييز طالب من داخل قائمة الصف"""
+    query = update.callback_query
+
+    # gtoggle_ثانوي 1_0_123456
+    data = query.data.replace("gtoggle_", "")
+    # نحتاج نستخرج: grade, page, user_id
+    # user_id هو آخر جزء (رقم)
+    # page هو ما قبله
+    parts = data.rsplit("_", 2)  # ['ثانوي 1', '0', '123456']
+    if len(parts) != 3:
+        await query.answer("❌ خطأ", show_alert=True)
+        return
+
+    grade = parts[0]
+    page = int(parts[1])
+    target_user_id = int(parts[2])
+
+    conn = None
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE users SET is_my_student = NOT COALESCE(is_my_student, FALSE)
+                    WHERE user_id = %s
+                    RETURNING is_my_student, full_name
+                """, (target_user_id,))
+                result = cur.fetchone()
+                conn.commit()
+                if result:
+                    status = "⭐" if result[0] else "☆"
+                    name = result[1] or str(target_user_id)
+                    await query.answer(f"{status} {name}")
+    except Exception as e:
+        logger.error(f"Error toggling from grade list: {e}")
+        await query.answer("❌ خطأ", show_alert=True)
+        return
+    finally:
+        if conn:
+            conn.close()
+
+    # إعادة عرض نفس الصفحة
+    context.user_data['grade_browse_grade'] = grade
+    context.user_data['grade_browse_page'] = page
+    # نحتاج نعيد بناء الـ callback data
+    query.data = f"grade_students_page_{grade}_{page}"
+    await admin_grade_students_list_callback(update, context)
+
+
+async def admin_tag_grade_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تمييز كل طلاب صف معين دفعة واحدة"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    data = query.data
+    if data.startswith("tag_grade_"):
+        grade = data.replace("tag_grade_", "")
+        tag_value = True
+        action_text = "تمييز"
+    elif data.startswith("untag_grade_"):
+        grade = data.replace("untag_grade_", "")
+        tag_value = False
+        action_text = "إزالة تمييز"
+    else:
+        return
+
+    conn = None
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET is_my_student = %s WHERE is_registered = TRUE AND grade = %s",
+                    (tag_value, grade)
+                )
+                count = cur.rowcount
+                conn.commit()
+                await query.answer(f"✅ تم {action_text} {count} طالب في {grade}", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error bulk tagging: {e}")
+        await query.answer(f"❌ خطأ: {str(e)[:100]}", show_alert=True)
+        return
+    finally:
+        if conn:
+            conn.close()
+
+    # تحديث صفحة الصفوف
+    await admin_tag_by_grade_callback(update, context)
+
+
+# --- إزالة الكل ---
+async def admin_untag_all_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تأكيد إزالة تمييز الكل"""
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ نعم، إزالة الكل", callback_data="admin_untag_all_execute")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="admin_my_students_list")],
+    ])
+    await query.edit_message_text("⚠️ هل أنت متأكد من إزالة تمييز جميع الطلاب؟", reply_markup=keyboard)
+
+
+async def admin_untag_all_execute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تنفيذ إزالة تمييز الكل"""
+    query = update.callback_query
+    await query.answer()
+
+    conn = None
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE users SET is_my_student = FALSE WHERE COALESCE(is_my_student, FALSE) = TRUE")
+                count = cur.rowcount
+                conn.commit()
+                await query.answer(f"✅ تم إزالة التمييز عن {count} طالب", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error untagging all: {e}")
+        await query.answer("❌ خطأ", show_alert=True)
+    finally:
+        if conn:
+            conn.close()
+
+    context.user_data['my_students_page'] = 0
+    await admin_my_students_list_callback(update, context)
 
 
 # ============================================================
