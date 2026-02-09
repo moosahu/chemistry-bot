@@ -295,7 +295,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
 
     if quiz_type_key == QUIZ_TYPE_ALL:
-        api_response = await fetch_from_api("api/v1/questions/all")
+        api_response = fetch_from_api("api/v1/questions/all")
         if api_response == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE 
@@ -312,7 +312,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
 
     elif quiz_type_key == "random_course":
         # اختبار عشوائي حسب المقرر
-        courses = await fetch_from_api("api/v1/courses")
+        courses = fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
@@ -326,7 +326,7 @@ async def select_quiz_type_handler(update: Update, context: CallbackContext) -> 
         return SELECT_COURSE_FOR_RANDOM_QUIZ
         
     elif quiz_type_key == QUIZ_TYPE_UNIT:
-        courses = await fetch_from_api("api/v1/courses")
+        courses = fetch_from_api("api/v1/courses")
         if courses == "TIMEOUT":
             await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_quiz_type_keyboard())
             return SELECT_QUIZ_TYPE
@@ -374,7 +374,7 @@ async def select_course_for_random_quiz_handler(update: Update, context: Callbac
     context.user_data["selected_course_name_for_random_quiz"] = selected_course_name
 
     # جلب جميع الأسئلة للمقرر
-    api_response = await fetch_from_api(f"api/v1/courses/{selected_course_id}/questions")
+    api_response = fetch_from_api(f"api/v1/courses/{selected_course_id}/questions")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     
     if api_response == "TIMEOUT":
@@ -427,7 +427,7 @@ async def select_course_for_unit_quiz_handler(update: Update, context: CallbackC
     selected_course_name = next((c.get("name") for c in courses if str(c.get("id")) == str(selected_course_id)), "مقرر غير معروف")
     context.user_data["selected_course_name_for_unit_quiz"] = selected_course_name
 
-    units = await fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
+    units = fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     if units == "TIMEOUT":
         await safe_edit_message_text(context.bot, chat_id, query.message.message_id, api_timeout_message, create_course_selection_keyboard(courses, context.user_data.get("current_course_page_for_unit_quiz",0)))
@@ -475,7 +475,7 @@ async def select_unit_for_course_handler(update: Update, context: CallbackContex
     selected_unit_name = next((u.get("name") for u in units if str(u.get("id")) == str(selected_unit_id)), "وحدة غير معروفة")
     context.user_data["selected_unit_name"] = selected_unit_name
 
-    api_response = await fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
+    api_response = fetch_from_api(f"api/v1/units/{selected_unit_id}/questions")
     api_timeout_message = "انتهت مهلة الاتصال بخادم الأسئلة. يرجى المحاولة مرة أخرى لاحقاً."
     current_unit_page = context.user_data.get("current_unit_page_for_course", 0)
 
@@ -783,6 +783,107 @@ def _weakness_bar(error_rate: float, width: int = 6) -> str:
     empty = width - filled
     return "🟥" * filled + "⬜" * empty
 
+
+def _fetch_course_weakness(courses: list, weak_question_ids: set) -> tuple:
+    """
+    المرحلة 1: جلب أسئلة كل مقرر ومطابقتها مع أسئلة الضعف.
+    يرسل API call واحد لكل مقرر (عادة 2-3 مقررات فقط).
+    
+    Returns:
+        (course_weakness_dict, all_matched_questions_dict)
+        - course_weakness: {course_id: {name, weak_count, weak_q_data: [{q_id, question_data}]}}
+        - all_matched: {question_id: {course_id, course_name, question_data}}
+    """
+    course_weakness = {}
+    all_matched = {}
+    
+    for course in courses:
+        c_id = str(course.get("id", ""))
+        c_name = course.get("name", "")
+        if not c_id:
+            continue
+        
+        # جلب كل أسئلة المقرر
+        questions = fetch_from_api(f"api/v1/courses/{c_id}/questions")
+        if not questions or questions == "TIMEOUT" or not isinstance(questions, list):
+            logger.warning(f"[Weakness] Could not fetch questions for course {c_id} ({c_name})")
+            continue
+        
+        logger.info(f"[Weakness] Course {c_name}: {len(questions)} total questions")
+        
+        weak_in_course = []
+        for q in questions:
+            q_id = str(q.get("id", q.get("question_id", "")))
+            if q_id and q_id in weak_question_ids:
+                weak_in_course.append({"q_id": q_id, "question_data": q})
+                all_matched[q_id] = {
+                    "course_id": c_id,
+                    "course_name": c_name,
+                    "question_data": q,
+                }
+        
+        if weak_in_course:
+            course_weakness[c_id] = {
+                "name": c_name,
+                "weak_count": len(weak_in_course),
+                "weak_q_data": weak_in_course,
+            }
+            logger.info(f"[Weakness] Course {c_name}: {len(weak_in_course)} weak questions found")
+    
+    logger.info(f"[Weakness] Total matched: {len(all_matched)} out of {len(weak_question_ids)} weak IDs")
+    return course_weakness, all_matched
+
+
+def _fetch_unit_weakness(course_id: str, weak_question_ids: set) -> tuple:
+    """
+    المرحلة 2: جلب وحدات مقرر محدد ومطابقة الأسئلة الضعيفة لكل وحدة.
+    يُستدعى فقط عند اختيار المقرر.
+    
+    Returns:
+        (unit_weakness_dict, unit_matched_questions_dict)
+        - unit_weakness: {unit_id: {name, weak_count, weak_q_data: [{q_id, question_data}]}}
+        - unit_matched: {question_id: {unit_id, unit_name, question_data}}
+    """
+    unit_weakness = {}
+    unit_matched = {}
+    
+    units = fetch_from_api(f"api/v1/courses/{course_id}/units")
+    if not units or units == "TIMEOUT" or not isinstance(units, list):
+        logger.warning(f"[Weakness] Could not fetch units for course {course_id}")
+        return unit_weakness, unit_matched
+    
+    for unit in units:
+        u_id = str(unit.get("id", ""))
+        u_name = unit.get("name", "")
+        if not u_id:
+            continue
+        
+        questions = fetch_from_api(f"api/v1/units/{u_id}/questions")
+        if not questions or questions == "TIMEOUT" or not isinstance(questions, list):
+            continue
+        
+        weak_in_unit = []
+        for q in questions:
+            q_id = str(q.get("id", q.get("question_id", "")))
+            if q_id and q_id in weak_question_ids:
+                weak_in_unit.append({"q_id": q_id, "question_data": q})
+                unit_matched[q_id] = {
+                    "unit_id": u_id,
+                    "unit_name": u_name,
+                    "question_data": q,
+                }
+        
+        if weak_in_unit:
+            unit_weakness[u_id] = {
+                "name": u_name,
+                "weak_count": len(weak_in_unit),
+                "weak_q_data": weak_in_unit,
+            }
+    
+    logger.info(f"[Weakness] Course {course_id}: {len(unit_weakness)} units with weak questions")
+    return unit_weakness, unit_matched
+
+
 async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
     """بدء اختبار نقاط الضعف — تحليل وعرض المقررات"""
     query = update.callback_query
@@ -799,18 +900,24 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
     from database.manager import DB_MANAGER
     
     if not DB_MANAGER:
-        error_text = "عذراً، لا يمكن الوصول لقاعدة البيانات حالياً."
         kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
         if message_id:
-            await safe_edit_message_text(context.bot, chat_id, message_id, error_text, kbd)
-        else:
-            await safe_send_message(context.bot, chat_id, error_text, kbd)
+            await safe_edit_message_text(context.bot, chat_id, message_id, "❌ لا يمكن الوصول لقاعدة البيانات.", kbd)
         return ConversationHandler.END
     
-    # فحص وجود نقاط ضعف
+    # رسالة تحميل
+    loading_text = "🎯 تقوية نقاط الضعف\n\n⏳ جاري تحليل إجاباتك السابقة..."
+    if message_id:
+        await safe_edit_message_text(context.bot, chat_id, message_id, loading_text)
+    else:
+        sent = await safe_send_message(context.bot, chat_id, loading_text)
+        if sent:
+            message_id = sent.message_id
+    
+    # 1. جلب نقاط الضعف من قاعدة البيانات
     weak_questions = DB_MANAGER.get_user_weak_questions(user_id, limit=200)
     
-    if not weak_questions or len(weak_questions) == 0:
+    if not weak_questions:
         no_data_text = (
             "🎯 تقوية نقاط الضعف\n\n"
             "🎉 ممتاز! لا توجد نقاط ضعف مسجلة.\n\n"
@@ -826,70 +933,63 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
             await safe_send_message(context.bot, chat_id, no_data_text, kbd)
         return ConversationHandler.END
     
-    # حفظ IDs الأسئلة الضعيفة مع بيانات الخطأ
-    weak_question_ids = set(str(wq.get("question_id")) for wq in weak_questions if wq.get("question_id"))
+    # حفظ بيانات الخطأ
+    weak_question_ids = set()
     weak_error_rates = {}
     for wq in weak_questions:
         qid = str(wq.get("question_id", ""))
         if qid:
+            weak_question_ids.add(qid)
             weak_error_rates[qid] = {
                 "times_wrong": wq.get("times_wrong", 0),
                 "times_answered": wq.get("times_answered", 0),
                 "error_rate": float(wq.get("error_rate", 0)),
             }
-    context.user_data["weakness_question_ids"] = weak_question_ids
+    
     context.user_data["weakness_error_rates"] = weak_error_rates
+    logger.info(f"[Weakness] User {user_id}: {len(weak_question_ids)} weak question IDs from DB")
     
-    # جلب جميع الأسئلة من الـ API
-    all_api_questions = await fetch_from_api("api/v1/questions/all")
-    if not all_api_questions or all_api_questions == "TIMEOUT" or not isinstance(all_api_questions, list):
-        error_text = "عذراً، لا يمكن جلب الأسئلة من الخادم حالياً."
-        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
-        if message_id:
-            await safe_edit_message_text(context.bot, chat_id, message_id, error_text, kbd)
-        else:
-            await safe_send_message(context.bot, chat_id, error_text, kbd)
-        return ConversationHandler.END
-    
-    context.user_data["weakness_all_api_questions"] = all_api_questions
-    
-    # جلب المقررات
-    courses = await fetch_from_api("api/v1/courses")
+    # 2. جلب المقررات
+    courses = fetch_from_api("api/v1/courses")
     if not courses or courses == "TIMEOUT" or not isinstance(courses, list):
-        error_text = "عذراً، لا يمكن جلب المقررات من الخادم حالياً."
         kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
         if message_id:
-            await safe_edit_message_text(context.bot, chat_id, message_id, error_text, kbd)
-        else:
-            await safe_send_message(context.bot, chat_id, error_text, kbd)
+            await safe_edit_message_text(context.bot, chat_id, message_id, "❌ لا يمكن جلب المقررات حالياً.", kbd)
         return ConversationHandler.END
     
     context.user_data["weakness_courses"] = courses
     
-    # تحليل: لكل مقرر، عدد أسئلة الضعف + متوسط نسبة الخطأ
-    course_weakness = {}
+    # 3. جلب أسئلة كل مقرر ومطابقتها (2-3 API calls فقط)
+    course_weakness, all_matched = _fetch_course_weakness(courses, weak_question_ids)
     
-    for q in all_api_questions:
-        q_id = str(q.get("question_id", q.get("id", "")))
-        if q_id in weak_question_ids:
-            c_id = str(q.get("course_id", ""))
-            c_name = q.get("course_name", "")
-            if c_id:
-                if c_id not in course_weakness:
-                    if not c_name:
-                        c_name = next((c.get("name") for c in courses if str(c.get("id")) == c_id), f"مقرر {c_id}")
-                    course_weakness[c_id] = {"name": c_name, "weak_count": 0, "total_error": 0.0}
-                course_weakness[c_id]["weak_count"] += 1
-                course_weakness[c_id]["total_error"] += weak_error_rates.get(q_id, {}).get("error_rate", 50)
+    if not course_weakness or not all_matched:
+        logger.warning(f"[Weakness] No matches found. weak_ids sample: {list(weak_question_ids)[:3]}")
+        # لا يوجد تطابق — حاول بالاختبار العشوائي كحل بديل
+        kbd = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧠 بدء اختبار عادي", callback_data="start_quiz")],
+            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
+        ])
+        no_match_text = (
+            "🎯 تقوية نقاط الضعف\n\n"
+            "⚠️ لم يتم العثور على تطابق بين أسئلتك الضعيفة وبنك الأسئلة الحالي.\n\n"
+            "قد يكون بنك الأسئلة تم تحديثه. جرب اختبار عادي جديد."
+        )
+        if message_id:
+            await safe_edit_message_text(context.bot, chat_id, message_id, no_match_text, kbd)
+        return ConversationHandler.END
     
-    if not course_weakness:
-        return await _start_weakness_quiz_direct(update, context, weak_question_ids, all_api_questions, message_id)
+    # حفظ البيانات
+    context.user_data["weakness_all_matched"] = all_matched
+    context.user_data["weakness_weak_ids"] = weak_question_ids
     
     # حساب متوسط نسبة الخطأ لكل مقرر
     for c_data in course_weakness.values():
-        c_data["avg_error"] = c_data["total_error"] / c_data["weak_count"] if c_data["weak_count"] > 0 else 0
+        total_err = sum(
+            weak_error_rates.get(wq["q_id"], {}).get("error_rate", 50) 
+            for wq in c_data["weak_q_data"]
+        )
+        c_data["avg_error"] = total_err / c_data["weak_count"] if c_data["weak_count"] > 0 else 0
     
-    # ترتيب حسب نسبة الخطأ (الأضعف أولاً)
     sorted_courses = sorted(course_weakness.items(), key=lambda x: x[1]["avg_error"], reverse=True)
     total_weak = sum(d["weak_count"] for d in course_weakness.values())
     
@@ -922,7 +1022,7 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
         btn_text = f"{danger} {data['name']} ({data['weak_count']} سؤال)"
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"weakness_course_{c_id}")])
     
-    keyboard.append([InlineKeyboardButton(f"🎯 اختبار شامل لكل نقاط الضعف ({total_weak})", callback_data="weakness_course_all")])
+    keyboard.append([InlineKeyboardButton(f"🎯 اختبار شامل ({total_weak} سؤال)", callback_data="weakness_course_all")])
     keyboard.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")])
     
     kbd = InlineKeyboardMarkup(keyboard)
@@ -935,10 +1035,9 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
 
 
 async def handle_weakness_course_selection(update: Update, context: CallbackContext) -> int:
-    """معالجة اختيار المقرر في نقاط الضعف — عرض الوحدات"""
+    """معالجة اختيار المقرر — جلب الوحدات وعرضها"""
     query = update.callback_query
     await query.answer()
-    user_id = update.effective_user.id
     chat_id = query.message.chat_id
     message_id = query.message.message_id
     callback_data = query.data
@@ -946,57 +1045,58 @@ async def handle_weakness_course_selection(update: Update, context: CallbackCont
     if callback_data == "quiz_action_main_menu":
         return await go_to_main_menu_from_quiz(update, context)
     
-    weak_question_ids = context.user_data.get("weakness_question_ids", set())
+    all_matched = context.user_data.get("weakness_all_matched", {})
+    weak_question_ids = context.user_data.get("weakness_weak_ids", set())
     weak_error_rates = context.user_data.get("weakness_error_rates", {})
-    all_api_questions = context.user_data.get("weakness_all_api_questions", [])
     
+    # اختبار شامل لكل نقاط الضعف
     if callback_data == "weakness_course_all":
-        return await _start_weakness_quiz_direct(update, context, weak_question_ids, all_api_questions, message_id)
+        all_q = []
+        for q_id, info in all_matched.items():
+            t = transform_api_question(info["question_data"])
+            if t:
+                all_q.append(t)
+        return await _start_weakness_quiz_direct(update, context, all_q, message_id)
     
+    # استخراج course_id
     selected_course_id = callback_data.replace("weakness_course_", "", 1)
     context.user_data["weakness_selected_course_id"] = selected_course_id
     
     courses = context.user_data.get("weakness_courses", [])
-    course_name = next((c.get("name") for c in courses if str(c.get("id")) == selected_course_id), "المقرر المحدد")
+    course_name = next((c.get("name") for c in courses if str(c.get("id")) == selected_course_id), selected_course_id)
     context.user_data["weakness_selected_course_name"] = course_name
     
-    # جلب الوحدات
-    units = await fetch_from_api(f"api/v1/courses/{selected_course_id}/units")
-    if not units or units == "TIMEOUT" or not isinstance(units, list):
-        error_text = f"عذراً، لا يمكن جلب وحدات المقرر '{course_name}' حالياً."
-        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع للمقررات", callback_data="start_weakness_quiz")]])
-        await safe_edit_message_text(context.bot, chat_id, message_id, error_text, kbd)
-        return WEAKNESS_SELECT_COURSE
+    # رسالة تحميل
+    await safe_edit_message_text(context.bot, chat_id, message_id, f"📚 {course_name}\n\n⏳ جاري تحليل الوحدات...")
     
-    context.user_data["weakness_units_cache"] = units
+    # جلب الوحدات وأسئلتها لهذا المقرر
+    course_weak_ids = set(
+        q_id for q_id, info in all_matched.items() 
+        if info["course_id"] == selected_course_id
+    )
     
-    # تحليل نقاط الضعف لكل وحدة
-    unit_weakness = {}
-    
-    for q in all_api_questions:
-        q_id = str(q.get("question_id", q.get("id", "")))
-        q_course = str(q.get("course_id", ""))
-        if q_id in weak_question_ids and q_course == selected_course_id:
-            u_id = str(q.get("unit_id", ""))
-            if u_id:
-                if u_id not in unit_weakness:
-                    u_name = next((u.get("name") for u in units if str(u.get("id")) == u_id), f"وحدة {u_id}")
-                    unit_weakness[u_id] = {"name": u_name, "weak_count": 0, "total_error": 0.0}
-                unit_weakness[u_id]["weak_count"] += 1
-                unit_weakness[u_id]["total_error"] += weak_error_rates.get(q_id, {}).get("error_rate", 50)
+    unit_weakness, unit_matched = _fetch_unit_weakness(selected_course_id, course_weak_ids)
     
     if not unit_weakness:
-        course_weak_ids = set()
-        for q in all_api_questions:
-            q_id = str(q.get("question_id", q.get("id", "")))
-            q_course = str(q.get("course_id", ""))
-            if q_id in weak_question_ids and q_course == selected_course_id:
-                course_weak_ids.add(q_id)
-        return await _start_weakness_quiz_direct(update, context, course_weak_ids, all_api_questions, message_id, scope_name=course_name, scope_id=selected_course_id)
+        # ما لقينا وحدات — نبدأ مباشرة بأسئلة المقرر
+        course_q = []
+        for q_id, info in all_matched.items():
+            if info["course_id"] == selected_course_id:
+                t = transform_api_question(info["question_data"])
+                if t:
+                    course_q.append(t)
+        return await _start_weakness_quiz_direct(update, context, course_q, message_id, scope_name=course_name, scope_id=selected_course_id)
     
-    # حساب متوسط نسبة الخطأ
+    # حفظ بيانات الوحدات
+    context.user_data["weakness_unit_matched"] = unit_matched
+    
+    # حساب متوسط الخطأ لكل وحدة
     for u_data in unit_weakness.values():
-        u_data["avg_error"] = u_data["total_error"] / u_data["weak_count"] if u_data["weak_count"] > 0 else 0
+        total_err = sum(
+            weak_error_rates.get(wq["q_id"], {}).get("error_rate", 50)
+            for wq in u_data["weak_q_data"]
+        )
+        u_data["avg_error"] = total_err / u_data["weak_count"] if u_data["weak_count"] > 0 else 0
     
     sorted_units = sorted(unit_weakness.items(), key=lambda x: x[1]["avg_error"], reverse=True)
     total_course_weak = sum(d["weak_count"] for d in unit_weakness.values())
@@ -1037,59 +1137,55 @@ async def handle_weakness_course_selection(update: Update, context: CallbackCont
 
 
 async def handle_weakness_unit_selection(update: Update, context: CallbackContext) -> int:
-    """معالجة اختيار الوحدة في نقاط الضعف — بدء الاختبار"""
+    """معالجة اختيار الوحدة — بدء الاختبار"""
     query = update.callback_query
     await query.answer()
-    user_id = update.effective_user.id
     chat_id = query.message.chat_id
     message_id = query.message.message_id
     callback_data = query.data
     
-    weak_question_ids = context.user_data.get("weakness_question_ids", set())
-    all_api_questions = context.user_data.get("weakness_all_api_questions", [])
+    all_matched = context.user_data.get("weakness_all_matched", {})
+    unit_matched = context.user_data.get("weakness_unit_matched", {})
     selected_course_id = context.user_data.get("weakness_selected_course_id", "")
     course_name = context.user_data.get("weakness_selected_course_name", "")
-    units_cache = context.user_data.get("weakness_units_cache", [])
     
     if callback_data == "weakness_back_to_courses":
         return await start_weakness_quiz(update, context)
     
+    target_questions = []
+    
     if callback_data == "weakness_unit_all":
-        target_ids = set()
-        for q in all_api_questions:
-            q_id = str(q.get("question_id", q.get("id", "")))
-            q_course = str(q.get("course_id", ""))
-            if q_id in weak_question_ids and q_course == selected_course_id:
-                target_ids.add(q_id)
+        # كل أسئلة المقرر الضعيفة
+        for q_id, info in all_matched.items():
+            if info["course_id"] == selected_course_id:
+                t = transform_api_question(info["question_data"])
+                if t:
+                    target_questions.append(t)
         scope_name = course_name
         scope_id = selected_course_id
     else:
+        # وحدة محددة
         selected_unit_id = callback_data.replace("weakness_unit_", "", 1)
-        target_ids = set()
-        for q in all_api_questions:
-            q_id = str(q.get("question_id", q.get("id", "")))
-            q_course = str(q.get("course_id", ""))
-            q_unit = str(q.get("unit_id", ""))
-            if q_id in weak_question_ids and q_course == selected_course_id and q_unit == selected_unit_id:
-                target_ids.add(q_id)
-        unit_name = next((u.get("name") for u in units_cache if str(u.get("id")) == selected_unit_id), "الوحدة المحددة")
+        unit_name = "الوحدة المحددة"
+        for q_id, info in unit_matched.items():
+            if info["unit_id"] == selected_unit_id:
+                t = transform_api_question(info["question_data"])
+                if t:
+                    target_questions.append(t)
+                if unit_name == "الوحدة المحددة":
+                    unit_name = info["unit_name"]
         scope_name = f"{course_name} - {unit_name}"
         scope_id = selected_unit_id
     
-    return await _start_weakness_quiz_direct(update, context, target_ids, all_api_questions, message_id, scope_name=scope_name, scope_id=scope_id)
+    return await _start_weakness_quiz_direct(update, context, target_questions, message_id, scope_name=scope_name, scope_id=scope_id)
 
 
-async def _start_weakness_quiz_direct(update, context, target_question_ids, all_api_questions, message_id, scope_name="نقاط الضعف", scope_id="weakness"):
-    """بدء الاختبار مباشرة بأسئلة ضعيفة محددة"""
+async def _start_weakness_quiz_direct(update, context, transformed_questions, message_id, scope_name="نقاط الضعف", scope_id="weakness"):
+    """بدء الاختبار مباشرة بأسئلة ضعيفة محولة"""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
-    weakness_questions = [
-        q for q in all_api_questions
-        if str(q.get("question_id", q.get("id", ""))) in target_question_ids
-    ]
-    
-    if not weakness_questions:
+    if not transformed_questions:
         no_match_text = "لم يتم العثور على أسئلة نقاط الضعف في بنك الأسئلة الحالي."
         kbd = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 رجوع", callback_data="start_weakness_quiz")],
@@ -1101,15 +1197,15 @@ async def _start_weakness_quiz_direct(update, context, target_question_ids, all_
             await safe_send_message(context.bot, chat_id, no_match_text, kbd)
         return ConversationHandler.END
     
-    # ترتيب الأسئلة: الأكثر خطأ أولاً ثم خلط
+    # ترتيب: الأكثر خطأ أولاً، ثم اختيار أول 30
     weak_error_rates = context.user_data.get("weakness_error_rates", {})
-    weakness_questions.sort(
-        key=lambda q: weak_error_rates.get(str(q.get("question_id", q.get("id", ""))), {}).get("error_rate", 0),
+    transformed_questions.sort(
+        key=lambda q: weak_error_rates.get(str(q.get("question_id", "")), {}).get("error_rate", 0),
         reverse=True
     )
     
-    num_questions = min(len(weakness_questions), 30)
-    selected_questions = weakness_questions[:num_questions]
+    num_questions = min(len(transformed_questions), 30)
+    selected_questions = transformed_questions[:num_questions]
     random.shuffle(selected_questions)
     
     quiz_instance_id = str(uuid.uuid4())
@@ -1129,10 +1225,10 @@ async def _start_weakness_quiz_direct(update, context, target_question_ids, all_
     
     context.user_data[f"quiz_logic_instance_{user_id}"] = quiz_logic_instance
     
-    for key in ["weakness_question_ids", "weakness_error_rates", "weakness_all_api_questions",
-                "weakness_courses", "weakness_units_cache",
-                "weakness_selected_course_id", "weakness_selected_course_name"]:
-        context.user_data.pop(key, None)
+    # تنظيف كل بيانات نقاط الضعف المؤقتة
+    for key in list(context.user_data.keys()):
+        if key.startswith("weakness_"):
+            del context.user_data[key]
     
     info_text = (
         f"🎯 اختبار تقوية نقاط الضعف\n"
