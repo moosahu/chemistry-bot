@@ -270,13 +270,10 @@ def export_users_to_excel(admin_user_id=None):
             
             # تعيين عرض الأعمدة بناءً على محتوى الخلايا
             for i, column in enumerate(df.columns):
-                try:
-                    max_val_len = df[column].astype(str).map(len).max()
-                    if pd.isna(max_val_len):
-                        max_val_len = 0
-                    max_length = int(max(max_val_len, len(str(column)))) + 2
-                except (TypeError, ValueError):
-                    max_length = len(str(column)) + 2
+                max_length = max(
+                    df[column].astype(str).map(len).max(),  # أطول قيمة في العمود
+                    len(str(column))  # طول اسم العمود
+                ) + 2  # إضافة هامش
                 
                 # تحديد الحد الأقصى لعرض العمود
                 max_length = min(max_length, 50)

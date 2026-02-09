@@ -228,11 +228,8 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
         for col in datetime_columns:
             if col in df.columns:
                 # تحويل الحقول الزمنية إلى قيم بدون منطقة زمنية ثم إلى نص بتنسيق واضح
-                df[col] = pd.to_datetime(df[col], errors='coerce')
-                # إزالة المنطقة الزمنية إن وجدت
-                if hasattr(df[col].dt, 'tz') and df[col].dt.tz is not None:
-                    df[col] = df[col].dt.tz_localize(None)
-                df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S").fillna("-")
+                df[col] = pd.to_datetime(df[col]).dt.tz_localize(None)
+                df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
         
         # إنشاء اسم الملف مع الطابع الزمني ومعرف المدير
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -281,15 +278,8 @@ async def export_users_to_excel(db_manager, admin_user_id: int) -> str:
             # تنسيق ورقة البيانات الرئيسية
             worksheet = writer.sheets['بيانات المستخدمين']
             for i, column in enumerate(df.columns):
-                try:
-                    max_val_len = df[column].astype(str).map(len).max()
-                    if pd.isna(max_val_len):
-                        max_val_len = 0
-                    column_width = int(max(max_val_len, len(str(column)))) + 2
-                except (TypeError, ValueError):
-                    column_width = len(str(column)) + 2
-                col_letter = chr(65 + i) if i < 26 else chr(65 + i // 26 - 1) + chr(65 + i % 26)
-                worksheet.column_dimensions[col_letter].width = min(column_width, 50)
+                column_width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+                worksheet.column_dimensions[chr(65 + i)].width = min(column_width, 50)  # حد أقصى 50 حرف
             
             # تنسيق ورقة الإحصائيات
             stats_worksheet = writer.sheets['الإحصائيات']
