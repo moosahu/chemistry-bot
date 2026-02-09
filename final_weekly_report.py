@@ -1140,85 +1140,189 @@ class FinalWeeklyReportGenerator:
         
         return chart_paths
     
+    # ============================================================
+    #  Excel Formatting Helper
+    # ============================================================
+    def _format_excel_sheet(self, ws, header_color='1F4E79', col_widths=None):
+        """تنسيق شيت Excel: ألوان، حدود، عرض أعمدة"""
+        try:
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            
+            header_fill = PatternFill(start_color=header_color, end_color=header_color, fill_type='solid')
+            header_font = Font(bold=True, color='FFFFFF', size=11)
+            header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            thin_border = Border(
+                left=Side(style='thin', color='CCCCCC'),
+                right=Side(style='thin', color='CCCCCC'),
+                top=Side(style='thin', color='CCCCCC'),
+                bottom=Side(style='thin', color='CCCCCC')
+            )
+            
+            for col in range(1, ws.max_column + 1):
+                cell = ws.cell(row=1, column=col)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = header_alignment
+                cell.border = thin_border
+            
+            alt_fill = PatternFill(start_color='F2F7FB', end_color='F2F7FB', fill_type='solid')
+            data_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            for row in range(2, ws.max_row + 1):
+                for col in range(1, ws.max_column + 1):
+                    cell = ws.cell(row=row, column=col)
+                    cell.border = thin_border
+                    cell.alignment = data_alignment
+                    if row % 2 == 0:
+                        cell.fill = alt_fill
+            
+            if col_widths:
+                for col_letter, width in col_widths.items():
+                    ws.column_dimensions[col_letter].width = width
+            else:
+                for col in range(1, ws.max_column + 1):
+                    max_len = 0
+                    col_letter = ws.cell(row=1, column=col).column_letter
+                    for row in range(1, min(ws.max_row + 1, 50)):
+                        val = ws.cell(row=row, column=col).value
+                        if val:
+                            max_len = max(max_len, len(str(val)))
+                    ws.column_dimensions[col_letter].width = min(max(max_len + 4, 12), 45)
+            
+            ws.freeze_panes = 'A2'
+            
+        except Exception as e:
+            logger.warning(f"خطأ في تنسيق الشيت: {e}")
+
+    def _format_dashboard_sheet(self, ws):
+        """تنسيق خاص لشيت لوحة المعلومات"""
+        try:
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            
+            thin_border = Border(
+                left=Side(style='thin', color='CCCCCC'),
+                right=Side(style='thin', color='CCCCCC'),
+                top=Side(style='thin', color='CCCCCC'),
+                bottom=Side(style='thin', color='CCCCCC')
+            )
+            
+            section_fill = PatternFill(start_color='1F4E79', end_color='1F4E79', fill_type='solid')
+            section_font = Font(bold=True, color='FFFFFF', size=12)
+            label_font = Font(size=11)
+            value_font = Font(bold=True, size=11, color='1F4E79')
+            
+            good_fill = PatternFill(start_color='E8F5E9', end_color='E8F5E9', fill_type='solid')
+            warn_fill = PatternFill(start_color='FFF3E0', end_color='FFF3E0', fill_type='solid')
+            bad_fill = PatternFill(start_color='FFEBEE', end_color='FFEBEE', fill_type='solid')
+            
+            for row in range(1, ws.max_row + 1):
+                cell_a = ws.cell(row=row, column=1)
+                cell_b = ws.cell(row=row, column=2)
+                cell_a.border = thin_border
+                cell_b.border = thin_border
+                
+                val = str(cell_a.value or '')
+                
+                if val.startswith(('📊', '📈', '🎯', '🏆')):
+                    cell_a.fill = section_fill
+                    cell_a.font = section_font
+                    cell_b.fill = section_fill
+                    cell_b.font = section_font
+                elif val == '':
+                    pass
+                else:
+                    cell_a.font = label_font
+                    cell_b.font = value_font
+                    cell_a.alignment = Alignment(horizontal='right', vertical='center')
+                    cell_b.alignment = Alignment(horizontal='center', vertical='center')
+                    
+                    b_val = str(cell_b.value or '')
+                    if any(w in b_val for w in ['تحسن', 'إيجابي', 'نمو', 'زيادة']):
+                        cell_b.fill = good_fill
+                    elif any(w in b_val for w in ['تراجع', 'انخفاض']):
+                        cell_b.fill = bad_fill
+                    elif any(w in b_val for w in ['مختلط', 'مستقر']):
+                        cell_b.fill = warn_fill
+            
+            ws.column_dimensions['A'].width = 42
+            ws.column_dimensions['B'].width = 30
+            
+        except Exception as e:
+            logger.warning(f"خطأ في تنسيق لوحة المعلومات: {e}")
+
+    # ============================================================
+    #  تصنيف الطلاب المحسن (يتجاهل غير النشطين)
+    # ============================================================
     def analyze_student_performance_categories(self, user_progress: List) -> Dict[str, List]:
-        """تصنيف الطلاب حسب مستوى الأداء"""
+        """تصنيف الطلاب حسب مستوى الأداء - فقط من أكمل اختبار واحد على الأقل"""
         categories = {
             'متفوقين': [],
+            'جيدين': [],
             'متوسطين': [],
-            'ضعاف': []
+            'متعثرين': [],
         }
         
         try:
             for user in user_progress:
-                avg_percentage = user.get('overall_avg_percentage', 0)
-                total_quizzes = user.get('total_quizzes', 0)
-                total_questions = user.get('total_questions_answered', 0)
+                total_quizzes = user.get('total_quizzes', 0) or 0
+                if total_quizzes == 0:
+                    continue
+                
+                avg_percentage = user.get('overall_avg_percentage', 0) or 0
+                total_questions = user.get('total_questions_answered', 0) or 0
 
                 user_info = {
                     'الاسم': user.get('full_name', 'غير محدد'),
-                    'اسم المستخدم': user.get('username', 'غير محدد'),
                     'الصف': user.get('grade', 'غير محدد'),
-                    'متوسط الدرجات': f"{avg_percentage:.1f}%",
+                    'متوسط الدرجات': round(avg_percentage, 1),
                     'عدد الاختبارات': total_quizzes,
-                    'إجمالي الأسئلة': total_questions
+                    'إجمالي الأسئلة': total_questions,
+                    'مستوى الأداء': user.get('performance_level', ''),
                 }
                 
-                # معايير عادلة تأخذ في الاعتبار الأداء والاستمرارية والجهد
-                if avg_percentage >= 80 and total_quizzes >= 3 and total_questions >= 30:
+                if avg_percentage >= 80:
                     categories['متفوقين'].append(user_info)
-                elif avg_percentage >= 60 and total_quizzes >= 2 and total_questions >= 20:
+                elif avg_percentage >= 65:
+                    categories['جيدين'].append(user_info)
+                elif avg_percentage >= 50:
                     categories['متوسطين'].append(user_info)
                 else:
-                    categories['ضعاف'].append(user_info)
+                    categories['متعثرين'].append(user_info)
             
-            # ترتيب كل فئة حسب الدرجات
             for category in categories:
-                categories[category].sort(key=lambda x: self.safe_float(x['متوسط الدرجات'].replace('%', '')), reverse=True)
+                categories[category].sort(key=lambda x: x['متوسط الدرجات'], reverse=True)
                 
         except Exception as e:
             logger.error(f"خطأ في تصنيف الطلاب: {e}")
             
         return categories
-    
+
     def analyze_question_difficulty(self, difficult_questions: List) -> Dict[str, List]:
-        """تحليل صعوبة الأسئلة"""
+        """تحليل صعوبة الأسئلة - أصعب 10 فقط"""
         analysis = {
             'أصعب_الأسئلة': [],
-            'أسهل_الأسئلة': []
         }
         
         try:
-            # ترتيب الأسئلة حسب معدل النجاح
             sorted_questions = sorted(difficult_questions, key=lambda x: x.get('success_rate', 0))
             
-            # أصعب 10 أسئلة (أقل معدل نجاح)
             hardest = sorted_questions[:10]
             for q in hardest:
                 analysis['أصعب_الأسئلة'].append({
-                    'معرف السؤال': q.get('question_id', 'غير محدد'),
+                    'الاختبار': q.get('quiz_name', 'غير محدد'),
                     'معدل النجاح': f"{q.get('success_rate', 0):.1f}%",
                     'إجمالي المحاولات': q.get('total_attempts', 0),
                     'مستوى الصعوبة': q.get('difficulty_level', 'غير محدد'),
                     'أولوية المراجعة': q.get('review_priority', 'غير محدد')
-                })
-            
-            # أسهل 10 أسئلة (أعلى معدل نجاح)
-            easiest = sorted_questions[-10:]
-            for q in easiest:
-                analysis['أسهل_الأسئلة'].append({
-                    'معرف السؤال': q.get('question_id', 'غير محدد'),
-                    'معدل النجاح': f"{q.get('success_rate', 0):.1f}%",
-                    'إجمالي المحاولات': q.get('total_attempts', 0),
-                    'مستوى الصعوبة': q.get('difficulty_level', 'غير محدد')
                 })
                 
         except Exception as e:
             logger.error(f"خطأ في تحليل صعوبة الأسئلة: {e}")
             
         return analysis
-    
+
     def analyze_student_improvement_trends(self, user_progress: List) -> Dict[str, List]:
-        """تحليل اتجاهات تحسن الطلاب"""
+        """تحليل اتجاهات تحسن الطلاب - فقط من لديه 2+ اختبار"""
         trends = {
             'متحسنين': [],
             'متراجعين': [],
@@ -1227,15 +1331,17 @@ class FinalWeeklyReportGenerator:
         
         try:
             for user in user_progress:
+                total_quizzes = user.get('total_quizzes', 0) or 0
+                if total_quizzes < 2:
+                    continue
+                
                 improvement = user.get('improvement_trend', 'مستقر')
                 user_info = {
                     'الاسم': user.get('full_name', 'غير محدد'),
-                    'اسم المستخدم': user.get('username', 'غير محدد'),
                     'الصف': user.get('grade', 'غير محدد'),
-                    'متوسط الدرجات': f"{user.get('overall_avg_percentage', 0):.1f}%",
-
-                    'اتجاه التحسن': improvement,
-                    'عدد الاختبارات': user.get('total_quizzes', 0)
+                    'متوسط الدرجات': round(user.get('overall_avg_percentage', 0) or 0, 1),
+                    'عدد الاختبارات': total_quizzes,
+                    'الاتجاه': improvement,
                 }
                 
                 if improvement == 'متحسن':
@@ -1249,340 +1355,305 @@ class FinalWeeklyReportGenerator:
             logger.error(f"خطأ في تحليل اتجاهات التحسن: {e}")
             
         return trends
-    
+
+    # ============================================================
+    #  إنشاء التقرير المحسن
+    # ============================================================
     def create_final_excel_report(self, start_date: datetime, end_date: datetime) -> str:
-        """إنشاء تقرير Excel نهائي ومحسن مع التحليلات المتقدمة"""
+        """إنشاء تقرير Excel محسن وشامل"""
         try:
             # جمع البيانات
             general_stats = self.get_comprehensive_stats(start_date, end_date)
             user_progress = self.get_user_progress_analysis(start_date, end_date)
             grade_analysis = self.get_grade_performance_analysis(start_date, end_date)
             difficult_questions = self.get_difficult_questions_analysis(start_date, end_date)
-            individual_difficult_questions = self.get_individual_difficult_questions(start_date, end_date)
-            # التحقق من أن النتيجة ليست None قبل استخدام len()
-            if individual_difficult_questions is None:
-                individual_difficult_questions = []
-            logger.info(f"تم العثور على {len(individual_difficult_questions)} سؤال فردي صعب")
+            individual_difficult_questions = self.get_individual_difficult_questions(start_date, end_date) or []
             quiz_details = self.get_quiz_details(start_date, end_date)
             time_patterns = self.get_time_patterns_analysis(start_date, end_date)
+            
+            previous_stats = self.get_previous_week_stats(start_date, end_date)
+            weekly_comparison = self.calculate_weekly_comparison(general_stats, previous_stats)
+            kpis = self.calculate_kpis(general_stats)
+            
             smart_recommendations = self.generate_smart_recommendations(
                 general_stats, user_progress, grade_analysis, difficult_questions, time_patterns
             )
             
-            # إضافة التحليلات المتقدمة الجديدة
-            previous_stats = self.get_previous_week_stats(start_date, end_date)
-            weekly_comparison = self.calculate_weekly_comparison(general_stats, previous_stats)
-            kpis = self.calculate_kpis(general_stats)
-            performance_predictions = self.predict_performance_trend(general_stats, previous_stats, weekly_comparison)
-            
-            # التحليلات التعليمية
             student_categories = self.analyze_student_performance_categories(user_progress)
-            question_difficulty_analysis = self.analyze_question_difficulty(difficult_questions)
             improvement_trends = self.analyze_student_improvement_trends(user_progress)
             
-            # إنشاء الرسوم البيانية
             chart_paths = self.create_performance_charts(user_progress, grade_analysis, time_patterns)
+            
+            # فصل الطلاب النشطين وغير النشطين
+            active_students = [u for u in user_progress if (u.get('total_quizzes') or 0) > 0]
+            inactive_students = [u for u in user_progress if (u.get('total_quizzes') or 0) == 0]
+            active_students.sort(key=lambda x: (x.get('overall_avg_percentage') or 0), reverse=True)
             
             # إنشاء ملف Excel
             report_filename = f"final_weekly_report_{start_date.strftime('%Y-%m-%d')}.xlsx"
             report_path = os.path.join(self.reports_dir, report_filename)
+            days_count = (end_date - start_date).days
             
             with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
-                # 1. الملخص التنفيذي المحسن
-                executive_summary = pd.DataFrame([
-                    ['إجمالي المستخدمين المسجلين', general_stats.get('total_registered_users', 0)],
-                    ['المستخدمين النشطين هذا الأسبوع', general_stats.get('active_users_this_week', 0)],
-                    ['المستخدمين الجدد هذا الأسبوع', general_stats.get('new_users_this_week', 0)],
-                    ['معدل المشاركة (%)', f"{kpis.get('participation_rate', 0)}%"],
-                    ['إجمالي الاختبارات هذا الأسبوع', general_stats.get('total_quizzes_this_week', 0)],
-                    ['متوسط الدرجات (%)', f"{general_stats.get('avg_percentage_this_week', 0)}%"],
-                    ['معدل التفوق (80%+)', f"{kpis.get('excellence_rate', 0)}%"],
-                    ['معدل الخطر (أقل من 50%)', f"{kpis.get('at_risk_rate', 0)}%"],
-                    ['معدل الإنجاز (اختبارات/طالب)', kpis.get('completion_rate', 0)],
-                    ['متوسط الوقت لكل سؤال (ثانية)', kpis.get('avg_time_per_question', 0)]
-                ], columns=['المؤشر', 'القيمة'])
-                executive_summary.to_excel(writer, sheet_name='الملخص التنفيذي', index=False)
                 
-                # 2. المقارنة الأسبوعية (جديد!)
-                weekly_comparison_df = pd.DataFrame([
-                    ['المستخدمين النشطين - الأسبوع الحالي', general_stats.get('active_users_this_week', 0)],
-                    ['المستخدمين النشطين - الأسبوع السابق', previous_stats.get('active_users_previous_week', 0)],
-                    ['التغيير في المستخدمين النشطين (%)', f"{weekly_comparison.get('active_users_change', 0)}%"],
-                    ['اتجاه المستخدمين النشطين', weekly_comparison.get('active_users_trend', 'غير محدد')],
-                    ['الاختبارات - الأسبوع الحالي', general_stats.get('total_quizzes_this_week', 0)],
-                    ['الاختبارات - الأسبوع السابق', previous_stats.get('total_quizzes_previous_week', 0)],
-                    ['التغيير في الاختبارات (%)', f"{weekly_comparison.get('quizzes_change', 0)}%"],
-                    ['اتجاه الاختبارات', weekly_comparison.get('quizzes_trend', 'غير محدد')],
-                    ['متوسط الدرجات - الأسبوع الحالي (%)', f"{general_stats.get('avg_percentage_this_week', 0)}%"],
-                    ['متوسط الدرجات - الأسبوع السابق (%)', f"{previous_stats.get('avg_percentage_previous_week', 0)}%"],
-                    ['التغيير في متوسط الدرجات (%)', f"{weekly_comparison.get('avg_percentage_change', 0)}%"],
-                    ['اتجاه متوسط الدرجات', weekly_comparison.get('avg_percentage_trend', 'غير محدد')]
-                ], columns=['المؤشر', 'القيمة'])
-                weekly_comparison_df.to_excel(writer, sheet_name='المقارنة الأسبوعية', index=False)
+                # ═══════════ 1. لوحة المعلومات ═══════════
+                dashboard_data = []
                 
-                # 3. مؤشرات الأداء الرئيسية (جديد!)
-                kpis_df = pd.DataFrame([
-                    ['معدل المشاركة (%)', f"{kpis.get('participation_rate', 0)}%"],
-                    ['معدل الإنجاز (اختبارات/طالب)', kpis.get('completion_rate', 0)],
-                    ['معدل التفوق (80%+)', f"{kpis.get('excellence_rate', 0)}%"],
-                    ['معدل الخطر (أقل من 50%)', f"{kpis.get('at_risk_rate', 0)}%"],
-                    ['متوسط الوقت لكل سؤال (ثانية)', kpis.get('avg_time_per_question', 0)]
-                ], columns=['مؤشر الأداء', 'القيمة'])
-                kpis_df.to_excel(writer, sheet_name='مؤشرات الأداء الرئيسية', index=False)
+                dashboard_data.append(['📊 نظرة عامة', ''])
+                dashboard_data.append(['الفترة', f"{start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')} ({days_count} يوم)"])
+                dashboard_data.append(['إجمالي المسجلين', general_stats.get('total_registered_users', 0)])
+                dashboard_data.append(['الطلاب النشطين', f"{general_stats.get('active_users_this_week', 0)} ({round(kpis.get('participation_rate', 0), 1)}%)"])
+                dashboard_data.append(['الطلاب الجدد', general_stats.get('new_users_this_week', 0)])
+                dashboard_data.append(['', ''])
                 
-                # 4. توقعات الأداء (جديد!)
-                predictions_df = pd.DataFrame([
-                    ['متوسط الدرجات المتوقع الأسبوع القادم (%)', f"{performance_predictions.get('predicted_avg_next_week', 0)}%"],
-                    ['اتجاه متوسط الدرجات المتوقع', performance_predictions.get('avg_trend_prediction', 'غير محدد')],
-                    ['المستخدمين النشطين المتوقعين الأسبوع القادم', performance_predictions.get('predicted_active_users_next_week', 0)],
-                    ['اتجاه المستخدمين النشطين المتوقع', performance_predictions.get('active_trend_prediction', 'غير محدد')],
-                    ['الاختبارات المتوقعة الأسبوع القادم', performance_predictions.get('predicted_quizzes_next_week', 0)],
-                    ['اتجاه الاختبارات المتوقع', performance_predictions.get('quizzes_trend_prediction', 'غير محدد')],
-                    ['التقييم العام للاتجاه', performance_predictions.get('overall_trend', 'غير محدد')]
-                ], columns=['التوقع', 'القيمة'])
-                predictions_df.to_excel(writer, sheet_name='توقعات الأداء', index=False)
+                dashboard_data.append(['🎯 الاختبارات', ''])
+                dashboard_data.append(['إجمالي الاختبارات', general_stats.get('total_quizzes_this_week', 0)])
+                dashboard_data.append(['متوسط الدرجات', f"{round(general_stats.get('avg_percentage_this_week', 0), 1)}%"])
+                dashboard_data.append(['معدل التفوق (80%+)', f"{round(kpis.get('excellence_rate', 0), 1)}%"])
+                dashboard_data.append(['معدل الخطر (أقل من 50%)', f"{round(kpis.get('at_risk_rate', 0), 1)}%"])
+                dashboard_data.append(['اختبارات/طالب', round(kpis.get('completion_rate', 0), 1)])
+                dashboard_data.append(['متوسط الوقت/سؤال (ثانية)', round(kpis.get('avg_time_per_question', 0), 1)])
+                dashboard_data.append(['', ''])
                 
-                # 5. تقدم المستخدمين (محسن)
-                if user_progress:
-                    users_df = pd.DataFrame(user_progress)
-                    # تعريب أسماء الأعمدة مع الأعمدة الجديدة
-                    column_translations = {
-                        'user_id': 'معرف المستخدم',
-                        'telegram_id': 'معرف تليجرام',
-                        'username': 'اسم المستخدم',
-                        'full_name': 'الاسم الكامل',
-                        'grade': 'الصف',
-                        'first_seen_timestamp': 'تاريخ التسجيل',
-                        'last_active_timestamp': 'آخر نشاط',
-                        'total_quizzes': 'إجمالي الاختبارات',
-                        'overall_avg_percentage': 'متوسط الدرجات (%)',
-                        'total_questions_answered': 'إجمالي الأسئلة المجابة',
-                        'total_correct_answers': 'إجمالي الإجابات الصحيحة',
-                        'total_wrong_answers': 'إجمالي الإجابات الخاطئة',
-                        'avg_questions_per_quiz': 'متوسط الأسئلة/اختبار',
-                        'correct_answer_rate': 'معدل الإجابات الصحيحة (%)',
-                        'avg_time_per_quiz': 'متوسط الوقت لكل اختبار',
-                        'performance_level': 'مستوى الأداء',
-                        'activity_level': 'مستوى النشاط',
-                        'last_quiz_date': 'تاريخ آخر اختبار',
-                        'first_quiz_date': 'تاريخ أول اختبار'
-                    }
-                    users_df.rename(columns=column_translations, inplace=True)
-                    users_df.to_excel(writer, sheet_name='تقدم المستخدمين', index=False)
+                dashboard_data.append(['📈 مقارنة مع الفترة السابقة', ''])
+                prev_active = previous_stats.get('active_users_previous_week', 0)
+                curr_active = general_stats.get('active_users_this_week', 0)
+                dashboard_data.append(['الطلاب النشطين (سابق ← حالي)', f"{prev_active} ← {curr_active}"])
+                dashboard_data.append(['التغيير', f"{round(weekly_comparison.get('active_users_change', 0), 1)}% ({weekly_comparison.get('active_users_trend', '-')})"])
+                prev_quizzes = previous_stats.get('total_quizzes_previous_week', 0)
+                curr_quizzes = general_stats.get('total_quizzes_this_week', 0)
+                dashboard_data.append(['الاختبارات (سابق ← حالي)', f"{prev_quizzes} ← {curr_quizzes}"])
+                dashboard_data.append(['التغيير', f"{round(weekly_comparison.get('quizzes_change', 0), 1)}% ({weekly_comparison.get('quizzes_trend', '-')})"])
+                prev_avg = round(previous_stats.get('avg_percentage_previous_week', 0), 1)
+                curr_avg = round(general_stats.get('avg_percentage_this_week', 0), 1)
+                dashboard_data.append(['متوسط الدرجات (سابق ← حالي)', f"{prev_avg}% ← {curr_avg}%"])
+                dashboard_data.append(['التغيير', f"{round(weekly_comparison.get('avg_percentage_change', 0), 1)}% ({weekly_comparison.get('avg_percentage_trend', '-')})"])
+                dashboard_data.append(['', ''])
                 
-                # 6. تفاصيل الاختبارات (جديد!)
+                dashboard_data.append(['🏆 تصنيف الطلاب النشطين', ''])
+                dashboard_data.append(['متفوقين (80%+)', len(student_categories.get('متفوقين', []))])
+                dashboard_data.append(['جيدين (65-79%)', len(student_categories.get('جيدين', []))])
+                dashboard_data.append(['متوسطين (50-64%)', len(student_categories.get('متوسطين', []))])
+                dashboard_data.append(['متعثرين (أقل من 50%)', len(student_categories.get('متعثرين', []))])
+                dashboard_data.append(['غير نشطين (بدون اختبار)', len(inactive_students)])
+                
+                dashboard_df = pd.DataFrame(dashboard_data, columns=['المؤشر', 'القيمة'])
+                dashboard_df.to_excel(writer, sheet_name='لوحة المعلومات', index=False)
+                
+                # ═══════════ 2. ترتيب الطلاب ═══════════
+                if active_students:
+                    leaderboard = []
+                    for rank, s in enumerate(active_students, 1):
+                        avg = s.get('overall_avg_percentage', 0) or 0
+                        quizzes = s.get('total_quizzes', 0) or 0
+                        correct = s.get('total_correct_answers', 0) or 0
+                        wrong = s.get('total_wrong_answers', 0) or 0
+                        
+                        leaderboard.append({
+                            'الترتيب': rank,
+                            'الاسم': s.get('full_name', 'غير محدد'),
+                            'الصف': s.get('grade', '-'),
+                            'متوسط الدرجات (%)': round(avg, 1),
+                            'عدد الاختبارات': quizzes,
+                            'صحيحة': correct,
+                            'خاطئة': wrong,
+                            'مستوى الأداء': s.get('performance_level', '-'),
+                        })
+                    
+                    lb_df = pd.DataFrame(leaderboard)
+                    lb_df.to_excel(writer, sheet_name='ترتيب الطلاب', index=False)
+                
+                # ═══════════ 3. أداء الصفوف ═══════════
+                if grade_analysis:
+                    grade_data = []
+                    for g in grade_analysis:
+                        grade_data.append({
+                            'الصف': g.get('grade', '-'),
+                            'إجمالي الطلاب': g.get('student_count', 0),
+                            'النشطين': g.get('active_students', 0),
+                            'معدل المشاركة (%)': round(g.get('participation_rate', 0), 1),
+                            'إجمالي الاختبارات': g.get('total_quizzes', 0),
+                            'متوسط الدرجات (%)': round(g.get('avg_percentage', 0), 1),
+                        })
+                    grade_df = pd.DataFrame(grade_data)
+                    grade_df.to_excel(writer, sheet_name='أداء الصفوف', index=False)
+                
+                # ═══════════ 4. الطلاب المتعثرين ═══════════
+                at_risk = student_categories.get('متعثرين', [])
+                if at_risk:
+                    risk_df = pd.DataFrame(at_risk)
+                    risk_df.to_excel(writer, sheet_name='طلاب يحتاجون متابعة', index=False)
+                
+                # ═══════════ 5. الطلاب المتفوقين ═══════════
+                excellent = student_categories.get('متفوقين', [])
+                if excellent:
+                    exc_df = pd.DataFrame(excellent)
+                    exc_df.to_excel(writer, sheet_name='الطلاب المتفوقين', index=False)
+                
+                # ═══════════ 6. اتجاهات التحسن ═══════════
+                all_trends = []
+                for trend_name, students in improvement_trends.items():
+                    for s in students:
+                        s_copy = dict(s)
+                        s_copy['التصنيف'] = trend_name
+                        all_trends.append(s_copy)
+                
+                if all_trends:
+                    trends_df = pd.DataFrame(all_trends)
+                    order = {'متحسنين': 0, 'مستقرين': 1, 'متراجعين': 2}
+                    trends_df['_sort'] = trends_df['التصنيف'].map(order)
+                    trends_df.sort_values(['_sort', 'متوسط الدرجات'], ascending=[True, False], inplace=True)
+                    trends_df.drop(columns=['_sort'], inplace=True)
+                    trends_df.to_excel(writer, sheet_name='اتجاهات التحسن', index=False)
+                
+                # ═══════════ 7. تفاصيل الاختبارات ═══════════
                 if quiz_details:
                     quiz_df = pd.DataFrame(quiz_details)
-                    # تعريب أسماء الأعمدة
                     quiz_translations = {
-                        'result_id': 'معرف النتيجة',
-                        'user_id': 'معرف المستخدم',
-                        'full_name': 'اسم الطالب',
-                        'username': 'اسم المستخدم',
-                        'grade': 'الصف',
-                        'quiz_id': 'معرف الاختبار',
-                        'quiz_title': 'اسم الاختبار',
-                        'quiz_subject': 'المادة/الموضوع',
-                        'total_questions': 'عدد الأسئلة',
-                        'correct_answers': 'الإجابات الصحيحة',
-                        'wrong_answers': 'الإجابات الخاطئة',
-                        'percentage': 'الدرجة (%)',
-                        'time_taken_minutes': 'الوقت المستغرق (دقيقة)',
-                        'completed_at': 'تاريخ الإكمال',
-                        'started_at': 'تاريخ البداية'
+                        'result_id': 'معرف النتيجة', 'user_id': 'معرف المستخدم',
+                        'full_name': 'اسم الطالب', 'username': 'اسم المستخدم',
+                        'grade': 'الصف', 'quiz_id': 'معرف الاختبار',
+                        'quiz_name': 'اسم الاختبار', 'quiz_subject': 'المادة',
+                        'total_questions': 'عدد الأسئلة', 'score': 'الدرجة',
+                        'percentage': 'النسبة (%)', 'time_taken_seconds': 'الوقت (ثانية)',
+                        'completed_at': 'تاريخ الاختبار',
                     }
-                    quiz_df.rename(columns=quiz_translations, inplace=True)
+                    quiz_df.rename(columns={k: v for k, v in quiz_translations.items() if k in quiz_df.columns}, inplace=True)
+                    drop_cols = ['معرف النتيجة', 'معرف المستخدم', 'اسم المستخدم', 'معرف الاختبار']
+                    quiz_df.drop(columns=[c for c in drop_cols if c in quiz_df.columns], errors='ignore', inplace=True)
                     quiz_df.to_excel(writer, sheet_name='تفاصيل الاختبارات', index=False)
                 
-                # 7. أداء الصفوف
-                if grade_analysis:
-                    grades_df = pd.DataFrame(grade_analysis)
-                    # تعريب أسماء الأعمدة
-                    grade_translations = {
-                        'grade': 'الصف',
-                        'total_students': 'إجمالي الطلاب',
-                        'active_students': 'الطلاب النشطين',
-                        'participation_rate': 'معدل المشاركة (%)',
-                        'total_quizzes': 'إجمالي الاختبارات',
-                        'avg_percentage': 'متوسط الدرجات (%)'
-                    }
-                    grades_df.rename(columns=grade_translations, inplace=True)
-                    grades_df.to_excel(writer, sheet_name='أداء الصفوف', index=False)
-                
-                # تنسيق ورقة الملخص التنفيذي
-                worksheet = writer.sheets['الملخص التنفيذي']
-                from openpyxl.styles import Font, PatternFill, Alignment
-                
-                # تنسيق العناوين
-                header_font = Font(bold=True, size=12)
-                header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-                
-                for cell in worksheet[1]:
-                    cell.font = Font(bold=True, size=12, color="FFFFFF")
-                    cell.fill = header_fill
-                    cell.alignment = Alignment(horizontal="center")
-                
-                # تنسيق البيانات
-                for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
-                    for cell in row:
-                        cell.alignment = Alignment(horizontal="center")
-                        if cell.column == 2:  # عمود القيم
-                            cell.font = Font(bold=True)
-                
-                # ضبط عرض الأعمدة
-                worksheet.column_dimensions['A'].width = 30
-                worksheet.column_dimensions['B'].width = 20
-                
-
-                
-                # 2. الأسئلة الصعبة
-                if difficult_questions:
-                    questions_df = pd.DataFrame(difficult_questions)
-                    
-                    # تعريب أسماء الأعمدة
-                    questions_translations = {
-                        'question_set_id': 'معرف مجموعة الأسئلة',
-                        'quiz_name': 'اسم الاختبار',
-                        'total_attempts': 'إجمالي المحاولات',
-                        'correct_answers': 'الإجابات الصحيحة',
-                        'wrong_answers': 'الإجابات الخاطئة',
-                        'success_rate': 'معدل النجاح (%)',
-                        'avg_percentage': 'متوسط الدرجات (%)',
-                        'difficulty_level': 'مستوى الصعوبة',
-                        'review_priority': 'أولوية المراجعة'
-                    }
-                    questions_df.rename(columns=questions_translations, inplace=True)
-                    
-                    questions_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
-                
-                # 9. تفاصيل الأسئلة الفردية الصعبة
+                # ═══════════ 8. الأسئلة الصعبة ═══════════
                 if individual_difficult_questions:
-                    individual_df = pd.DataFrame(individual_difficult_questions)
-                    
-                    # تعريب أسماء الأعمدة
-                    individual_translations = {
-                        'question_id': 'معرف السؤال',
-                        'question_text': 'نص السؤال',
-                        'quiz_name': 'اسم الاختبار',
-                        'correct_answer': 'الإجابة الصحيحة',
-                        'total_attempts': 'إجمالي المحاولات',
-                        'correct_attempts': 'المحاولات الصحيحة',
-                        'wrong_attempts': 'المحاولات الخاطئة',
-                        'error_rate': 'معدل الخطأ (%)',
-                        'success_rate': 'معدل النجاح (%)',
-                        'difficulty_level': 'مستوى الصعوبة',
+                    ind_df = pd.DataFrame(individual_difficult_questions)
+                    ind_translations = {
+                        'question_id': 'معرف السؤال', 'question_text': 'نص السؤال',
+                        'quiz_name': 'اسم الاختبار', 'correct_answer': 'الإجابة الصحيحة',
+                        'total_attempts': 'إجمالي المحاولات', 'correct_attempts': 'الصحيحة',
+                        'wrong_attempts': 'الخاطئة', 'error_rate': 'معدل الخطأ (%)',
+                        'success_rate': 'معدل النجاح (%)', 'difficulty_level': 'مستوى الصعوبة',
                         'review_priority': 'أولوية المراجعة',
                         'common_wrong_answers': 'الإجابات الخاطئة الشائعة'
                     }
-                    individual_df.rename(columns=individual_translations, inplace=True)
-                    
-                    individual_df.to_excel(writer, sheet_name='تفاصيل الأسئلة الصعبة', index=False)
+                    ind_df.rename(columns={k: v for k, v in ind_translations.items() if k in ind_df.columns}, inplace=True)
+                    ind_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
                 
-                # 10. أنماط النشاط
+                # ═══════════ 9. أنماط النشاط ═══════════
                 daily_activity = time_patterns.get('daily_activity', [])
-                if daily_activity:
-                    # إزالة timezone من التواريخ في daily_activity
-                    from datetime import datetime
-                    for activity in daily_activity:
-                        if activity.get('date') and isinstance(activity['date'], datetime):
-                            if activity['date'].tzinfo is not None:
-                                activity['date'] = activity['date'].replace(tzinfo=None)
+                peak_hours = time_patterns.get('peak_hours', [])
+                
+                if daily_activity or peak_hours:
+                    activity_rows = []
                     
-                    activity_df = pd.DataFrame(daily_activity)
+                    if daily_activity:
+                        activity_rows.append({'البيان': '══ النشاط اليومي ══', 'القيمة': '', 'التفاصيل': ''})
+                        for d in daily_activity:
+                            date_val = d.get('date', '')
+                            if hasattr(date_val, 'strftime'):
+                                if hasattr(date_val, 'tzinfo') and date_val.tzinfo is not None:
+                                    date_val = date_val.replace(tzinfo=None)
+                                date_str = date_val.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_val)[:10]
+                            activity_rows.append({
+                                'البيان': date_str,
+                                'القيمة': f"{d.get('quiz_count', 0)} اختبار",
+                                'التفاصيل': f"{d.get('unique_users', 0)} طالب"
+                            })
                     
-                    # تعريب أسماء الأعمدة
-                    activity_translations = {
-                        'date': 'التاريخ',
-                        'quiz_count': 'عدد الاختبارات',
-                        'unique_users': 'المستخدمين الفريدين',
-                        'avg_score': 'متوسط الدرجات'
-                    }
-                    activity_df.rename(columns=activity_translations, inplace=True)
+                    if peak_hours:
+                        activity_rows.append({'البيان': '', 'القيمة': '', 'التفاصيل': ''})
+                        activity_rows.append({'البيان': '══ ساعات الذروة ══', 'القيمة': '', 'التفاصيل': ''})
+                        for h in peak_hours:
+                            hour = h.get('hour', 0)
+                            activity_rows.append({
+                                'البيان': f"الساعة {hour}:00",
+                                'القيمة': f"{h.get('quiz_count', 0)} اختبار",
+                                'التفاصيل': ''
+                            })
                     
+                    activity_df = pd.DataFrame(activity_rows)
                     activity_df.to_excel(writer, sheet_name='أنماط النشاط', index=False)
                 
-                # 11. التوصيات الذكية
+                # ═══════════ 10. الطلاب غير النشطين ═══════════
+                if inactive_students:
+                    inactive_data = []
+                    for s in inactive_students:
+                        reg_date = s.get('registration_date') or s.get('first_seen_timestamp', '')
+                        if hasattr(reg_date, 'strftime'):
+                            reg_str = reg_date.strftime('%Y-%m-%d')
+                        else:
+                            reg_str = str(reg_date)[:10] if reg_date else '-'
+                        
+                        inactive_data.append({
+                            'الاسم': s.get('full_name', 'غير محدد'),
+                            'الصف': s.get('grade', '-'),
+                            'تاريخ التسجيل': reg_str,
+                        })
+                    
+                    inactive_df = pd.DataFrame(inactive_data)
+                    inactive_df.sort_values('الصف', inplace=True)
+                    inactive_df.to_excel(writer, sheet_name='طلاب غير نشطين', index=False)
+                
+                # ═══════════ 11. التوصيات ═══════════
                 recommendations_data = []
                 for category, recs in smart_recommendations.items():
                     for rec in recs:
                         recommendations_data.append({'الفئة': category, 'التوصية': rec})
                 
                 if recommendations_data:
-                    recommendations_df = pd.DataFrame(recommendations_data)
-                    recommendations_df.to_excel(writer, sheet_name='التوصيات الذكية', index=False)
+                    recs_df = pd.DataFrame(recommendations_data)
+                    recs_df.to_excel(writer, sheet_name='التوصيات', index=False)
                 
-                # 12. تصنيف الطلاب حسب الأداء
-                for category_name, students in student_categories.items():
-                    if students:
-                        students_df = pd.DataFrame(students)
-                        sheet_name = f'الطلاب ال{category_name}'
-                        students_df.to_excel(writer, sheet_name=sheet_name, index=False)
-                
-                # 6. تحليل صعوبة الأسئلة
-                for analysis_type, questions in question_difficulty_analysis.items():
-                    if questions:
-                        questions_df = pd.DataFrame(questions)
-                        sheet_name = analysis_type.replace('_', ' ')
-                        questions_df.to_excel(writer, sheet_name=sheet_name, index=False)
-                
-                # 7. اتجاهات تحسن الطلاب
-                for trend_name, students in improvement_trends.items():
-                    if students:
-                        trends_df = pd.DataFrame(students)
-                        sheet_name = f'الطلاب ال{trend_name}'
-                        trends_df.to_excel(writer, sheet_name=sheet_name, index=False)
-                
-                # 13. معلومات الرسوم البيانية
+                # ═══════════ 12. الرسوم البيانية ═══════════
                 if chart_paths:
-                    charts_df = pd.DataFrame([
-                        {'اسم الرسم': name, 'مسار الملف': path} 
-                        for name, path in chart_paths.items()
-                    ])
-                    charts_df.to_excel(writer, sheet_name='معلومات الرسوم البيانية', index=False)
-                
-                # إدراج الرسوم البيانية في Excel
-                try:
-                    from openpyxl.drawing.image import Image
-                    workbook = writer.book
-                    
-                    # إنشاء ورقة للرسوم البيانية
-                    if chart_paths:
+                    try:
+                        from openpyxl.drawing.image import Image
+                        workbook = writer.book
                         charts_sheet = workbook.create_sheet('الرسوم البيانية')
                         
                         row_position = 1
                         for chart_name, chart_path in chart_paths.items():
                             if os.path.exists(chart_path):
                                 try:
-                                    # إضافة عنوان الرسم
                                     charts_sheet.cell(row=row_position, column=1, value=chart_name)
                                     charts_sheet.cell(row=row_position, column=1).font = openpyxl.styles.Font(bold=True, size=14)
-                                    
-                                    # إضافة الرسم البياني
                                     img = Image(chart_path)
-                                    # تصغير حجم الصورة لتناسب Excel
                                     img.width = 600
                                     img.height = 400
                                     charts_sheet.add_image(img, f'A{row_position + 1}')
-                                    
-                                    # الانتقال للموضع التالي
-                                    row_position += 25  # مساحة كافية للرسم والعنوان
-                                    
-                                except Exception as img_error:
-                                    logger.warning(f"تعذر إدراج الرسم {chart_name}: {img_error}")
-                                    
-                        logger.info(f"تم إدراج {len(chart_paths)} رسم بياني في Excel")
-                    
-                except ImportError:
-                    logger.warning("openpyxl.drawing.image غير متاح - سيتم حفظ الرسوم كملفات منفصلة")
-                except Exception as chart_error:
-                    logger.warning(f"تعذر إدراج الرسوم البيانية في Excel: {chart_error}")
+                                    row_position += 25
+                                except Exception as img_err:
+                                    logger.warning(f"تعذر إدراج الرسم {chart_name}: {img_err}")
+                    except ImportError:
+                        logger.warning("openpyxl.drawing.image غير متاح")
+                    except Exception as chart_err:
+                        logger.warning(f"خطأ في إدراج الرسوم: {chart_err}")
+                
+                # ═══════════ تطبيق التنسيق ═══════════
+                wb = writer.book
+                for sheet_name in wb.sheetnames:
+                    ws = wb[sheet_name]
+                    if sheet_name == 'لوحة المعلومات':
+                        self._format_dashboard_sheet(ws)
+                    elif sheet_name != 'الرسوم البيانية':
+                        color = '1F4E79'
+                        if sheet_name == 'طلاب يحتاجون متابعة':
+                            color = 'C62828'
+                        elif sheet_name == 'الطلاب المتفوقين':
+                            color = '2E7D32'
+                        elif sheet_name == 'طلاب غير نشطين':
+                            color = '757575'
+                        self._format_excel_sheet(ws, header_color=color)
             
-            logger.info(f"تم إنشاء التقرير النهائي بنجاح: {report_path}")
+            logger.info(f"تم إنشاء التقرير المحسن: {report_path}")
             return report_path
             
         except Exception as e:
-            logger.error(f"خطأ في إنشاء تقرير Excel النهائي: {e}")
+            logger.error(f"خطأ في إنشاء تقرير Excel النهائي: {e}", exc_info=True)
             raise
+
+
 
     # ============================================================
     #  تقرير مفلتر (طلابي / طلابي في صف معين)
