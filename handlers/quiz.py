@@ -900,7 +900,7 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
     from database.manager import DB_MANAGER
     
     if not DB_MANAGER:
-        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
+        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]])
         if message_id:
             await safe_edit_message_text(context.bot, chat_id, message_id, "❌ لا يمكن الوصول لقاعدة البيانات.", kbd)
         return ConversationHandler.END
@@ -925,7 +925,7 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
         )
         kbd = InlineKeyboardMarkup([
             [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
-            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
+            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]
         ])
         if message_id:
             await safe_edit_message_text(context.bot, chat_id, message_id, no_data_text, kbd)
@@ -952,7 +952,7 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
     # 2. جلب المقررات
     courses = await fetch_from_api("api/v1/courses")
     if not courses or courses == "TIMEOUT" or not isinstance(courses, list):
-        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]])
+        kbd = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]])
         if message_id:
             await safe_edit_message_text(context.bot, chat_id, message_id, "❌ لا يمكن جلب المقررات حالياً.", kbd)
         return ConversationHandler.END
@@ -967,7 +967,7 @@ async def start_weakness_quiz(update: Update, context: CallbackContext) -> int:
         # لا يوجد تطابق — حاول بالاختبار العشوائي كحل بديل
         kbd = InlineKeyboardMarkup([
             [InlineKeyboardButton("🧠 بدء اختبار عادي", callback_data="start_quiz")],
-            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
+            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]
         ])
         no_match_text = (
             "🎯 تقوية نقاط الضعف\n\n"
@@ -1189,7 +1189,7 @@ async def _start_weakness_quiz_direct(update, context, transformed_questions, me
         no_match_text = "لم يتم العثور على أسئلة نقاط الضعف في بنك الأسئلة الحالي."
         kbd = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 رجوع", callback_data="start_weakness_quiz")],
-            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="quiz_action_main_menu")]
+            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]
         ])
         if message_id:
             await safe_edit_message_text(context.bot, chat_id, message_id, no_match_text, kbd)

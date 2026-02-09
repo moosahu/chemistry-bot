@@ -243,7 +243,30 @@ def is_valid_phone(phone):
     """التحقق من صحة تنسيق رقم الجوال"""
     # يقبل أرقام سعودية تبدأ بـ 05 أو +966 أو 00966
     pattern = r'^(05\d{8}|\+966\d{9}|00966\d{9})$'
-    return re.match(pattern, phone) is not None
+    if not re.match(pattern, phone):
+        return False
+    
+    # استخراج آخر 9 أرقام (الرقم بدون المفتاح)
+    digits = re.sub(r'[^\d]', '', phone)
+    last9 = digits[-9:]  # 5XXXXXXXX
+    suffix = last9[1:]   # آخر 8 أرقام
+    
+    # رفض أرقام كل خاناتها نفس الرقم: 0500000000, 0555555555
+    if len(set(suffix)) == 1:
+        return False
+    
+    # رفض أرقام تسلسلية: 0512345678, 0598765432
+    if suffix in "0123456789" or suffix in "9876543210":
+        return False
+    
+    # رفض أنماط مكررة: 0512121212, 0512341234
+    for plen in [1, 2, 3, 4]:
+        pat = suffix[:plen]
+        repeated = pat * (8 // plen)
+        if len(repeated) == 8 and suffix == repeated:
+            return False
+    
+    return True
 
 
 # === نظام التحقق الشامل من الاسم ===
@@ -285,7 +308,6 @@ def _count_non_name_words(name_parts: list) -> int:
     """عد الكلمات اللي مو أسماء أشخاص"""
     count = 0
     for part in name_parts:
-        # إزالة ال التعريف للمقارنة
         clean = part
         if clean.startswith("ال") and len(clean) > 3:
             clean = clean[2:]
@@ -941,7 +963,7 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
         await safe_send_message(
             context.bot,
             chat_id,
-            text="⚠️ رقم الجوال غير صحيح. يرجى إدخال رقم جوال سعودي صالح (يبدأ بـ 05 أو +966 أو 00966):"
+            text="⚠️ رقم الجوال غير صحيح.\n\nيرجى إدخال رقم جوال سعودي حقيقي (يبدأ بـ 05).\n❌ لا تُقبل أرقام وهمية مثل 0500000000"
         )
         logger.info(f"[DEBUG] handle_phone_input: Asking for phone again, returning state REGISTRATION_PHONE ({REGISTRATION_PHONE})")
         return REGISTRATION_PHONE
@@ -1530,7 +1552,7 @@ async def handle_edit_phone_input(update: Update, context: CallbackContext) -> i
         await safe_send_message(
             context.bot,
             chat_id,
-            text="⚠️ رقم الجوال غير صحيح. يرجى إدخال رقم جوال سعودي صالح (يبدأ بـ 05 أو +966 أو 00966):"
+            text="⚠️ رقم الجوال غير صحيح.\n\nيرجى إدخال رقم جوال سعودي حقيقي (يبدأ بـ 05).\n❌ لا تُقبل أرقام وهمية مثل 0500000000"
         )
         logger.info(f"[DEBUG] handle_edit_phone_input: Asking for phone again, returning state EDIT_USER_PHONE ({EDIT_USER_PHONE})")
         return EDIT_USER_PHONE
