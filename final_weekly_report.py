@@ -2174,6 +2174,42 @@ class FinalWeeklyReportGenerator:
             
             pdf_path = excel_path.replace('.xlsx', '.pdf')
             
+            # ══ البحث عن خط يدعم العربي ══
+            arabic_font_name = None
+            font_search_paths = [
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                '/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf',
+                '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+                '/usr/share/fonts/TTF/DejaVuSans.ttf',
+                '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+            ]
+            
+            for font_path in font_search_paths:
+                if os.path.exists(font_path):
+                    try:
+                        pdfmetrics.registerFont(TTFont('ArabicFont', font_path))
+                        arabic_font_name = 'ArabicFont'
+                        logger.info(f"تم تسجيل خط عربي: {font_path}")
+                        break
+                    except Exception as fe:
+                        logger.warning(f"تعذر تسجيل الخط {font_path}: {fe}")
+            
+            # إذا ما لقينا خط، ننزل واحد
+            if not arabic_font_name:
+                try:
+                    import subprocess
+                    subprocess.run(['apt-get', 'install', '-y', 'fonts-dejavu-core'], 
+                                  capture_output=True, timeout=30)
+                    if os.path.exists('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'):
+                        pdfmetrics.registerFont(TTFont('ArabicFont', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+                        arabic_font_name = 'ArabicFont'
+                except:
+                    pass
+            
+            if not arabic_font_name:
+                logger.warning("لم يتم العثور على خط عربي — PDF قد لا يعرض العربي بشكل صحيح")
+                arabic_font_name = 'Helvetica'
+            
             def reshape_arabic(text):
                 """تحويل النص العربي لعرض صحيح"""
                 if not text or not isinstance(text, str):
@@ -2193,12 +2229,23 @@ class FinalWeeklyReportGenerator:
             
             styles = getSampleStyleSheet()
             title_style = ParagraphStyle('ArabicTitle', parent=styles['Title'],
+                                        fontName=arabic_font_name,
                                         alignment=TA_CENTER, fontSize=16)
+            subtitle_style = ParagraphStyle('ArabicSubtitle', parent=styles['Normal'],
+                                          fontName=arabic_font_name,
+                                          alignment=TA_CENTER, fontSize=10,
+                                          textColor=colors.grey)
             
             elements = []
             
+            # عنوان التقرير
+            elements.append(Paragraph(reshape_arabic("📊 التقرير الأسبوعي"), title_style))
+            elements.append(Paragraph(reshape_arabic(f"بوت كيم تحصيلي"), subtitle_style))
+            elements.append(Spacer(1, 20))
+            
             # الشيتات المهمة فقط للـ PDF
-            important_sheets = ['لوحة المعلومات', 'ترتيب الطلاب', 'أداء الصفوف',
+            important_sheets = ['الملخص التنفيذي', 'لوحة المعلومات', 'ترتيب الطلاب', 
+                              'أداء الصفوف', 'أداء حسب المواضيع', 'تحليل السرعة والدقة',
                               'طلاب يحتاجون متابعة', 'الأسئلة الصعبة', 'التوصيات']
             
             for sheet_name in important_sheets:
@@ -2210,17 +2257,16 @@ class FinalWeeklyReportGenerator:
                     continue
                 
                 # عنوان الشيت
-                elements.append(Paragraph(reshape_arabic(sheet_name), title_style))
+                elements.append(Paragraph(reshape_arabic(f"▎{sheet_name}"), title_style))
                 elements.append(Spacer(1, 12))
                 
                 # قراءة البيانات
                 data = []
-                for r in range(1, min(ws.max_row + 1, 50)):  # حد 50 صف
+                for r in range(1, min(ws.max_row + 1, 50)):
                     row_data = []
-                    for c in range(1, min(ws.max_column + 1, 10)):  # حد 10 أعمدة
+                    for c in range(1, min(ws.max_column + 1, 10)):
                         val = ws.cell(row=r, column=c).value
                         cell_text = reshape_arabic(str(val) if val is not None else '')
-                        # اختصار النصوص الطويلة
                         if len(cell_text) > 35:
                             cell_text = cell_text[:35] + '...'
                         row_data.append(cell_text)
@@ -2235,6 +2281,7 @@ class FinalWeeklyReportGenerator:
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E79')),
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, -1), arabic_font_name),
                         ('FONTSIZE', (0, 0), (-1, 0), 8),
                         ('FONTSIZE', (0, 1), (-1, -1), 7),
                         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -3129,29 +3176,31 @@ class FinalWeeklyReportScheduler:
             msg = MIMEMultipart()
             msg['From'] = self.email_username
             msg['To'] = self.admin_email
-            msg['Subject'] = f"Weekly Report - {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+            msg['Subject'] = f"📊 التقرير الأسبوعي - {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}"
             
             # نص الرسالة
             body = f"""
-Dear Admin,
+مرحباً،
 
-Please find attached the comprehensive weekly report for the period:
-From: {start_date.strftime('%Y-%m-%d')}
-To: {end_date.strftime('%Y-%m-%d')}
+مرفق التقرير الأسبوعي الشامل للفترة:
+من: {start_date.strftime('%Y-%m-%d')}
+إلى: {end_date.strftime('%Y-%m-%d')}
 
-This report includes:
-- Executive summary with key metrics
-- Detailed user progress analysis
-- Grade-level performance comparison
-- Difficult questions analysis
-- Activity patterns and timing insights
-- Smart recommendations for improvement
+محتويات التقرير:
+• الملخص التنفيذي
+• ترتيب الطلاب وأدائهم
+• أداء الصفوف الدراسية
+• تحليل الأداء حسب المواضيع
+• تتبع أسبوعي لكل طالب
+• تحليل السرعة والدقة
+• الأسئلة الصعبة وتحليلها
+• التوصيات الذكية
 
-Best regards,
-Chemistry Bot Reporting System
+مع تحيات نظام التقارير الأسبوعية
+بوت كيم تحصيلي 🧪
             """
             
-            msg.attach(MIMEText(body, 'plain'))
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
             
             # إرفاق ملف التقرير (Excel)
             if os.path.exists(report_path):
