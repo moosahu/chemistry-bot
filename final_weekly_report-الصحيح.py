@@ -560,13 +560,15 @@ class FinalWeeklyReportGenerator:
                         else:
                             performance_level = "ضعيف"
                     
-                    # ══ مستوى النشاط: نسبي حسب فترة التقرير ══
+                    # ══ مستوى النشاط: يراعي العدد المطلق + المعدل الأسبوعي ══
                     period_days = max((end_date - start_date).days, 1)
                     period_weeks = max(period_days / 7, 1)
                     quizzes_per_week = total_quizzes / period_weeks
                     
                     if total_quizzes == 0:
                         activity_level = "غير نشط"
+                    elif total_quizzes == 1:
+                        activity_level = "تجربة واحدة"
                     elif quizzes_per_week < 1:
                         activity_level = "متقطع"
                     elif quizzes_per_week < 3:
@@ -838,27 +840,37 @@ class FinalWeeklyReportGenerator:
                                 correct_option_text = answer.get('correct_option_text', 'غير محدد')
                                 chosen_option_text = answer.get('chosen_option_text', 'غير محدد')
                                 
-                                if question_id:
-                                    if question_id not in question_stats:
-                                        question_stats[question_id] = {
-                                            'question_id': question_id,
-                                            'question_text': question_text,
-                                            'correct_answer': correct_option_text,
-                                            'quiz_name': row.quiz_name,
-                                            'total_attempts': 0,
-                                            'correct_attempts': 0,
-                                            'wrong_attempts': 0,
-                                            'wrong_answers': []
-                                        }
-                                    
-                                    question_stats[question_id]['total_attempts'] += 1
-                                    
-                                    if is_correct:
-                                        question_stats[question_id]['correct_attempts'] += 1
-                                    else:
-                                        question_stats[question_id]['wrong_attempts'] += 1
-                                        if chosen_option_text not in question_stats[question_id]['wrong_answers']:
-                                            question_stats[question_id]['wrong_answers'].append(chosen_option_text)
+                                if not question_id:
+                                    continue
+                                
+                                # تهيئة إحصائيات السؤال
+                                if question_id not in question_stats:
+                                    question_stats[question_id] = {
+                                        'question_id': question_id,
+                                        'question_text': question_text,
+                                        'correct_answer': correct_option_text,
+                                        'quiz_name': row.quiz_name,
+                                        'total_attempts': 0,
+                                        'correct_attempts': 0,
+                                        'wrong_attempts': 0,
+                                        'skipped_count': 0,
+                                        'wrong_answers': []
+                                    }
+                                
+                                # ══ تجاهل الأسئلة اللي ما وصل لها الطالب ══
+                                if 'تم إنهاء الاختبار' in str(chosen_option_text):
+                                    question_stats[question_id]['skipped_count'] += 1
+                                    continue
+                                
+                                # محاولة حقيقية فقط
+                                question_stats[question_id]['total_attempts'] += 1
+                                
+                                if is_correct:
+                                    question_stats[question_id]['correct_attempts'] += 1
+                                else:
+                                    question_stats[question_id]['wrong_attempts'] += 1
+                                    if chosen_option_text and chosen_option_text not in question_stats[question_id]['wrong_answers']:
+                                        question_stats[question_id]['wrong_answers'].append(chosen_option_text)
                     
                     except Exception as parse_error:
                         logger.warning(f"خطأ في تحليل تفاصيل الإجابات: {parse_error}")
@@ -867,42 +879,48 @@ class FinalWeeklyReportGenerator:
                 # تحويل إلى قائمة وترتيب حسب معدل الخطأ
                 difficult_questions = []
                 for question_id, stats in question_stats.items():
-                    if stats['total_attempts'] >= 3:  # على الأقل 3 محاولات
-                        error_rate = (stats['wrong_attempts'] / stats['total_attempts']) * 100
-                        success_rate = (stats['correct_attempts'] / stats['total_attempts']) * 100
-                        
-                        # تحديد مستوى الصعوبة
-                        if error_rate >= 70:
-                            difficulty_level = "صعب جداً"
-                            priority = "عالية"
-                        elif error_rate >= 50:
-                            difficulty_level = "صعب"
-                            priority = "متوسطة"
-                        elif error_rate >= 30:
-                            difficulty_level = "متوسط"
-                            priority = "منخفضة"
-                        else:
-                            difficulty_level = "سهل"
-                            priority = "منخفضة"
-                        
-                        # التحقق من أن question_text ليس None قبل استخدام len()
-                        question_text_safe = stats['question_text'] if stats['question_text'] else 'غير محدد'
-                        question_text_display = question_text_safe[:100] + '...' if len(question_text_safe) > 100 else question_text_safe
-                        
-                        difficult_questions.append({
-                            'question_id': question_id,
-                            'question_text': question_text_display,
-                            'quiz_name': stats['quiz_name'],
-                            'correct_answer': stats['correct_answer'],
-                            'total_attempts': stats['total_attempts'],
-                            'correct_attempts': stats['correct_attempts'],
-                            'wrong_attempts': stats['wrong_attempts'],
-                            'error_rate': round(error_rate, 2),
-                            'success_rate': round(success_rate, 2),
-                            'difficulty_level': difficulty_level,
-                            'review_priority': priority,
-                            'common_wrong_answers': ', '.join(stats['wrong_answers'][:3])  # أكثر 3 إجابات خاطئة شيوعاً
-                        })
+                    # محاولات حقيقية فقط (بدون المتجاوزة)
+                    real_attempts = stats['total_attempts']
+                    if real_attempts < 2:  # على الأقل 2 محاولة حقيقية
+                        continue
+                    
+                    error_rate = (stats['wrong_attempts'] / real_attempts) * 100
+                    success_rate = (stats['correct_attempts'] / real_attempts) * 100
+                    
+                    # تحديد مستوى الصعوبة
+                    if error_rate >= 70:
+                        difficulty_level = "صعب جداً"
+                        priority = "عالية"
+                    elif error_rate >= 50:
+                        difficulty_level = "صعب"
+                        priority = "متوسطة"
+                    elif error_rate >= 30:
+                        difficulty_level = "متوسط"
+                        priority = "منخفضة"
+                    else:
+                        difficulty_level = "سهل"
+                        priority = "منخفضة"
+                    
+                    question_text_safe = stats['question_text'] if stats['question_text'] else 'غير محدد'
+                    question_text_display = question_text_safe[:100] + '...' if len(question_text_safe) > 100 else question_text_safe
+                    
+                    skipped = stats.get('skipped_count', 0)
+                    
+                    difficult_questions.append({
+                        'question_id': question_id,
+                        'question_text': question_text_display,
+                        'quiz_name': stats['quiz_name'],
+                        'correct_answer': stats['correct_answer'],
+                        'total_attempts': real_attempts,
+                        'correct_attempts': stats['correct_attempts'],
+                        'wrong_attempts': stats['wrong_attempts'],
+                        'skipped_count': skipped,
+                        'error_rate': round(error_rate, 2),
+                        'success_rate': round(success_rate, 2),
+                        'difficulty_level': difficulty_level,
+                        'review_priority': priority,
+                        'common_wrong_answers': ', '.join(stats['wrong_answers'][:3])
+                    })
                 
                 # ترتيب حسب معدل الخطأ (الأصعب أولاً)
                 difficult_questions.sort(key=lambda x: x['error_rate'], reverse=True)
@@ -1066,7 +1084,7 @@ class FinalWeeklyReportGenerator:
                     recommendations['تفعيل الطلاب'].append(
                         f"أنشط صف: {best['grade']} ({round(best.get('participation_rate', 0), 0):.0f}% مشاركة)")
                 
-                zero_grades = [g for g in student_grades if (g.get('active_students') or 0) == 0 and (g.get('student_count') or 0) > 0]
+                zero_grades = [g for g in student_grades if (g.get('active_students') or 0) == 0 and (g.get('total_students') or 0) > 0]
                 if zero_grades:
                     names = [g['grade'] for g in zero_grades]
                     recommendations['تفعيل الطلاب'].append(
@@ -1446,6 +1464,13 @@ class FinalWeeklyReportGenerator:
                 general_stats, user_progress, grade_analysis, difficult_questions, time_patterns
             )
             
+            # توصية إضافية عن الأسئلة المتروكة
+            if individual_difficult_questions:
+                total_skipped = sum(q.get('skipped_count', 0) for q in individual_difficult_questions)
+                if total_skipped > 0:
+                    smart_recommendations.setdefault('تحسين المحتوى', []).append(
+                        f"تم تجاوز {total_skipped} سؤال بسبب إنهاء الاختبار مبكراً — قد تكون الاختبارات طويلة")
+            
             # فصل الطلاب عن المعلمين أولاً
             students_only = [u for u in user_progress if u.get('grade', '') != 'معلم']
             teacher_accounts = [u for u in user_progress if u.get('grade', '') == 'معلم']
@@ -1521,8 +1546,16 @@ class FinalWeeklyReportGenerator:
                 dashboard_data.append(['غير نشطين', len(inactive_students)])
                 dashboard_data.append(['', ''])
                 
-                # أفضل 3 طلاب
-                top3 = [s for s in active_students if (s.get('total_questions_answered') or 0) >= 5][:3]
+                # أفضل 3 طلاب (10+ سؤال، مرتبين بالترتيب المرجح)
+                def ws_dashboard(s):
+                    avg = float(s.get('overall_avg_percentage', 0) or 0)
+                    qs = int(s.get('total_questions_answered', 0) or 0)
+                    confidence = min(1.0, 0.3 + (qs / 30) * 0.7) if qs > 0 else 0
+                    return avg * confidence
+                
+                qualified = [s for s in active_students if (s.get('total_questions_answered') or 0) >= 10]
+                qualified.sort(key=ws_dashboard, reverse=True)
+                top3 = qualified[:3]
                 if top3:
                     dashboard_data.append(['⭐ أفضل الطلاب', ''])
                     for i, s in enumerate(top3, 1):
@@ -1578,7 +1611,7 @@ class FinalWeeklyReportGenerator:
                     for g in grade_analysis:
                         grade_data.append({
                             'الصف': g.get('grade', '-'),
-                            'إجمالي الطلاب': g.get('student_count', 0),
+                            'إجمالي الطلاب': g.get('total_students', 0),
                             'النشطين': g.get('active_students', 0),
                             'معدل المشاركة (%)': round(g.get('participation_rate', 0), 1),
                             'إجمالي الاختبارات': g.get('total_quizzes', 0),
@@ -1628,10 +1661,13 @@ class FinalWeeklyReportGenerator:
                         'result_id': 'معرف النتيجة', 'user_id': 'معرف المستخدم',
                         'full_name': 'اسم الطالب', 'username': 'اسم المستخدم',
                         'grade': 'الصف', 'quiz_id': 'معرف الاختبار',
-                        'quiz_name': 'اسم الاختبار', 'quiz_subject': 'المادة',
+                        'quiz_name': 'اسم الاختبار', 'quiz_title': 'اسم الاختبار',
+                        'quiz_subject': 'المادة',
                         'total_questions': 'عدد الأسئلة', 'score': 'الدرجة',
+                        'correct_answers': 'الصحيحة', 'wrong_answers': 'الخاطئة',
                         'percentage': 'النسبة (%)', 'time_taken_seconds': 'الوقت (ثانية)',
-                        'completed_at': 'تاريخ الاختبار',
+                        'time_taken_minutes': 'الوقت (دقيقة)',
+                        'completed_at': 'تاريخ الاختبار', 'started_at': 'وقت البدء',
                     }
                     quiz_df.rename(columns={k: v for k, v in quiz_translations.items() if k in quiz_df.columns}, inplace=True)
                     drop_cols = ['معرف النتيجة', 'معرف المستخدم', 'اسم المستخدم', 'معرف الاختبار']
@@ -1644,10 +1680,10 @@ class FinalWeeklyReportGenerator:
                     ind_translations = {
                         'question_id': 'معرف السؤال', 'question_text': 'نص السؤال',
                         'quiz_name': 'اسم الاختبار', 'correct_answer': 'الإجابة الصحيحة',
-                        'total_attempts': 'إجمالي المحاولات', 'correct_attempts': 'الصحيحة',
-                        'wrong_attempts': 'الخاطئة', 'error_rate': 'معدل الخطأ (%)',
-                        'success_rate': 'معدل النجاح (%)', 'difficulty_level': 'مستوى الصعوبة',
-                        'review_priority': 'أولوية المراجعة',
+                        'total_attempts': 'المحاولات الحقيقية', 'correct_attempts': 'الصحيحة',
+                        'wrong_attempts': 'الخاطئة', 'skipped_count': 'لم يصل لها',
+                        'error_rate': 'معدل الخطأ (%)', 'success_rate': 'معدل النجاح (%)',
+                        'difficulty_level': 'مستوى الصعوبة', 'review_priority': 'أولوية المراجعة',
                         'common_wrong_answers': 'الإجابات الخاطئة الشائعة'
                     }
                     ind_df.rename(columns={k: v for k, v in ind_translations.items() if k in ind_df.columns}, inplace=True)
@@ -2066,7 +2102,7 @@ class FinalWeeklyReportGenerator:
                 if grade_analysis:
                     grade_df = pd.DataFrame(grade_analysis)
                     grade_cols = {
-                        'grade': 'الصف', 'student_count': 'عدد الطلاب',
+                        'grade': 'الصف', 'total_students': 'عدد الطلاب',
                         'active_students': 'النشطين', 'avg_percentage': 'متوسط الدرجات',
                         'total_quizzes': 'الاختبارات', 'avg_quizzes_per_student': 'اختبارات/طالب'
                     }

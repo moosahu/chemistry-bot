@@ -1442,6 +1442,823 @@ class FinalWeeklyReportGenerator:
         return trends
 
     # ============================================================
+    #  تحليل الأداء حسب الوحدات/المواضيع
+    # ============================================================
+    def analyze_topic_performance(self, start_date: datetime, end_date: datetime) -> List[Dict]:
+        """تحليل أداء كل طالب حسب الوحدة/الموضوع"""
+        try:
+            with self.engine.connect() as conn:
+                query = text("""
+                    SELECT 
+                        u.user_id, u.full_name, u.grade,
+                        qr.quiz_name, qr.percentage, qr.score,
+                        qr.total_questions, qr.time_taken_seconds
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
+                        AND qr.quiz_name IS NOT NULL
+                    ORDER BY u.full_name, qr.quiz_name
+                """)
+                rows = conn.execute(query, {
+                    'start_date': start_date, 'end_date': end_date
+                }).fetchall()
+                
+                # استخراج اسم الوحدة من اسم الاختبار
+                def extract_topic(quiz_name):
+                    if not quiz_name:
+                        return 'أخرى'
+                    name = str(quiz_name)
+                    # unit_quiz - كيمياء 2-2 - الطاقة والتغيرات
+                    if ' - ' in name:
+                        parts = name.split(' - ')
+                        if len(parts) >= 3:
+                            return parts[-1].strip()[:40]
+                        elif len(parts) >= 2:
+                            return parts[-1].strip()[:40]
+                    if 'all_scope' in name:
+                        return 'اختبار شامل'
+                    if 'تقوية' in name:
+                        # 🎯 تقوية: كيمياء -1 - المادة الخواص
+                        if ':' in name:
+                            after_colon = name.split(':')[-1].strip()
+                            if ' - ' in after_colon:
+                                return after_colon.split(' - ')[-1].strip()[:40]
+                        return 'تقوية نقاط الضعف'
+                    if 'عشوائي' in name:
+                        return 'اختبار عشوائي'
+                    return name[:40]
+                
+                # تجميع حسب الطالب + الموضوع
+                student_topics = {}
+                for row in rows:
+                    uid = row.user_id
+                    topic = extract_topic(row.quiz_name)
+                    key = (uid, topic)
+                    
+                    if key not in student_topics:
+                        student_topics[key] = {
+                            'الاسم': row.full_name or 'غير محدد',
+                            'الصف': row.grade or '-',
+                            'الموضوع': topic,
+                            'المحاولات': 0,
+                            'مجموع_الدرجات': 0,
+                            'مجموع_الأسئلة': 0,
+                            'مجموع_الصحيحة': 0,
+                        }
+                    
+                    st = student_topics[key]
+                    st['المحاولات'] += 1
+                    st['مجموع_الدرجات'] += float(row.percentage or 0)
+                    st['مجموع_الأسئلة'] += int(row.total_questions or 0)
+                    st['مجموع_الصحيحة'] += int(row.score or 0)
+                
+                result = []
+                for key, st in student_topics.items():
+                    avg_pct = round(st['مجموع_الدرجات'] / st['المحاولات'], 1) if st['المحاولات'] > 0 else 0
+                    accuracy = round(st['مجموع_الصحيحة'] / st['مجموع_الأسئلة'] * 100, 1) if st['مجموع_الأسئلة'] > 0 else 0
+                    
+                    # تقييم المستوى في الموضوع
+                    if avg_pct >= 80:
+                        level = "ممتاز ✅"
+                    elif avg_pct >= 65:
+                        level = "جيد"
+                    elif avg_pct >= 50:
+                        level = "متوسط ⚠️"
+                    else:
+                        level = "ضعيف ❌"
+                    
+                    result.append({
+                        'الاسم': st['الاسم'],
+                        'الصف': st['الصف'],
+                        'الموضوع': st['الموضوع'],
+                        'المحاولات': st['المحاولات'],
+                        'الأسئلة': st['مجموع_الأسئلة'],
+                        'الصحيحة': st['مجموع_الصحيحة'],
+                        'متوسط الدرجة (%)': avg_pct,
+                        'الدقة (%)': accuracy,
+                        'المستوى': level,
+                    })
+                
+                result.sort(key=lambda x: (x['الاسم'], -x['متوسط الدرجة (%)']))
+                return result
+                
+        except Exception as e:
+            logger.error(f"خطأ في تحليل الأداء حسب المواضيع: {e}")
+            return []
+
+    # ============================================================
+    #  تتبع أسبوعي لكل طالب (آخر 4 أسابيع)
+    # ============================================================
+    def get_weekly_student_tracking(self, end_date: datetime, weeks: int = 4) -> List[Dict]:
+        """تتبع أداء كل طالب أسبوع بأسبوع"""
+        try:
+            with self.engine.connect() as conn:
+                # جلب بيانات آخر 4 أسابيع
+                start_all = end_date - timedelta(weeks=weeks)
+                
+                query = text("""
+                    SELECT 
+                        u.user_id, u.full_name, u.grade,
+                        qr.percentage, qr.total_questions, qr.score,
+                        qr.completed_at
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
+                    ORDER BY u.full_name, qr.completed_at
+                """)
+                rows = conn.execute(query, {
+                    'start_date': start_all, 'end_date': end_date
+                }).fetchall()
+                
+                if not rows:
+                    return []
+                
+                # تقسيم حسب الأسابيع
+                week_ranges = []
+                for w in range(weeks, 0, -1):
+                    w_end = end_date - timedelta(weeks=w-1)
+                    w_start = end_date - timedelta(weeks=w)
+                    label = f"أسبوع {weeks - w + 1}"
+                    if w == 1:
+                        label = "الأسبوع الحالي"
+                    week_ranges.append((w_start, w_end, label))
+                
+                # تجميع حسب الطالب
+                students = {}
+                for row in rows:
+                    uid = row.user_id
+                    if uid not in students:
+                        students[uid] = {
+                            'الاسم': row.full_name or 'غير محدد',
+                            'الصف': row.grade or '-',
+                            'weeks': {label: [] for _, _, label in week_ranges}
+                        }
+                    
+                    completed = row.completed_at
+                    if completed and hasattr(completed, 'tzinfo') and completed.tzinfo:
+                        completed = completed.replace(tzinfo=None)
+                    
+                    for w_start, w_end, label in week_ranges:
+                        if w_start <= completed <= w_end:
+                            students[uid]['weeks'][label].append({
+                                'pct': float(row.percentage or 0),
+                                'questions': int(row.total_questions or 0),
+                                'correct': int(row.score or 0),
+                            })
+                            break
+                
+                # بناء الجدول النهائي
+                result = []
+                for uid, data in students.items():
+                    row_data = {
+                        'الاسم': data['الاسم'],
+                        'الصف': data['الصف'],
+                    }
+                    
+                    weekly_avgs = []
+                    for _, _, label in week_ranges:
+                        entries = data['weeks'].get(label, [])
+                        if entries:
+                            avg = round(sum(e['pct'] for e in entries) / len(entries), 1)
+                            count = len(entries)
+                            row_data[f'{label} (%)'] = avg
+                            row_data[f'{label} (عدد)'] = count
+                            weekly_avgs.append(avg)
+                        else:
+                            row_data[f'{label} (%)'] = '—'
+                            row_data[f'{label} (عدد)'] = 0
+                    
+                    # حساب التغيير
+                    if len(weekly_avgs) >= 2:
+                        change = round(weekly_avgs[-1] - weekly_avgs[0], 1)
+                        if change > 0:
+                            row_data['التغيير'] = f"+{change}% 📈"
+                        elif change < 0:
+                            row_data['التغيير'] = f"{change}% 📉"
+                        else:
+                            row_data['التغيير'] = "0% ➡️"
+                    else:
+                        row_data['التغيير'] = '—'
+                    
+                    result.append(row_data)
+                
+                result.sort(key=lambda x: x['الاسم'])
+                return result
+                
+        except Exception as e:
+            logger.error(f"خطأ في التتبع الأسبوعي: {e}")
+            return []
+
+    # ============================================================
+    #  تحليل السرعة والدقة
+    # ============================================================
+    def analyze_speed_accuracy(self, start_date: datetime, end_date: datetime) -> List[Dict]:
+        """تحليل علاقة السرعة بالدقة لكل طالب"""
+        try:
+            with self.engine.connect() as conn:
+                query = text("""
+                    SELECT 
+                        u.user_id, u.full_name, u.grade,
+                        qr.percentage, qr.total_questions,
+                        qr.time_taken_seconds, qr.quiz_name
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
+                        AND qr.time_taken_seconds > 0
+                        AND qr.total_questions > 0
+                    ORDER BY u.full_name
+                """)
+                rows = conn.execute(query, {
+                    'start_date': start_date, 'end_date': end_date
+                }).fetchall()
+                
+                # تجميع حسب الطالب
+                students = {}
+                for row in rows:
+                    uid = row.user_id
+                    if uid not in students:
+                        students[uid] = {
+                            'name': row.full_name or 'غير محدد',
+                            'grade': row.grade or '-',
+                            'quizzes': []
+                        }
+                    
+                    time_per_q = float(row.time_taken_seconds or 0) / int(row.total_questions or 1)
+                    students[uid]['quizzes'].append({
+                        'pct': float(row.percentage or 0),
+                        'time_per_q': time_per_q,
+                        'questions': int(row.total_questions or 0),
+                    })
+                
+                result = []
+                for uid, data in students.items():
+                    quizzes = data['quizzes']
+                    total_qs = sum(q['questions'] for q in quizzes)
+                    avg_pct = sum(q['pct'] for q in quizzes) / len(quizzes)
+                    avg_time_per_q = sum(q['time_per_q'] for q in quizzes) / len(quizzes)
+                    
+                    # تصنيف: سريع (<30 ثانية/سؤال) vs بطيء (>60 ثانية/سؤال)
+                    # دقيق (>=65%) vs غير دقيق (<65%)
+                    if avg_time_per_q < 30:
+                        speed = "سريع"
+                    elif avg_time_per_q < 60:
+                        speed = "متوسط"
+                    else:
+                        speed = "بطيء"
+                    
+                    accurate = avg_pct >= 65
+                    
+                    # التصنيف المركب
+                    if speed == "سريع" and accurate:
+                        pattern = "متمكن ⭐"
+                        advice = "أعطه تحديات أصعب"
+                    elif speed == "سريع" and not accurate:
+                        pattern = "متسرع ⚡"
+                        advice = "شجعه يتأنى ويراجع قبل التسليم"
+                    elif speed == "بطيء" and accurate:
+                        pattern = "متأنٍ ✅"
+                        advice = "ممتاز — ساعده يزيد سرعته تدريجياً"
+                    elif speed == "بطيء" and not accurate:
+                        pattern = "يحتاج دعم 🔴"
+                        advice = "يحتاج شرح إضافي وتبسيط"
+                    elif speed == "متوسط" and accurate:
+                        pattern = "متوازن 👍"
+                        advice = "أداء جيد — حافظ عليه"
+                    else:
+                        pattern = "يحتاج تركيز ⚠️"
+                        advice = "راجع معاه المفاهيم الأساسية"
+                    
+                    result.append({
+                        'الاسم': data['name'],
+                        'الصف': data['grade'],
+                        'عدد الاختبارات': len(quizzes),
+                        'الأسئلة': total_qs,
+                        'متوسط الدرجة (%)': round(avg_pct, 1),
+                        'ثانية/سؤال': round(avg_time_per_q, 1),
+                        'السرعة': speed,
+                        'النمط': pattern,
+                        'التوصية': advice,
+                    })
+                
+                result.sort(key=lambda x: -x['متوسط الدرجة (%)'])
+                return result
+                
+        except Exception as e:
+            logger.error(f"خطأ في تحليل السرعة والدقة: {e}")
+            return []
+
+    # ============================================================
+    #  ملخص تنفيذي نصي
+    # ============================================================
+    def generate_executive_summary(self, general_stats, user_progress, grade_analysis, 
+                                    student_categories, improvement_trends, 
+                                    speed_accuracy, topic_performance,
+                                    start_date, end_date,
+                                    early_warnings=None, monthly_comparison=None) -> str:
+        """إنشاء ملخص تنفيذي نصي جاهز للنسخ"""
+        try:
+            students_only = [u for u in user_progress if u.get('grade', '') != 'معلم']
+            active = [u for u in students_only if (u.get('total_quizzes') or 0) > 0]
+            inactive = [u for u in students_only if (u.get('total_quizzes') or 0) == 0]
+            
+            total = len(students_only)
+            active_count = len(active)
+            inactive_count = len(inactive)
+            participation = round(active_count / total * 100, 1) if total > 0 else 0
+            
+            days = (end_date - start_date).days
+            total_quizzes = sum(u.get('total_quizzes', 0) or 0 for u in active)
+            
+            avgs = [float(u.get('overall_avg_percentage', 0) or 0) for u in active]
+            avg_score = round(sum(avgs) / len(avgs), 1) if avgs else 0
+            
+            lines = []
+            lines.append(f"📋 ملخص الفترة: {start_date.strftime('%m/%d')} — {end_date.strftime('%m/%d')} ({days} يوم)")
+            lines.append("")
+            
+            # نظرة عامة
+            lines.append(f"📊 شارك {active_count} طالب من {total} ({participation}%). أنجزوا {total_quizzes} اختبار بمتوسط {avg_score}%.")
+            
+            if inactive_count > 0:
+                lines.append(f"⚠️ {inactive_count} طالب مسجل لم يختبر هذه الفترة.")
+            
+            # أبرز الإنجازات
+            excellent = student_categories.get('متفوقين', [])
+            if excellent:
+                names = [s['الاسم'] for s in excellent[:3]]
+                lines.append(f"⭐ متفوقين: {' ، '.join(names)}")
+            
+            # المتحسنين
+            improving = improvement_trends.get('متحسنين', [])
+            if improving:
+                names = [s['الاسم'] for s in improving[:3]]
+                lines.append(f"📈 متحسنين: {' ، '.join(names)}")
+            
+            # المتراجعين
+            declining = improvement_trends.get('متراجعين', [])
+            if declining:
+                names = [s['الاسم'] for s in declining[:3]]
+                lines.append(f"📉 متراجعين: {' ، '.join(names)} — يحتاجون متابعة")
+            
+            # تحليل السرعة
+            if speed_accuracy:
+                rushed = [s for s in speed_accuracy if 'متسرع' in s.get('النمط', '')]
+                needs_help = [s for s in speed_accuracy if 'يحتاج دعم' in s.get('النمط', '')]
+                if rushed:
+                    names = [s['الاسم'] for s in rushed[:3]]
+                    lines.append(f"⚡ طلاب متسرعين: {' ، '.join(names)} — شجعهم يتأنون")
+                if needs_help:
+                    names = [s['الاسم'] for s in needs_help[:3]]
+                    lines.append(f"🔴 يحتاجون دعم إضافي: {' ، '.join(names)}")
+            
+            # أضعف المواضيع
+            if topic_performance:
+                # تجميع حسب الموضوع
+                topic_avgs = {}
+                for t in topic_performance:
+                    topic = t.get('الموضوع', '')
+                    if topic and topic not in ('أخرى', 'اختبار شامل'):
+                        topic_avgs.setdefault(topic, []).append(t.get('متوسط الدرجة (%)', 0))
+                
+                weak_topics = []
+                for topic, scores in topic_avgs.items():
+                    avg = sum(scores) / len(scores) if scores else 0
+                    if avg < 60 and len(scores) >= 2:
+                        weak_topics.append((topic, round(avg, 1)))
+                
+                if weak_topics:
+                    weak_topics.sort(key=lambda x: x[1])
+                    parts = [f"{t} ({a}%)" for t, a in weak_topics[:3]]
+                    lines.append(f"📚 مواضيع تحتاج تركيز: {' ، '.join(parts)}")
+            
+            # أنشط/أضعف صف
+            if grade_analysis:
+                student_grades = [g for g in grade_analysis if g.get('grade', '') not in ('معلم', 'طالب جامعي', 'أخرى')]
+                active_grades = [g for g in student_grades if (g.get('active_students') or 0) > 0]
+                if active_grades:
+                    best = max(active_grades, key=lambda x: x.get('participation_rate', 0))
+                    worst = min(active_grades, key=lambda x: x.get('participation_rate', 0))
+                    lines.append(f"🏫 أنشط صف: {best['grade']} ({round(best.get('participation_rate', 0))}%) | أقل صف: {worst['grade']} ({round(worst.get('participation_rate', 0))}%)")
+            
+            # الاختبار الواحد
+            one_quiz = [u for u in active if (u.get('total_quizzes') or 0) == 1]
+            if one_quiz:
+                lines.append(f"💡 {len(one_quiz)} طالب سوى اختبار واحد فقط — تشجيعهم للاستمرار يرفع المشاركة.")
+            
+            # الإنذار المبكر
+            if early_warnings:
+                urgent = [w for w in early_warnings if 'عاجل' in w.get('مستوى الإنذار', '')]
+                if urgent:
+                    names = [w['الاسم'] for w in urgent[:3]]
+                    lines.append(f"🚨 طلاب توقفوا فجأة: {' ، '.join(names)} — تواصل معهم!")
+            
+            # الترند الشهري
+            if monthly_comparison and len(monthly_comparison) >= 2:
+                first = monthly_comparison[0].get('متوسط الدرجة (%)', 0)
+                last = monthly_comparison[-1].get('متوسط الدرجة (%)', 0)
+                if first > 0 and last > 0:
+                    trend = round(last - first, 1)
+                    if trend > 0:
+                        lines.append(f"📊 ترند شهري: تحسن بـ {trend}% خلال 4 أسابيع")
+                    elif trend < 0:
+                        lines.append(f"📊 ترند شهري: تراجع بـ {abs(trend)}% خلال 4 أسابيع — يحتاج انتباه")
+            
+            return '\n'.join(lines)
+            
+        except Exception as e:
+            logger.error(f"خطأ في إنشاء الملخص التنفيذي: {e}")
+            return "تعذر إنشاء الملخص التنفيذي"
+
+    # ============================================================
+    #  5. معدل إكمال الاختبار
+    # ============================================================
+    def analyze_completion_rate(self, start_date: datetime, end_date: datetime) -> List[Dict]:
+        """تحليل معدل إكمال الاختبارات (بدأ vs أكمل)"""
+        try:
+            with self.engine.connect() as conn:
+                query = text("""
+                    SELECT 
+                        u.full_name, u.grade,
+                        qr.quiz_name, qr.total_questions, qr.score,
+                        qr.time_taken_seconds, qr.answers_details,
+                        qr.percentage
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
+                    ORDER BY u.full_name
+                """)
+                rows = conn.execute(query, {
+                    'start_date': start_date, 'end_date': end_date
+                }).fetchall()
+                
+                result = []
+                for row in rows:
+                    total_q = int(row.total_questions or 0)
+                    if total_q == 0:
+                        continue
+                    
+                    # حساب الأسئلة المجابة فعلياً من answers_details
+                    answered = total_q  # افتراضي
+                    if row.answers_details:
+                        try:
+                            import json
+                            details = json.loads(row.answers_details) if isinstance(row.answers_details, str) else row.answers_details
+                            if isinstance(details, list):
+                                real_answers = [a for a in details if isinstance(a, dict) 
+                                              and 'تم إنهاء الاختبار' not in str(a.get('chosen_option_text', ''))]
+                                answered = len(real_answers)
+                        except:
+                            pass
+                    
+                    completion = round(answered / total_q * 100, 1) if total_q > 0 else 0
+                    
+                    if completion >= 100:
+                        status = "أكمل ✅"
+                    elif completion >= 70:
+                        status = "أكمل معظمه"
+                    elif completion >= 40:
+                        status = "أكمل نصفه ⚠️"
+                    else:
+                        status = "ترك مبكراً ❌"
+                    
+                    quiz_name = str(row.quiz_name or '')
+                    if len(quiz_name) > 40:
+                        quiz_name = quiz_name[:40] + '...'
+                    
+                    result.append({
+                        'الاسم': row.full_name or 'غير محدد',
+                        'الصف': row.grade or '-',
+                        'الاختبار': quiz_name,
+                        'إجمالي الأسئلة': total_q,
+                        'أسئلة مجابة': answered,
+                        'نسبة الإكمال (%)': completion,
+                        'الدرجة (%)': round(float(row.percentage or 0), 1),
+                        'الحالة': status,
+                    })
+                
+                result.sort(key=lambda x: x['نسبة الإكمال (%)'])
+                return result
+                
+        except Exception as e:
+            logger.error(f"خطأ في تحليل معدل الإكمال: {e}")
+            return []
+
+    # ============================================================
+    #  6. تحليل الأنماط الأسبوعية (أي يوم أنشط)
+    # ============================================================
+    def analyze_day_of_week_patterns(self, start_date: datetime, end_date: datetime) -> List[Dict]:
+        """تحليل النشاط حسب يوم الأسبوع"""
+        try:
+            with self.engine.connect() as conn:
+                query = text("""
+                    SELECT 
+                        EXTRACT(DOW FROM qr.completed_at) as day_num,
+                        COUNT(*) as quiz_count,
+                        COUNT(DISTINCT qr.user_id) as student_count,
+                        AVG(qr.percentage) as avg_score
+                    FROM quiz_results qr
+                    JOIN users u ON qr.user_id = u.user_id
+                    WHERE qr.completed_at >= :start_date 
+                        AND qr.completed_at <= :end_date
+                        AND COALESCE(u.grade, '') != 'معلم'
+                    GROUP BY EXTRACT(DOW FROM qr.completed_at)
+                    ORDER BY day_num
+                """)
+                rows = conn.execute(query, {
+                    'start_date': start_date, 'end_date': end_date
+                }).fetchall()
+                
+                day_names = {
+                    0: 'الأحد', 1: 'الإثنين', 2: 'الثلاثاء',
+                    3: 'الأربعاء', 4: 'الخميس', 5: 'الجمعة', 6: 'السبت'
+                }
+                
+                # بناء كل أيام الأسبوع
+                all_days = {}
+                for i in range(7):
+                    all_days[i] = {
+                        'اليوم': day_names.get(i, f'يوم {i}'),
+                        'الاختبارات': 0,
+                        'الطلاب': 0,
+                        'متوسط الدرجة (%)': 0,
+                        'النشاط': '—'
+                    }
+                
+                max_quizzes = 0
+                for row in rows:
+                    d = int(row.day_num)
+                    all_days[d]['الاختبارات'] = int(row.quiz_count or 0)
+                    all_days[d]['الطلاب'] = int(row.student_count or 0)
+                    all_days[d]['متوسط الدرجة (%)'] = round(float(row.avg_score or 0), 1)
+                    max_quizzes = max(max_quizzes, int(row.quiz_count or 0))
+                
+                for d in all_days.values():
+                    q = d['الاختبارات']
+                    if q == 0:
+                        d['النشاط'] = 'بدون نشاط'
+                    elif max_quizzes > 0 and q >= max_quizzes * 0.7:
+                        d['النشاط'] = 'ذروة 🔥'
+                    elif q >= 2:
+                        d['النشاط'] = 'نشط'
+                    else:
+                        d['النشاط'] = 'خفيف'
+                
+                return list(all_days.values())
+                
+        except Exception as e:
+            logger.error(f"خطأ في تحليل أنماط الأسبوع: {e}")
+            return []
+
+    # ============================================================
+    #  7. تقرير مقارنة شهري (ترند 4 أسابيع)
+    # ============================================================
+    def get_monthly_comparison(self, end_date: datetime) -> List[Dict]:
+        """مقارنة أداء آخر 4 أسابيع"""
+        try:
+            result = []
+            with self.engine.connect() as conn:
+                for w in range(4, 0, -1):
+                    w_end = end_date - timedelta(weeks=w-1)
+                    w_start = end_date - timedelta(weeks=w)
+                    
+                    query = text("""
+                        SELECT 
+                            COUNT(DISTINCT qr.user_id) as active_students,
+                            COUNT(*) as total_quizzes,
+                            SUM(qr.total_questions) as total_questions,
+                            AVG(qr.percentage) as avg_score,
+                            MAX(qr.percentage) as max_score,
+                            MIN(qr.percentage) as min_score
+                        FROM quiz_results qr
+                        JOIN users u ON qr.user_id = u.user_id
+                        WHERE qr.completed_at >= :start_date 
+                            AND qr.completed_at <= :end_date
+                            AND COALESCE(u.grade, '') != 'معلم'
+                    """)
+                    row = conn.execute(query, {
+                        'start_date': w_start, 'end_date': w_end
+                    }).fetchone()
+                    
+                    label = f"أسبوع {5-w}" if w > 1 else "الأسبوع الحالي"
+                    period = f"{w_start.strftime('%m/%d')} — {w_end.strftime('%m/%d')}"
+                    
+                    result.append({
+                        'الأسبوع': label,
+                        'الفترة': period,
+                        'طلاب نشطين': int(row.active_students or 0) if row else 0,
+                        'اختبارات': int(row.total_quizzes or 0) if row else 0,
+                        'أسئلة مجابة': int(row.total_questions or 0) if row else 0,
+                        'متوسط الدرجة (%)': round(float(row.avg_score or 0), 1) if row and row.avg_score else 0,
+                        'أعلى درجة (%)': round(float(row.max_score or 0), 1) if row and row.max_score else 0,
+                        'أدنى درجة (%)': round(float(row.min_score or 0), 1) if row and row.min_score else 0,
+                    })
+            
+            # إضافة التغيير
+            for i in range(1, len(result)):
+                prev_avg = result[i-1].get('متوسط الدرجة (%)', 0)
+                curr_avg = result[i].get('متوسط الدرجة (%)', 0)
+                if prev_avg > 0 and curr_avg > 0:
+                    change = round(curr_avg - prev_avg, 1)
+                    result[i]['التغيير'] = f"+{change}%" if change > 0 else f"{change}%"
+                else:
+                    result[i]['التغيير'] = '—'
+            if result:
+                result[0]['التغيير'] = '—'
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"خطأ في المقارنة الشهرية: {e}")
+            return []
+
+    # ============================================================
+    #  8. إنذار مبكر — طالب كان نشط وتوقف
+    # ============================================================
+    def detect_early_warnings(self, end_date: datetime) -> List[Dict]:
+        """اكتشاف طلاب كانوا نشطين وتوقفوا فجأة"""
+        try:
+            with self.engine.connect() as conn:
+                # الأسبوع الحالي
+                current_start = end_date - timedelta(weeks=1)
+                # الأسبوعين السابقين
+                prev_start = end_date - timedelta(weeks=3)
+                
+                query = text("""
+                    WITH current_week AS (
+                        SELECT DISTINCT qr.user_id
+                        FROM quiz_results qr
+                        WHERE qr.completed_at >= :current_start AND qr.completed_at <= :end_date
+                    ),
+                    previous_weeks AS (
+                        SELECT 
+                            qr.user_id,
+                            COUNT(*) as prev_quizzes,
+                            AVG(qr.percentage) as prev_avg,
+                            MAX(qr.completed_at) as last_activity
+                        FROM quiz_results qr
+                        WHERE qr.completed_at >= :prev_start AND qr.completed_at < :current_start
+                        GROUP BY qr.user_id
+                        HAVING COUNT(*) >= 2
+                    )
+                    SELECT 
+                        u.full_name, u.grade,
+                        pw.prev_quizzes, pw.prev_avg, pw.last_activity
+                    FROM previous_weeks pw
+                    JOIN users u ON pw.user_id = u.user_id
+                    LEFT JOIN current_week cw ON pw.user_id = cw.user_id
+                    WHERE cw.user_id IS NULL
+                        AND COALESCE(u.grade, '') != 'معلم'
+                    ORDER BY pw.prev_avg DESC
+                """)
+                rows = conn.execute(query, {
+                    'current_start': current_start,
+                    'end_date': end_date,
+                    'prev_start': prev_start,
+                }).fetchall()
+                
+                result = []
+                for row in rows:
+                    last_active = row.last_activity
+                    if last_active and hasattr(last_active, 'tzinfo') and last_active.tzinfo:
+                        last_active = last_active.replace(tzinfo=None)
+                    
+                    days_inactive = (end_date - last_active).days if last_active else 0
+                    
+                    if days_inactive >= 14:
+                        urgency = "عاجل 🔴"
+                    elif days_inactive >= 10:
+                        urgency = "متوسط 🟡"
+                    else:
+                        urgency = "مبكر 🟢"
+                    
+                    result.append({
+                        'الاسم': row.full_name or 'غير محدد',
+                        'الصف': row.grade or '-',
+                        'اختبارات سابقة': int(row.prev_quizzes or 0),
+                        'متوسط سابق (%)': round(float(row.prev_avg or 0), 1),
+                        'آخر نشاط': last_active.strftime('%Y-%m-%d') if last_active else '—',
+                        'أيام بدون نشاط': days_inactive,
+                        'مستوى الإنذار': urgency,
+                    })
+                
+                result.sort(key=lambda x: -x['أيام بدون نشاط'])
+                return result
+                
+        except Exception as e:
+            logger.error(f"خطأ في اكتشاف الإنذارات المبكرة: {e}")
+            return []
+
+    # ============================================================
+    #  9. تصدير PDF
+    # ============================================================
+    def export_report_pdf(self, excel_path: str) -> str:
+        """تصدير التقرير كـ PDF جاهز للطباعة"""
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+            import arabic_reshaper
+            from bidi.algorithm import get_display
+            
+            pdf_path = excel_path.replace('.xlsx', '.pdf')
+            
+            def reshape_arabic(text):
+                """تحويل النص العربي لعرض صحيح"""
+                if not text or not isinstance(text, str):
+                    return str(text) if text is not None else ''
+                try:
+                    reshaped = arabic_reshaper.reshape(str(text))
+                    return get_display(reshaped)
+                except:
+                    return str(text)
+            
+            # قراءة Excel
+            wb = openpyxl.load_workbook(excel_path)
+            
+            doc = SimpleDocTemplate(pdf_path, pagesize=A4, 
+                                   rightMargin=30, leftMargin=30,
+                                   topMargin=40, bottomMargin=40)
+            
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle('ArabicTitle', parent=styles['Title'],
+                                        alignment=TA_CENTER, fontSize=16)
+            
+            elements = []
+            
+            # الشيتات المهمة فقط للـ PDF
+            important_sheets = ['لوحة المعلومات', 'ترتيب الطلاب', 'أداء الصفوف',
+                              'طلاب يحتاجون متابعة', 'الأسئلة الصعبة', 'التوصيات']
+            
+            for sheet_name in important_sheets:
+                if sheet_name not in wb.sheetnames:
+                    continue
+                    
+                ws = wb[sheet_name]
+                if ws.max_row < 2:
+                    continue
+                
+                # عنوان الشيت
+                elements.append(Paragraph(reshape_arabic(sheet_name), title_style))
+                elements.append(Spacer(1, 12))
+                
+                # قراءة البيانات
+                data = []
+                for r in range(1, min(ws.max_row + 1, 50)):  # حد 50 صف
+                    row_data = []
+                    for c in range(1, min(ws.max_column + 1, 10)):  # حد 10 أعمدة
+                        val = ws.cell(row=r, column=c).value
+                        cell_text = reshape_arabic(str(val) if val is not None else '')
+                        # اختصار النصوص الطويلة
+                        if len(cell_text) > 35:
+                            cell_text = cell_text[:35] + '...'
+                        row_data.append(cell_text)
+                    data.append(row_data)
+                
+                if data:
+                    col_count = len(data[0])
+                    col_width = min(500 / col_count, 120)
+                    
+                    table = Table(data, colWidths=[col_width] * col_count)
+                    table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E79')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTSIZE', (0, 0), (-1, 0), 8),
+                        ('FONTSIZE', (0, 1), (-1, -1), 7),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('TOPPADDING', (0, 0), (-1, -1), 4),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                    ]))
+                    elements.append(table)
+                
+                elements.append(PageBreak())
+            
+            doc.build(elements)
+            logger.info(f"تم تصدير PDF: {pdf_path}")
+            return pdf_path
+            
+        except ImportError as ie:
+            logger.warning(f"مكتبة PDF غير متاحة ({ie}) — يتم تخطي تصدير PDF")
+            return ""
+        except Exception as e:
+            logger.error(f"خطأ في تصدير PDF: {e}")
+            return ""
+
+    # ============================================================
     #  إنشاء التقرير المحسن
     # ============================================================
     def create_final_excel_report(self, start_date: datetime, end_date: datetime) -> str:
@@ -1471,6 +2288,25 @@ class FinalWeeklyReportGenerator:
                     smart_recommendations.setdefault('تحسين المحتوى', []).append(
                         f"تم تجاوز {total_skipped} سؤال بسبب إنهاء الاختبار مبكراً — قد تكون الاختبارات طويلة")
             
+            # توصية الإنذار المبكر
+            if early_warnings:
+                urgent = [w for w in early_warnings if 'عاجل' in w.get('مستوى الإنذار', '')]
+                if urgent:
+                    names = [w['الاسم'] for w in urgent[:3]]
+                    smart_recommendations.setdefault('تنبيهات عاجلة', []).append(
+                        f"طلاب توقفوا فجأة (كانوا نشطين): {' ، '.join(names)}")
+                elif early_warnings:
+                    smart_recommendations.setdefault('متابعة الطلاب', []).append(
+                        f"{len(early_warnings)} طالب كان نشط وتوقف — تواصل معهم")
+            
+            # توصية معدل الإكمال
+            if completion_rate:
+                abandoned = [c for c in completion_rate if 'ترك' in c.get('الحالة', '')]
+                if abandoned:
+                    names = [c['الاسم'] for c in abandoned[:3]]
+                    smart_recommendations.setdefault('تحسين المحتوى', []).append(
+                        f"{len(abandoned)} اختبار تم تركه مبكراً — الأسماء: {' ، '.join(names)}")
+            
             # فصل الطلاب عن المعلمين أولاً
             students_only = [u for u in user_progress if u.get('grade', '') != 'معلم']
             teacher_accounts = [u for u in user_progress if u.get('grade', '') == 'معلم']
@@ -1480,6 +2316,23 @@ class FinalWeeklyReportGenerator:
             
             student_categories = self.analyze_student_performance_categories(students_only)
             improvement_trends = self.analyze_student_improvement_trends(students_only)
+            
+            # ── تحليلات جديدة ──
+            topic_performance = self.analyze_topic_performance(start_date, end_date)
+            weekly_tracking = self.get_weekly_student_tracking(end_date, weeks=4)
+            speed_accuracy = self.analyze_speed_accuracy(start_date, end_date)
+            completion_rate = self.analyze_completion_rate(start_date, end_date)
+            day_patterns = self.analyze_day_of_week_patterns(start_date, end_date)
+            monthly_comparison = self.get_monthly_comparison(end_date)
+            early_warnings = self.detect_early_warnings(end_date)
+            executive_summary = self.generate_executive_summary(
+                general_stats, user_progress, grade_analysis,
+                student_categories, improvement_trends,
+                speed_accuracy, topic_performance,
+                start_date, end_date,
+                early_warnings=early_warnings,
+                monthly_comparison=monthly_comparison
+            )
             
             chart_paths = self.create_performance_charts(students_only, grade_analysis, time_patterns)
             
@@ -1756,7 +2609,50 @@ class FinalWeeklyReportGenerator:
                     recs_df = pd.DataFrame(recommendations_data)
                     recs_df.to_excel(writer, sheet_name='التوصيات', index=False)
                 
-                # ═══════════ 12. الرسوم البيانية ═══════════
+                # ═══════════ 12. الملخص التنفيذي ═══════════
+                if executive_summary:
+                    summary_lines = executive_summary.split('\n')
+                    summary_data = [{'الملخص التنفيذي': line} for line in summary_lines if line.strip()]
+                    if summary_data:
+                        summary_df = pd.DataFrame(summary_data)
+                        summary_df.to_excel(writer, sheet_name='الملخص التنفيذي', index=False)
+                
+                # ═══════════ 13. أداء حسب المواضيع ═══════════
+                if topic_performance:
+                    topic_df = pd.DataFrame(topic_performance)
+                    topic_df.to_excel(writer, sheet_name='أداء حسب المواضيع', index=False)
+                
+                # ═══════════ 14. تتبع أسبوعي ═══════════
+                if weekly_tracking:
+                    tracking_df = pd.DataFrame(weekly_tracking)
+                    tracking_df.to_excel(writer, sheet_name='تتبع أسبوعي', index=False)
+                
+                # ═══════════ 15. تحليل السرعة والدقة ═══════════
+                if speed_accuracy:
+                    speed_df = pd.DataFrame(speed_accuracy)
+                    speed_df.to_excel(writer, sheet_name='تحليل السرعة والدقة', index=False)
+                
+                # ═══════════ 16. معدل إكمال الاختبار ═══════════
+                if completion_rate:
+                    comp_df = pd.DataFrame(completion_rate)
+                    comp_df.to_excel(writer, sheet_name='معدل الإكمال', index=False)
+                
+                # ═══════════ 17. النشاط حسب اليوم ═══════════
+                if day_patterns:
+                    day_df = pd.DataFrame(day_patterns)
+                    day_df.to_excel(writer, sheet_name='نشاط حسب اليوم', index=False)
+                
+                # ═══════════ 18. مقارنة شهرية (4 أسابيع) ═══════════
+                if monthly_comparison:
+                    monthly_df = pd.DataFrame(monthly_comparison)
+                    monthly_df.to_excel(writer, sheet_name='مقارنة شهرية', index=False)
+                
+                # ═══════════ 19. إنذار مبكر ═══════════
+                if early_warnings:
+                    warning_df = pd.DataFrame(early_warnings)
+                    warning_df.to_excel(writer, sheet_name='إنذار مبكر', index=False)
+                
+                # ═══════════ 20. الرسوم البيانية ═══════════
                 if chart_paths:
                     try:
                         from openpyxl.drawing.image import Image
@@ -1797,9 +2693,36 @@ class FinalWeeklyReportGenerator:
                             color = '757575'
                         elif sheet_name == 'بيانات قليلة':
                             color = 'F57F17'
+                        elif sheet_name == 'الملخص التنفيذي':
+                            color = '00695C'
+                        elif sheet_name == 'أداء حسب المواضيع':
+                            color = '4527A0'
+                        elif sheet_name == 'تتبع أسبوعي':
+                            color = '00695C'
+                        elif sheet_name == 'تحليل السرعة والدقة':
+                            color = '0277BD'
+                        elif sheet_name == 'معدل الإكمال':
+                            color = '558B2F'
+                        elif sheet_name == 'نشاط حسب اليوم':
+                            color = '6A1B9A'
+                        elif sheet_name == 'مقارنة شهرية':
+                            color = '1565C0'
+                        elif sheet_name == 'إنذار مبكر':
+                            color = 'E65100'
                         self._format_excel_sheet(ws, header_color=color)
+                
+                # ═══ ترتيب الشيتات: الملخص التنفيذي أولاً ═══
+                if 'الملخص التنفيذي' in wb.sheetnames:
+                    summary_idx = wb.sheetnames.index('الملخص التنفيذي')
+                    wb.move_sheet('الملخص التنفيذي', offset=-summary_idx)
             
             logger.info(f"تم إنشاء التقرير المحسن: {report_path}")
+            
+            # تصدير PDF
+            pdf_path = self.export_report_pdf(report_path)
+            if pdf_path:
+                logger.info(f"تم تصدير PDF: {pdf_path}")
+            
             return report_path
             
         except Exception as e:

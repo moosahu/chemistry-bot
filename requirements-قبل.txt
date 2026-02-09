@@ -7,6 +7,6 @@ matplotlib
 arabic_reshaper
 python-bidi
 SQLAlchemy
+aiohttp
 
 schedule>=1.2.0
-
