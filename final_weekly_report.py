@@ -1538,8 +1538,8 @@ class FinalWeeklyReportGenerator:
                 if active_students:
                     # ترتيب مرجح: الدرجة × معامل ثقة حسب عدد الأسئلة
                     def weighted_score(s):
-                        avg = s.get('overall_avg_percentage', 0) or 0
-                        qs = s.get('total_questions_answered', 0) or 0
+                        avg = float(s.get('overall_avg_percentage', 0) or 0)
+                        qs = int(s.get('total_questions_answered', 0) or 0)
                         # معامل الثقة: يبدأ من 0.3 ويصل 1.0 عند 30+ سؤال
                         confidence = min(1.0, 0.3 + (qs / 30) * 0.7) if qs > 0 else 0
                         return avg * confidence
