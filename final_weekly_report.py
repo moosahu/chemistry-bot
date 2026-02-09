@@ -2176,12 +2176,16 @@ class FinalWeeklyReportGenerator:
             
             # ══ البحث عن خط يدعم العربي ══
             arabic_font_name = None
+            
+            # البحث في مجلد fonts داخل المشروع أولاً
+            project_dir = os.path.dirname(os.path.abspath(__file__))
             font_search_paths = [
+                os.path.join(project_dir, 'fonts', 'DejaVuSans.ttf'),
+                os.path.join(project_dir, '..', 'fonts', 'DejaVuSans.ttf'),
+                'fonts/DejaVuSans.ttf',
                 '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-                '/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf',
                 '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
                 '/usr/share/fonts/TTF/DejaVuSans.ttf',
-                '/usr/share/fonts/dejavu/DejaVuSans.ttf',
             ]
             
             for font_path in font_search_paths:
@@ -2193,18 +2197,6 @@ class FinalWeeklyReportGenerator:
                         break
                     except Exception as fe:
                         logger.warning(f"تعذر تسجيل الخط {font_path}: {fe}")
-            
-            # إذا ما لقينا خط، ننزل واحد
-            if not arabic_font_name:
-                try:
-                    import subprocess
-                    subprocess.run(['apt-get', 'install', '-y', 'fonts-dejavu-core'], 
-                                  capture_output=True, timeout=30)
-                    if os.path.exists('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'):
-                        pdfmetrics.registerFont(TTFont('ArabicFont', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-                        arabic_font_name = 'ArabicFont'
-                except:
-                    pass
             
             if not arabic_font_name:
                 logger.warning("لم يتم العثور على خط عربي — PDF قد لا يعرض العربي بشكل صحيح")
