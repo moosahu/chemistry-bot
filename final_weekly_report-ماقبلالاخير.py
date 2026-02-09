@@ -3153,7 +3153,7 @@ Chemistry Bot Reporting System
             
             msg.attach(MIMEText(body, 'plain'))
             
-            # إرفاق ملف التقرير (Excel)
+            # إرفاق ملف التقرير
             if os.path.exists(report_path):
                 with open(report_path, "rb") as attachment:
                     part = MIMEBase('application', 'octet-stream')
@@ -3165,20 +3165,6 @@ Chemistry Bot Reporting System
                     f'attachment; filename= {os.path.basename(report_path)}'
                 )
                 msg.attach(part)
-            
-            # إرفاق ملف PDF إن وجد
-            pdf_path = report_path.replace('.xlsx', '.pdf')
-            if os.path.exists(pdf_path):
-                with open(pdf_path, "rb") as pdf_attachment:
-                    pdf_part = MIMEBase('application', 'octet-stream')
-                    pdf_part.set_payload(pdf_attachment.read())
-                
-                encoders.encode_base64(pdf_part)
-                pdf_part.add_header(
-                    'Content-Disposition',
-                    f'attachment; filename= {os.path.basename(pdf_path)}'
-                )
-                msg.attach(pdf_part)
             
             # إرسال الإيميل
             server = smtplib.SMTP('smtp.gmail.com', 587)
