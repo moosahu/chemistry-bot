@@ -51,6 +51,8 @@ ADMIN_STATS_MENU = 12 # Added for admin stats menu (placeholder if not used dire
 
 # --- Weakness Quiz States ---
 WEAKNESS_QUIZ_CONFIRM = 13  # تأكيد بدء اختبار نقاط الضعف
+WEAKNESS_SELECT_COURSE = 14  # اختيار المقرر في نقاط الضعف
+WEAKNESS_SELECT_UNIT = 15  # اختيار الوحدة في نقاط الضعف
 
 # --- Registration States ---
 # تعريف ثوابت حالات التسجيل

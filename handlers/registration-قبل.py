@@ -245,170 +245,6 @@ def is_valid_phone(phone):
     pattern = r'^(05\d{8}|\+966\d{9}|00966\d{9})$'
     return re.match(pattern, phone) is not None
 
-
-# === نظام التحقق الشامل من الاسم ===
-
-# أسماء وهمية / اختبارية شائعة
-_FAKE_NAMES = {
-    # عربي
-    "اختبار", "تجربة", "تست", "بوت", "ادمن", "مدير", "مستخدم", "طالب",
-    "ابابا", "اااا", "بببب", "تتتت", "ثثثث", "ههههه", "ممممم",
-    "لالالا", "يايايا", "واواوا", "فلان", "فلانة", "علان",
-    # إنجليزي
-    "test", "testing", "admin", "user", "student", "bot", "hello",
-    "asdf", "qwer", "zxcv", "abcd", "aaa", "bbb", "abc", "xyz",
-    "name", "noname", "none", "null", "undefined", "temp",
-    "fake", "anonymous", "unknown",
-}
-
-def _clean_name(raw_name: str) -> str:
-    """تنظيف الاسم: إزالة مسافات زائدة + تنسيق"""
-    # إزالة أي whitespace غريب (tabs, newlines) واستبداله بمسافة
-    name = re.sub(r'\s+', ' ', raw_name).strip()
-    return name
-
-def _capitalize_english_name(name: str) -> str:
-    """تكبير أول حرف من كل كلمة إنجليزية: ahmed ali → Ahmed Ali"""
-    parts = name.split()
-    result = []
-    for part in parts:
-        # إذا الكلمة إنجليزية، capitalize
-        if re.match(r'^[a-zA-Z\-]+$', part):
-            # Handle hyphenated names: al-saud → Al-Saud
-            sub_parts = part.split('-')
-            capitalized = '-'.join(sp.capitalize() for sp in sub_parts)
-            result.append(capitalized)
-        else:
-            result.append(part)
-    return ' '.join(result)
-
-def validate_name(raw_name: str) -> tuple[bool, str, str]:
-    """
-    التحقق الشامل من صحة الاسم.
-    
-    Args:
-        raw_name: الاسم المدخل من المستخدم
-        
-    Returns:
-        tuple: (is_valid, cleaned_name, error_message)
-            - is_valid: True إذا الاسم صحيح
-            - cleaned_name: الاسم بعد التنظيف (فقط إذا صحيح)
-            - error_message: رسالة الخطأ (فقط إذا غير صحيح)
-    """
-    
-    # 1. تنظيف أولي
-    name = _clean_name(raw_name)
-    
-    # 2. فحص الطول الكلي
-    if len(name) < 8:
-        return False, "", (
-            "⚠️ الاسم قصير جداً.\n\n"
-            "يرجى إدخال اسمك الثلاثي على الأقل (مثال: محمد علي العلي)"
-        )
-    
-    if len(name) > 50:
-        return False, "", (
-            "⚠️ الاسم طويل جداً (الحد الأقصى 50 حرف).\n\n"
-            "يرجى إدخال اسمك بشكل مختصر."
-        )
-    
-    # 3. فحص وجود أرقام
-    if re.search(r'\d', name):
-        return False, "", (
-            "⚠️ الاسم لا يجب أن يحتوي على أرقام.\n\n"
-            "يرجى إدخال اسمك الحقيقي بالحروف فقط."
-        )
-    
-    # 4. فحص الرموز والإيموجي — فقط حروف عربية أو إنجليزية ومسافات وشرطة
-    # حروف عربية: \u0600-\u06FF \u0750-\u077F \uFB50-\uFDFF \uFE70-\uFEFF
-    # + التشكيل والهمزات
-    allowed_pattern = r'^[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFFa-zA-Z\s\-]+$'
-    if not re.match(allowed_pattern, name):
-        return False, "", (
-            "⚠️ الاسم يحتوي على رموز أو أحرف غير مسموحة.\n\n"
-            "يرجى إدخال اسمك بالعربي أو الإنجليزي فقط بدون رموز."
-        )
-    
-    # 5. فحص الاسم الثلاثي (على الأقل 3 أجزاء)
-    parts = name.split()
-    if len(parts) < 3:
-        return False, "", (
-            "⚠️ يرجى إدخال اسمك الثلاثي على الأقل (الاسم الأول + اسم الأب + اسم العائلة).\n\n"
-            "مثال: محمد علي العلي"
-        )
-    
-    # 6. فحص طول كل جزء (2 حروف على الأقل)
-    for part in parts:
-        clean_part = part.replace('-', '')  # Al-Saud → AlSaud for length check
-        if len(clean_part) < 2:
-            return False, "", (
-                f"⚠️ جزء الاسم \"{part}\" قصير جداً (حرفين على الأقل لكل جزء).\n\n"
-                "يرجى إدخال اسمك الكامل بشكل صحيح."
-            )
-    
-    # 7. فحص تكرار الحروف المتتالية (3+ مرات)
-    if re.search(r'(.)\1{2,}', name.replace(' ', '')):
-        return False, "", (
-            "⚠️ الاسم يحتوي على حروف مكررة بشكل غير طبيعي.\n\n"
-            "يرجى إدخال اسمك الحقيقي."
-        )
-    
-    # 8. فحص أن كل جزء فيه حرفين مختلفين على الأقل
-    for part in parts:
-        clean_part = part.replace('-', '')
-        unique_chars = set(clean_part.lower())
-        if len(unique_chars) < 2:
-            return False, "", (
-                f"⚠️ جزء الاسم \"{part}\" غير صالح.\n\n"
-                "يرجى إدخال اسمك الحقيقي."
-            )
-    
-    # 9. فحص خلط العربي والإنجليزي في نفس الاسم
-    has_arabic = bool(re.search(r'[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]', name))
-    has_english = bool(re.search(r'[a-zA-Z]', name))
-    if has_arabic and has_english:
-        return False, "", (
-            "⚠️ لا يمكن خلط الحروف العربية والإنجليزية في الاسم.\n\n"
-            "يرجى كتابة اسمك بالعربي فقط أو بالإنجليزي فقط."
-        )
-    
-    # 10. فحص الأسماء الوهمية والاختبارية
-    name_lower_parts = [p.lower() for p in parts]
-    name_joined_lower = name.lower().replace(' ', '').replace('-', '')
-    
-    for fake in _FAKE_NAMES:
-        # فحص كل جزء على حدة
-        if fake in name_lower_parts:
-            return False, "", (
-                "⚠️ يرجى إدخال اسمك الحقيقي.\n\n"
-                "الأسماء الاختبارية أو الوهمية غير مقبولة."
-            )
-        # فحص الاسم كاملاً بدون مسافات
-        if fake == name_joined_lower:
-            return False, "", (
-                "⚠️ يرجى إدخال اسمك الحقيقي.\n\n"
-                "الأسماء الاختبارية أو الوهمية غير مقبولة."
-            )
-    
-    # 11. فحص الأنماط المتكررة (ababab, لالالا)
-    if len(name_joined_lower) >= 4:
-        # فحص تكرار نمط من حرفين أو ثلاثة
-        for pattern_len in [2, 3]:
-            if len(name_joined_lower) >= pattern_len * 2:
-                pattern = name_joined_lower[:pattern_len]
-                repeated = pattern * (len(name_joined_lower) // pattern_len + 1)
-                if name_joined_lower == repeated[:len(name_joined_lower)]:
-                    return False, "", (
-                        "⚠️ الاسم يحتوي على نمط مكرر غير طبيعي.\n\n"
-                        "يرجى إدخال اسمك الحقيقي."
-                    )
-    
-    # ✅ الاسم صحيح — تنسيق نهائي
-    if has_english:
-        name = _capitalize_english_name(name)
-    
-    return True, name, ""
-
 # إنشاء لوحة مفاتيح للصفوف الدراسية
 def create_grade_keyboard():
     """إنشاء لوحة مفاتيح للصفوف الدراسية"""
@@ -782,8 +618,7 @@ async def start_registration(update: Update, context: CallbackContext) -> int:
     # إرسال رسالة الترحيب وطلب الاسم
     welcome_text = "مرحباً بك في بوت كيمياء تحصيلي! 👋\n\n" \
                    "لاستخدام البوت، يرجى إكمال التسجيل أولاً.\n\n" \
-                   "الخطوة الأولى: أدخل اسمك الثلاثي (الاسم + اسم الأب + العائلة):\n" \
-                   "مثال: محمد علي العلي"
+                   "الخطوة الأولى: أدخل اسمك الكامل:"
     
     # إذا كان لدينا اسم مسبق، نعرضه كاقتراح
     if context.user_data['registration_data'].get('full_name'):
@@ -808,28 +643,26 @@ async def handle_name_input(update: Update, context: CallbackContext) -> int:
     logger.info(f"[DEBUG] Entering handle_name_input for user {user.id}")
     logger.debug(f"[DEBUG] Received name from user {user.id}: {name}")
     
-    # التحقق الشامل من صحة الاسم
-    is_valid, cleaned_name, error_msg = validate_name(name)
-    
-    if not is_valid:
-        logger.warning(f"[DEBUG] Invalid name received from user {user.id}: '{name}' — {error_msg[:50]}")
+    # التحقق من صحة الاسم
+    if len(name) < 3:
+        logger.warning(f"[DEBUG] Invalid name received from user {user.id}: {name}")
         await safe_send_message(
             context.bot,
             chat_id,
-            text=error_msg
+            text="⚠️ الاسم قصير جداً. يرجى إدخال اسمك الكامل (3 أحرف على الأقل):"
         )
         logger.info(f"[DEBUG] handle_name_input: Asking for name again, returning state REGISTRATION_NAME ({REGISTRATION_NAME})")
         return REGISTRATION_NAME
     
-    # حفظ الاسم المنظّف في بيانات المستخدم المؤقتة
-    context.user_data['registration_data']['full_name'] = cleaned_name
-    logger.info(f"[DEBUG] Saved name '{cleaned_name}' for user {user.id} in context.user_data")
+    # حفظ الاسم في بيانات المستخدم المؤقتة
+    context.user_data['registration_data']['full_name'] = name
+    logger.info(f"[DEBUG] Saved name '{name}' for user {user.id} in context.user_data")
     
     # إرسال رسالة تأكيد وطلب البريد الإلكتروني
     await safe_send_message(
         context.bot,
         chat_id,
-        text=f"✅ تم تسجيل الاسم: {cleaned_name}\n\n"
+        text=f"✅ تم تسجيل الاسم: {name}\n\n"
              "الخطوة الثانية: أدخل بريدك الإلكتروني:"
     )
     logger.info(f"[DEBUG] handle_name_input: Asked for email, returning state REGISTRATION_EMAIL ({REGISTRATION_EMAIL})")
@@ -1323,22 +1156,20 @@ async def handle_edit_name_input(update: Update, context: CallbackContext) -> in
     logger.info(f"[DEBUG] Entering handle_edit_name_input for user {user_id}")
     logger.debug(f"[DEBUG] Received new name from user {user_id}: {name}")
     
-    # التحقق الشامل من صحة الاسم
-    is_valid, cleaned_name, error_msg = validate_name(name)
-    
-    if not is_valid:
-        logger.warning(f"[DEBUG] Invalid new name received from user {user_id}: '{name}'")
+    # التحقق من صحة الاسم
+    if len(name) < 3:
+        logger.warning(f"[DEBUG] Invalid new name received: {name}")
         await safe_send_message(
             context.bot,
             chat_id,
-            text=error_msg
+            text="⚠️ الاسم قصير جداً. يرجى إدخال اسمك الكامل (3 أحرف على الأقل):"
         )
         logger.info(f"[DEBUG] handle_edit_name_input: Asking for name again, returning state EDIT_USER_NAME ({EDIT_USER_NAME})")
         return EDIT_USER_NAME
     
-    # تحديث الاسم المنظّف في بيانات المستخدم المؤقتة
-    context.user_data['registration_data']['full_name'] = cleaned_name
-    logger.info(f"[DEBUG] Updated name to '{cleaned_name}' in context.user_data")
+    # تحديث الاسم في بيانات المستخدم المؤقتة
+    context.user_data['registration_data']['full_name'] = name
+    logger.info(f"[DEBUG] Updated name to '{name}' in context.user_data")
     
     # الحصول على مدير قاعدة البيانات
     db_manager = context.bot_data.get("DB_MANAGER")
@@ -1353,7 +1184,7 @@ async def handle_edit_name_input(update: Update, context: CallbackContext) -> in
         return ConversationHandler.END
     
     # حفظ الاسم الجديد في قاعدة البيانات
-    success = save_user_info(db_manager, user_id, full_name=cleaned_name)
+    success = save_user_info(db_manager, user_id, full_name=name)
     
     if success:
         # إعداد نص معلومات المستخدم المحدثة

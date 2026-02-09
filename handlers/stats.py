@@ -199,8 +199,7 @@ def generate_line_chart_performance_trend(user_id: int, quiz_history: list) -> s
 def create_stats_menu_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("📊 إحصائياتي", callback_data="stats_my_stats")],
-        [InlineKeyboardButton("🏆 لوحة الصدارة (الكل)", callback_data="stats_leaderboard")],
-        [InlineKeyboardButton("🏆 لوحة الصدارة (هذا الأسبوع)", callback_data="stats_leaderboard_weekly")],
+        [InlineKeyboardButton("🏆 لوحة الصدارة", callback_data="stats_leaderboard")],
         [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -307,32 +306,110 @@ async def show_my_stats(update: Update, context: CallbackContext) -> int:
                 logger.error("Failed to send chart {} to user {}: {}".format(attachment_path, user_id, e))
     return STATS_MENU
 
+def _format_leaderboard_name(full_name: str, max_len: int = 22) -> str:
+    """Format display name: show first + last name, truncate if needed."""
+    if not full_name:
+        return "مجهول"
+    name = full_name.strip()
+    # إذا كان الاسم عبارة عن رقم (user_id) → اسم مستعار
+    if name.isdigit():
+        return "مختبر مجهول"
+    parts = name.split()
+    if len(parts) >= 2:
+        # اسم أول + عائلة
+        display = f"{parts[0]} {parts[-1]}"
+    else:
+        display = parts[0]
+    if len(display) > max_len:
+        display = display[:max_len - 1] + "…"
+    return display
+
+def _build_score_bar(score: float, width: int = 8) -> str:
+    """Build a mini visual bar: ████░░░░"""
+    filled = round(score / 100 * width)
+    empty = width - filled
+    return "█" * filled + "░" * empty
+
+def _build_leaderboard_text(leaderboard_data: list, user_rank_data: dict, user_id: int, title: str, subtitle: str = "") -> str:
+    """Build formatted leaderboard text."""
+    
+    medals = {0: "🥇", 1: "🥈", 2: "🥉"}
+    
+    text = f"🏆  *{title}*  🏆\n"
+    if subtitle:
+        text += f"_{subtitle}_\n"
+    text += "\n"
+    
+    if not leaderboard_data:
+        text += "لا توجد بيانات بعد. كن أول المتصدرين! 🚀\n"
+    else:
+        for i, entry in enumerate(leaderboard_data):
+            raw_name = entry.get("user_display_name", "")
+            display_name = _format_leaderboard_name(raw_name)
+            avg_score = entry.get("average_score_percentage", 0.0) or 0.0
+            quizzes = entry.get("total_quizzes_taken", 0) or 0
+            total_correct = entry.get("total_correct", 0) or 0
+            entry_user_id = entry.get("user_id")
+            
+            # ميدالية أو رقم
+            rank_str = medals.get(i, f" {i+1}.")
+            
+            # شريط التقدم
+            bar = _build_score_bar(avg_score)
+            
+            # تمييز المستخدم الحالي
+            is_me = (entry_user_id == user_id)
+            pointer = " 👈" if is_me else ""
+            
+            text += f"{rank_str} *{display_name}*{pointer}\n"
+            text += f"    {bar}  {avg_score:.0f}%  •  {quizzes} اختبار  •  {total_correct} ✅\n"
+            
+            # خط فاصل بعد أول 3
+            if i == 2 and len(leaderboard_data) > 3:
+                text += "  ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n"
+    
+    # رتبة المستخدم إذا مو في Top 10
+    text += "\n═══════════════════════\n"
+    
+    my_rank = user_rank_data.get("rank", 0)
+    total_users = user_rank_data.get("total_users", 0)
+    my_score = user_rank_data.get("avg_score", 0) or 0
+    my_quizzes = user_rank_data.get("total_quizzes", 0) or 0
+    
+    if my_rank > 0:
+        my_bar = _build_score_bar(my_score)
+        text += f"\n📍 *ترتيبك: {my_rank} من {total_users}*\n"
+        text += f"    {my_bar}  {my_score:.0f}%  •  {my_quizzes} اختبار\n"
+    else:
+        text += "\n📍 _لم تختبر بعد — ابدأ أول اختبار!_\n"
+    
+    return text
+
+
 async def show_leaderboard(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
     logger.info("User {} requested leaderboard.".format(user_id))
-    leaderboard_text = "🏆 *لوحة الصدارة لأفضل اللاعبين* 🏆\n\n"
+    
     db_manager = DB_MANAGER
     if not db_manager:
-        leaderboard_text += "عذراً، خدمة لوحة الصدارة غير متاحة حالياً."
-        logger.critical("[Leaderboard] CRITICAL: DB_MANAGER is None! Cannot fetch leaderboard for user {}.".format(user_id))
+        text = "🏆 *لوحة الصدارة* 🏆\n\nعذراً، الخدمة غير متاحة حالياً."
+        logger.critical("[Leaderboard] DB_MANAGER is None!")
     else:
         leaderboard_data = db_manager.get_leaderboard(limit=LEADERBOARD_LIMIT)
-        if leaderboard_data:
-            for i, entry in enumerate(leaderboard_data):
-                user_name_val = entry.get("user_display_name")
-                if not user_name_val:
-                    user_name_val = "مستخدم {}".format(entry.get("user_id"))
-                avg_score = entry.get("average_score_percentage", 0.0)
-                quizzes_taken = entry.get("total_quizzes_taken", 0)
-                medal = "🥇" if i == 0 else ("🥈" if i == 1 else ("🥉" if i == 2 else "{}. ".format(i+1)))
-                leaderboard_text += "{} {} - متوسط: {:.1f}% (من {} اختبارات)\n".format(medal, user_name_val, avg_score, quizzes_taken)
-        else:
-            leaderboard_text += "لا توجد بيانات كافية لعرض لوحة الصدارة بعد."
-    leaderboard_text += "\n══════════════════════"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
-    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
+        user_rank = db_manager.get_user_rank(user_id, weekly=False)
+        text = _build_leaderboard_text(
+            leaderboard_data, user_rank, user_id,
+            title="لوحة الصدارة",
+            subtitle="الترتيب العام لجميع المختبرين"
+        )
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📅 هذا الأسبوع", callback_data="stats_leaderboard_weekly")],
+        [InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]
+    ])
+    await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, text=text, reply_markup=keyboard, parse_mode="Markdown")
     return STATS_MENU
 
 
@@ -343,31 +420,24 @@ async def show_weekly_leaderboard(update: Update, context: CallbackContext) -> i
     user_id = update.effective_user.id
     logger.info("User {} requested weekly leaderboard.".format(user_id))
     
-    leaderboard_text = "🏆 *لوحة الصدارة الأسبوعية* 🏆\n_(آخر 7 أيام)_\n\n"
     db_manager = DB_MANAGER
-    
     if not db_manager:
-        leaderboard_text += "عذراً، خدمة لوحة الصدارة غير متاحة حالياً."
+        text = "🏆 *لوحة الصدارة الأسبوعية* 🏆\n\nعذراً، الخدمة غير متاحة حالياً."
     else:
         leaderboard_data = db_manager.get_weekly_leaderboard(limit=LEADERBOARD_LIMIT)
-        if leaderboard_data:
-            for i, entry in enumerate(leaderboard_data):
-                user_name_val = entry.get("user_display_name")
-                if not user_name_val:
-                    user_name_val = "مستخدم {}".format(entry.get("user_id"))
-                avg_score = entry.get("average_score_percentage", 0.0)
-                quizzes_taken = entry.get("total_quizzes_taken", 0)
-                total_correct = entry.get("total_correct", 0)
-                medal = "🥇" if i == 0 else ("🥈" if i == 1 else ("🥉" if i == 2 else "{}. ".format(i+1)))
-                leaderboard_text += "{} {} - متوسط: {:.1f}% ({} اختبارات, {} إجابة صحيحة)\n".format(
-                    medal, user_name_val, avg_score, quizzes_taken, total_correct)
-        else:
-            leaderboard_text += "لا توجد بيانات لهذا الأسبوع بعد. كن أول المتصدرين! 🚀"
+        user_rank = db_manager.get_user_rank(user_id, weekly=True)
+        text = _build_leaderboard_text(
+            leaderboard_data, user_rank, user_id,
+            title="لوحة الصدارة الأسبوعية",
+            subtitle="آخر 7 أيام"
+        )
     
-    leaderboard_text += "\n══════════════════════"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏆 الترتيب العام", callback_data="stats_leaderboard")],
+        [InlineKeyboardButton("🔙 رجوع لقائمة الإحصائيات", callback_data="stats_menu")]
+    ])
     await safe_edit_message_text(context.bot, chat_id=query.message.chat_id, message_id=query.message.message_id, 
-                                  text=leaderboard_text, reply_markup=keyboard, parse_mode="Markdown")
+                                  text=text, reply_markup=keyboard, parse_mode="Markdown")
     return STATS_MENU
 
 # --- Admin Statistics --- 
