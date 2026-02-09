@@ -2160,15 +2160,17 @@ class FinalWeeklyReportGenerator:
     #  9. تصدير PDF
     # ============================================================
     def export_report_pdf(self, excel_path: str) -> str:
-        """تصدير التقرير كـ PDF جاهز للطباعة"""
+        """تصدير التقرير كـ PDF جاهز للطباعة مع تنسيق محسن"""
         try:
-            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.pagesizes import A4, landscape
             from reportlab.lib import colors
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+            from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, 
+                                           Paragraph, Spacer, PageBreak, KeepTogether)
             from reportlab.pdfbase import pdfmetrics
             from reportlab.pdfbase.ttfonts import TTFont
             from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+            from reportlab.lib.units import mm
             import arabic_reshaper
             from bidi.algorithm import get_display
             
@@ -2176,8 +2178,6 @@ class FinalWeeklyReportGenerator:
             
             # ══ البحث عن خط يدعم العربي ══
             arabic_font_name = None
-            
-            # البحث في مجلد fonts داخل المشروع أولاً
             project_dir = os.path.dirname(os.path.abspath(__file__))
             font_search_paths = [
                 os.path.join(project_dir, 'fonts', 'DejaVuSans.ttf'),
@@ -2212,12 +2212,48 @@ class FinalWeeklyReportGenerator:
                 except:
                     return str(text)
             
+            # ── أنماط النصوص ──
+            cell_style = ParagraphStyle(
+                'CellStyle', fontName=arabic_font_name,
+                fontSize=6, leading=8, alignment=TA_CENTER,
+                wordWrap='CJK'
+            )
+            cell_style_header = ParagraphStyle(
+                'CellStyleHeader', fontName=arabic_font_name,
+                fontSize=7, leading=9, alignment=TA_CENTER,
+                textColor=colors.white, wordWrap='CJK'
+            )
+            cell_style_big = ParagraphStyle(
+                'CellStyleBig', fontName=arabic_font_name,
+                fontSize=8, leading=10, alignment=TA_CENTER,
+                wordWrap='CJK'
+            )
+            cell_style_header_big = ParagraphStyle(
+                'CellStyleHeaderBig', fontName=arabic_font_name,
+                fontSize=9, leading=11, alignment=TA_CENTER,
+                textColor=colors.white, wordWrap='CJK'
+            )
+            
             # قراءة Excel
             wb = openpyxl.load_workbook(excel_path)
             
-            doc = SimpleDocTemplate(pdf_path, pagesize=A4, 
-                                   rightMargin=30, leftMargin=30,
-                                   topMargin=40, bottomMargin=40)
+            # ═══ بناء الصفحات ═══
+            # الشيتات وإعداداتها: (اسم, عدد_أعمدة_أقصى, أفقي؟)
+            important_sheets = [
+                ('الملخص التنفيذي', 1, False),
+                ('لوحة المعلومات', 2, False),
+                ('ترتيب الطلاب', 10, True),
+                ('أداء الصفوف', 6, False),
+                ('أداء حسب المواضيع', 9, True),
+                ('تحليل السرعة والدقة', 9, True),
+                ('طلاب يحتاجون متابعة', 8, True),
+                ('الأسئلة الصعبة', 8, True),
+                ('التوصيات', 2, False),
+            ]
+            
+            # ── تجهيز الصفحات العمودية (Portrait) ──
+            portrait_elements = []
+            landscape_pages = []  # [(sheet_name, data)]
             
             styles = getSampleStyleSheet()
             title_style = ParagraphStyle('ArabicTitle', parent=styles['Title'],
@@ -2228,19 +2264,12 @@ class FinalWeeklyReportGenerator:
                                           alignment=TA_CENTER, fontSize=10,
                                           textColor=colors.grey)
             
-            elements = []
-            
             # عنوان التقرير
-            elements.append(Paragraph(reshape_arabic("📊 التقرير الأسبوعي"), title_style))
-            elements.append(Paragraph(reshape_arabic(f"بوت كيم تحصيلي"), subtitle_style))
-            elements.append(Spacer(1, 20))
+            portrait_elements.append(Paragraph(reshape_arabic("📊 التقرير الأسبوعي"), title_style))
+            portrait_elements.append(Paragraph(reshape_arabic("بوت كيم تحصيلي"), subtitle_style))
+            portrait_elements.append(Spacer(1, 20))
             
-            # الشيتات المهمة فقط للـ PDF
-            important_sheets = ['الملخص التنفيذي', 'لوحة المعلومات', 'ترتيب الطلاب', 
-                              'أداء الصفوف', 'أداء حسب المواضيع', 'تحليل السرعة والدقة',
-                              'طلاب يحتاجون متابعة', 'الأسئلة الصعبة', 'التوصيات']
-            
-            for sheet_name in important_sheets:
+            for sheet_name, max_cols, use_landscape in important_sheets:
                 if sheet_name not in wb.sheetnames:
                     continue
                     
@@ -2248,45 +2277,193 @@ class FinalWeeklyReportGenerator:
                 if ws.max_row < 2:
                     continue
                 
-                # عنوان الشيت
-                elements.append(Paragraph(reshape_arabic(f"▎{sheet_name}"), title_style))
-                elements.append(Spacer(1, 12))
+                actual_cols = min(ws.max_column, max_cols)
+                is_wide = actual_cols > 4 or use_landscape
                 
-                # قراءة البيانات
-                data = []
+                # تحديد حجم الصفحة المتاح
+                if is_wide:
+                    page_width = landscape(A4)[0] - 60  # 60 = margins
+                else:
+                    page_width = A4[0] - 60
+                
+                # اختيار الأنماط حسب عدد الأعمدة
+                if actual_cols <= 3:
+                    h_style = cell_style_header_big
+                    d_style = cell_style_big
+                else:
+                    h_style = cell_style_header
+                    d_style = cell_style
+                
+                # ── حساب عرض الأعمدة الذكي ──
+                col_max_lens = [0] * actual_cols
+                all_rows_data = []
+                
                 for r in range(1, min(ws.max_row + 1, 50)):
-                    row_data = []
-                    for c in range(1, min(ws.max_column + 1, 10)):
+                    row_vals = []
+                    for c in range(1, actual_cols + 1):
                         val = ws.cell(row=r, column=c).value
-                        cell_text = reshape_arabic(str(val) if val is not None else '')
-                        if len(cell_text) > 35:
-                            cell_text = cell_text[:35] + '...'
-                        row_data.append(cell_text)
-                    data.append(row_data)
+                        text = str(val) if val is not None else ''
+                        if len(text) > 50:
+                            text = text[:50] + '...'
+                        row_vals.append(text)
+                        col_max_lens[c-1] = max(col_max_lens[c-1], len(text))
+                    all_rows_data.append(row_vals)
                 
-                if data:
-                    col_count = len(data[0])
-                    col_width = min(500 / col_count, 120)
+                # توزيع العرض بناءً على أطول نص في كل عمود
+                total_weight = sum(max(w, 3) for w in col_max_lens)
+                col_widths = []
+                for w in col_max_lens:
+                    ratio = max(w, 3) / total_weight
+                    width = max(ratio * page_width, 25)  # حد أدنى 25
+                    col_widths.append(width)
+                
+                # تعديل ليتناسب مع عرض الصفحة
+                total_w = sum(col_widths)
+                if total_w > page_width:
+                    scale = page_width / total_w
+                    col_widths = [w * scale for w in col_widths]
+                
+                # ── بناء الجدول بـ Paragraphs (التفاف تلقائي) ──
+                table_data = []
+                for r_idx, row_vals in enumerate(all_rows_data):
+                    row_cells = []
+                    for val in row_vals:
+                        reshaped = reshape_arabic(val)
+                        if r_idx == 0:
+                            row_cells.append(Paragraph(reshaped, h_style))
+                        else:
+                            row_cells.append(Paragraph(reshaped, d_style))
+                    table_data.append(row_cells)
+                
+                if not table_data:
+                    continue
+                
+                table = Table(table_data, colWidths=col_widths, repeatRows=1)
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E79')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F8F8')]),
+                    ('TOPPADDING', (0, 0), (-1, -1), 3),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ]))
+                
+                section_title = Paragraph(reshape_arabic(f"▎{sheet_name}"), title_style)
+                
+                if is_wide:
+                    landscape_pages.append((section_title, table))
+                else:
+                    portrait_elements.append(section_title)
+                    portrait_elements.append(Spacer(1, 8))
+                    portrait_elements.append(table)
+                    portrait_elements.append(PageBreak())
+            
+            # ═══ بناء PDF النهائي ═══
+            # نبني ملف مؤقت للصفحات العمودية
+            all_elements = list(portrait_elements)
+            
+            # إضافة الصفحات العريضة (نستخدم nextPageTemplate لو أمكن)
+            # بما أن SimpleDocTemplate ما يدعم تبديل الاتجاه بسهولة،
+            # نبني PDF واحد بالاتجاه الأفقي إذا فيه جداول عريضة
+            if landscape_pages:
+                # نستخدم الأفقي كاتجاه أساسي ونضيف كل شي
+                doc = SimpleDocTemplate(pdf_path, pagesize=landscape(A4),
+                                       rightMargin=25, leftMargin=25,
+                                       topMargin=30, bottomMargin=30)
+                
+                final_elements = []
+                # العنوان
+                final_elements.append(Paragraph(reshape_arabic("📊 التقرير الأسبوعي"), title_style))
+                final_elements.append(Paragraph(reshape_arabic("بوت كيم تحصيلي"), subtitle_style))
+                final_elements.append(Spacer(1, 15))
+                
+                # إعادة بناء كل الشيتات بالاتجاه الأفقي
+                for sheet_name, max_cols, use_landscape in important_sheets:
+                    if sheet_name not in wb.sheetnames:
+                        continue
+                    ws = wb[sheet_name]
+                    if ws.max_row < 2:
+                        continue
                     
-                    table = Table(data, colWidths=[col_width] * col_count)
+                    actual_cols = min(ws.max_column, max_cols)
+                    page_width = landscape(A4)[0] - 50
+                    
+                    if actual_cols <= 3:
+                        h_style_use = cell_style_header_big
+                        d_style_use = cell_style_big
+                    else:
+                        h_style_use = cell_style_header
+                        d_style_use = cell_style
+                    
+                    # حساب عرض الأعمدة
+                    col_max_lens = [0] * actual_cols
+                    all_rows = []
+                    for r in range(1, min(ws.max_row + 1, 50)):
+                        row_vals = []
+                        for c in range(1, actual_cols + 1):
+                            val = ws.cell(row=r, column=c).value
+                            text = str(val) if val is not None else ''
+                            if len(text) > 60:
+                                text = text[:60] + '...'
+                            row_vals.append(text)
+                            col_max_lens[c-1] = max(col_max_lens[c-1], len(text))
+                        all_rows.append(row_vals)
+                    
+                    total_weight = sum(max(w, 3) for w in col_max_lens)
+                    col_widths = []
+                    for w in col_max_lens:
+                        ratio = max(w, 3) / total_weight
+                        width = max(ratio * page_width, 30)
+                        col_widths.append(width)
+                    total_w = sum(col_widths)
+                    if total_w > page_width:
+                        scale = page_width / total_w
+                        col_widths = [cw * scale for cw in col_widths]
+                    
+                    table_data = []
+                    for r_idx, row_vals in enumerate(all_rows):
+                        row_cells = []
+                        for val in row_vals:
+                            reshaped = reshape_arabic(val)
+                            if r_idx == 0:
+                                row_cells.append(Paragraph(reshaped, h_style_use))
+                            else:
+                                row_cells.append(Paragraph(reshaped, d_style_use))
+                        table_data.append(row_cells)
+                    
+                    if not table_data:
+                        continue
+                    
+                    table = Table(table_data, colWidths=col_widths, repeatRows=1)
                     table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E79')),
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                        ('FONTNAME', (0, 0), (-1, -1), arabic_font_name),
-                        ('FONTSIZE', (0, 0), (-1, 0), 8),
-                        ('FONTSIZE', (0, 1), (-1, -1), 7),
-                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
                         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('TOPPADDING', (0, 0), (-1, -1), 4),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F8F8')]),
+                        ('TOPPADDING', (0, 0), (-1, -1), 3),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
                     ]))
-                    elements.append(table)
+                    
+                    final_elements.append(Paragraph(reshape_arabic(f"▎{sheet_name}"), title_style))
+                    final_elements.append(Spacer(1, 8))
+                    final_elements.append(table)
+                    final_elements.append(PageBreak())
                 
-                elements.append(PageBreak())
+                doc.build(final_elements)
+            else:
+                doc = SimpleDocTemplate(pdf_path, pagesize=A4,
+                                       rightMargin=30, leftMargin=30,
+                                       topMargin=40, bottomMargin=40)
+                doc.build(all_elements)
             
-            doc.build(elements)
             logger.info(f"تم تصدير PDF: {pdf_path}")
             return pdf_path
             
@@ -2294,7 +2471,7 @@ class FinalWeeklyReportGenerator:
             logger.warning(f"مكتبة PDF غير متاحة ({ie}) — يتم تخطي تصدير PDF")
             return ""
         except Exception as e:
-            logger.error(f"خطأ في تصدير PDF: {e}")
+            logger.error(f"خطأ في تصدير PDF: {e}", exc_info=True)
             return ""
 
     # ============================================================
