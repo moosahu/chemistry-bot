@@ -78,20 +78,19 @@ try:
             admin_broadcast_confirm_callback,
             admin_broadcast_cancel_callback,
             cancel_broadcast_command,
-            # === NEW: ملخص سريع ===
+            # === NEW ===
             admin_quick_summary_callback,
-            # === NEW: بحث عن طالب ===
             admin_search_student_callback,
             search_student_input_handler,
             cancel_search_command,
-            # === NEW: تصدير بزر ===
             admin_export_users_callback,
-            # === NEW: قائمة الإشعارات + حسب الصف ===
             admin_broadcast_menu_callback,
             admin_broadcast_grade_callback,
+            admin_broadcast_my_students_callback,
             broadcast_grade_selected,
-            # === NEW: قائمة تعديل الرسائل ===
             admin_edit_messages_menu_callback,
+            admin_stats_panel_button_callback,
+            admin_toggle_my_student_callback,
             # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
@@ -389,6 +388,7 @@ def main() -> None:
             entry_points=[
                 CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$"),
                 CallbackQueryHandler(admin_broadcast_grade_callback, pattern=r"^admin_broadcast_grade$"),
+                CallbackQueryHandler(admin_broadcast_my_students_callback, pattern=r"^admin_broadcast_my_students$"),
             ],
             states={
                 BROADCAST_GRADE_SELECT: [
@@ -437,6 +437,8 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_export_users_callback, pattern=r"^admin_export_users$"))
         application.add_handler(CallbackQueryHandler(admin_broadcast_menu_callback, pattern=r"^admin_broadcast_menu$"))
         application.add_handler(CallbackQueryHandler(admin_edit_messages_menu_callback, pattern=r"^admin_edit_messages_menu$"))
+        application.add_handler(CallbackQueryHandler(admin_stats_panel_button_callback, pattern=r"^stats_admin_panel_v4$"))
+        application.add_handler(CallbackQueryHandler(admin_toggle_my_student_callback, pattern=r"^toggle_my_student_"))
 
         # Add export users command handler if available
         try:

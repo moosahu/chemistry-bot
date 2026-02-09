@@ -3,11 +3,12 @@
 """
 لوحة تحكم الأدمن المحسنة
 - قائمة أزرار موحدة لكل الأدوات
-- ملخص سريع فوري
-- بحث عن طالب
-- إشعار حسب الصف
+- ملخص سريع فوري (مع عدد طلابي)
+- بحث عن طالب (مع زر تمييز ⭐)
+- إشعار حسب الصف / طلابي فقط
 - تعديل الرسائل
-- إشعار عام (مع فلتر المسجلين فقط)
+- wrapper لزر الإحصائيات
+- نظام تمييز الطلاب (is_my_student)
 """
 
 import logging
@@ -31,12 +32,38 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# === States (الأرقام القديمة محفوظة + الجديدة) ===
+# === States ===
 EDIT_MESSAGE_TEXT = 0
 BROADCAST_MESSAGE_TEXT = 1
 BROADCAST_CONFIRM = 2
 SEARCH_STUDENT_INPUT = 3
 BROADCAST_GRADE_SELECT = 4
+
+
+# ============================================================
+#  0. ضمان وجود عمود is_my_student
+# ============================================================
+async def ensure_my_student_column():
+    """التأكد من وجود عمود is_my_student في جدول users — يُنفذ مرة واحدة"""
+    conn = None
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    DO $$ BEGIN
+                        ALTER TABLE users ADD COLUMN is_my_student BOOLEAN DEFAULT FALSE;
+                    EXCEPTION
+                        WHEN duplicate_column THEN NULL;
+                    END $$;
+                """)
+                conn.commit()
+                logger.info("[TagSystem] Column is_my_student ensured")
+    except Exception as e:
+        logger.error(f"[TagSystem] Error ensuring column: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 # ============================================================
@@ -125,6 +152,8 @@ async def admin_show_tools_menu_callback(update: Update, context: ContextTypes.D
     await query.answer()
     if not await check_admin_privileges(update, context):
         return
+    # ضمان وجود العمود عند أول دخول للوحة
+    await ensure_my_student_column()
     await query.edit_message_text(text="🛠️ لوحة تحكم الأدمن:", reply_markup=get_admin_menu_keyboard())
 
 
@@ -160,10 +189,10 @@ async def admin_back_to_start_callback(update: Update, context: ContextTypes.DEF
 
 
 # ============================================================
-#  2. ملخص سريع فوري
+#  2. ملخص سريع فوري (مع عدد طلابي)
 # ============================================================
 async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """عرض ملخص سريع: مسجلين، نشطين، اختبارات"""
+    """عرض ملخص سريع: مسجلين، طلابي، نشطين، اختبارات"""
     query = update.callback_query
     await query.answer()
     if not await check_admin_privileges(update, context):
@@ -182,6 +211,10 @@ async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEF
             # عدد المسجلين
             cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE")
             total_registered = cur.fetchone()[0]
+
+            # عدد طلابي
+            cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE")
+            my_students = cur.fetchone()[0]
 
             # توزيع حسب الصف
             cur.execute("""
@@ -229,7 +262,8 @@ async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEF
 
             # آخر 5 اختبارات
             cur.execute("""
-                SELECT u.full_name, qr.score_percentage, qr.completed_at
+                SELECT u.full_name, qr.score_percentage, qr.completed_at,
+                       COALESCE(u.is_my_student, FALSE) as is_my_student
                 FROM quiz_results qr
                 JOIN users u ON qr.user_id = u.user_id
                 WHERE qr.completed_at IS NOT NULL
@@ -242,6 +276,7 @@ async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEF
         msg = f"📊 ملخص سريع — {now}\n\n"
 
         msg += f"👥 المسجلين: {total_registered}\n"
+        msg += f"⭐ طلابي: {my_students}\n"
         if grade_dist:
             for g in grade_dist:
                 msg += f"   • {g['grade']}: {g['cnt']}\n"
@@ -256,10 +291,11 @@ async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEF
         if recent_quizzes:
             msg += "\n🕐 آخر الاختبارات:\n"
             for rq in recent_quizzes:
+                star = "⭐" if rq['is_my_student'] else ""
                 name = (rq['full_name'] or "—")[:15]
                 score = rq['score_percentage'] or 0
                 time_str = rq['completed_at'].strftime("%H:%M") if rq['completed_at'] else "—"
-                msg += f"   • {name}: {score}% ({time_str})\n"
+                msg += f"   • {star}{name}: {score}% ({time_str})\n"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 تحديث", callback_data="admin_quick_summary")],
@@ -276,7 +312,7 @@ async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEF
 
 
 # ============================================================
-#  3. بحث عن طالب
+#  3. بحث عن طالب (مع is_my_student + زر تمييز)
 # ============================================================
 async def admin_search_student_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """بدء البحث عن طالب"""
@@ -308,24 +344,26 @@ async def search_student_input_handler(update: Update, context: ContextTypes.DEF
             if search_query.isdigit():
                 cur.execute("""
                     SELECT u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered,
+                           COALESCE(u.is_my_student, FALSE) as is_my_student,
                            COUNT(qr.id) as quiz_count,
                            ROUND(AVG(qr.score_percentage)::numeric, 1) as avg_score,
                            MAX(qr.completed_at) as last_quiz
                     FROM users u
                     LEFT JOIN quiz_results qr ON u.user_id = qr.user_id
                     WHERE u.user_id = %s
-                    GROUP BY u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered
+                    GROUP BY u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered, u.is_my_student
                 """, (int(search_query),))
             else:
                 cur.execute("""
                     SELECT u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered,
+                           COALESCE(u.is_my_student, FALSE) as is_my_student,
                            COUNT(qr.id) as quiz_count,
                            ROUND(AVG(qr.score_percentage)::numeric, 1) as avg_score,
                            MAX(qr.completed_at) as last_quiz
                     FROM users u
                     LEFT JOIN quiz_results qr ON u.user_id = qr.user_id
                     WHERE u.is_registered = TRUE AND u.full_name ILIKE %s
-                    GROUP BY u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered
+                    GROUP BY u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered, u.is_my_student
                     ORDER BY u.full_name
                     LIMIT 10
                 """, (f"%{search_query}%",))
@@ -342,7 +380,10 @@ async def search_student_input_handler(update: Update, context: ContextTypes.DEF
         if len(results) == 1:
             r = results[0]
             msg = _format_student_details(r)
+            is_tagged = r['is_my_student']
+            tag_btn_text = "☆ إزالة من طلابي" if is_tagged else "⭐ تمييز كطالبي"
             keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(tag_btn_text, callback_data=f"toggle_my_student_{r['user_id']}")],
                 [InlineKeyboardButton("🔍 بحث جديد", callback_data="admin_search_student")],
                 [InlineKeyboardButton("⬅️ رجوع للوحة", callback_data="admin_show_tools_menu")],
             ])
@@ -351,11 +392,12 @@ async def search_student_input_handler(update: Update, context: ContextTypes.DEF
         else:
             msg = f"🔍 نتائج البحث ({len(results)}):\n\n"
             for r in results:
+                star = "⭐ " if r['is_my_student'] else ""
                 name = r['full_name'] or "—"
                 grade = r['grade'] or "—"
                 quizzes = r['quiz_count'] or 0
                 avg = r['avg_score'] or 0
-                msg += f"• {name} | {grade} | {quizzes} اختبار | {avg}%\n"
+                msg += f"• {star}{name} | {grade} | {quizzes} اختبار | {avg}%\n"
                 msg += f"  ID: {r['user_id']}\n\n"
 
             msg += "📌 أرسل رقم ID للتفاصيل أو اسم للبحث مرة ثانية\n/cancel_search للإلغاء"
@@ -378,6 +420,7 @@ def _format_student_details(r) -> str:
     phone = r['phone'] or "—"
     grade = r['grade'] or "—"
     registered = "✅ مسجل" if r['is_registered'] else "❌ غير مسجل"
+    is_my = "⭐ طالبي" if r.get('is_my_student') else ""
     quizzes = r['quiz_count'] or 0
     avg_score = r['avg_score'] or 0
     last_quiz = r['last_quiz'].strftime("%Y-%m-%d %H:%M") if r['last_quiz'] else "—"
@@ -391,8 +434,10 @@ def _format_student_details(r) -> str:
     else:
         performance = "⚪ لم يختبر"
 
+    header = f"👤 بيانات الطالب {is_my}\n\n" if is_my else "👤 بيانات الطالب\n\n"
+
     return (
-        f"👤 بيانات الطالب\n\n"
+        f"{header}"
         f"📛 الاسم: {name}\n"
         f"🆔 ID: {r['user_id']}\n"
         f"📧 الإيميل: {email}\n"
@@ -414,10 +459,81 @@ async def cancel_search_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 # ============================================================
-#  4. تصدير المسجلين (زر بدل أمر)
+#  4. تبديل تمييز الطالب (⭐ طالبي)
+# ============================================================
+async def admin_toggle_my_student_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تبديل تمييز طالب (طالبي / ليس طالبي)"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    try:
+        target_user_id = int(query.data.replace("toggle_my_student_", ""))
+    except ValueError:
+        await query.answer("❌ خطأ في المعرف", show_alert=True)
+        return
+
+    conn = None
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # تبديل الحالة
+                cur.execute("""
+                    UPDATE users SET is_my_student = NOT COALESCE(is_my_student, FALSE)
+                    WHERE user_id = %s
+                    RETURNING is_my_student, full_name
+                """, (target_user_id,))
+                result = cur.fetchone()
+                conn.commit()
+
+                if not result:
+                    await query.answer("❌ الطالب غير موجود", show_alert=True)
+                    return
+
+                new_status = result['is_my_student']
+                name = result['full_name'] or str(target_user_id)
+                emoji = "⭐" if new_status else "☆"
+                status_text = "تم تمييزه كطالبي" if new_status else "تم إزالة التمييز"
+                await query.answer(f"{emoji} {name}: {status_text}", show_alert=True)
+
+                # إعادة عرض تفاصيل الطالب
+                cur.execute("""
+                    SELECT u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered,
+                           COALESCE(u.is_my_student, FALSE) as is_my_student,
+                           COUNT(qr.id) as quiz_count,
+                           ROUND(AVG(qr.score_percentage)::numeric, 1) as avg_score,
+                           MAX(qr.completed_at) as last_quiz
+                    FROM users u
+                    LEFT JOIN quiz_results qr ON u.user_id = qr.user_id
+                    WHERE u.user_id = %s
+                    GROUP BY u.user_id, u.full_name, u.email, u.phone, u.grade, u.is_registered, u.is_my_student
+                """, (target_user_id,))
+                student = cur.fetchone()
+                if student:
+                    msg = _format_student_details(student)
+                    is_tagged = student['is_my_student']
+                    tag_btn_text = "☆ إزالة من طلابي" if is_tagged else "⭐ تمييز كطالبي"
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton(tag_btn_text, callback_data=f"toggle_my_student_{target_user_id}")],
+                        [InlineKeyboardButton("🔍 بحث جديد", callback_data="admin_search_student")],
+                        [InlineKeyboardButton("⬅️ رجوع للوحة", callback_data="admin_show_tools_menu")],
+                    ])
+                    await query.edit_message_text(msg, reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"Error toggling student tag: {e}")
+        await query.answer(f"❌ خطأ: {str(e)[:100]}", show_alert=True)
+    finally:
+        if conn:
+            conn.close()
+
+
+# ============================================================
+#  5. تصدير المسجلين (زر بدل أمر)
 # ============================================================
 async def admin_export_users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """تصدير المسجلين عبر زر — يستدعي نفس الأمر الموجود"""
+    """تصدير المسجلين عبر زر"""
     query = update.callback_query
     await query.answer()
     if not await check_admin_privileges(update, context):
@@ -466,7 +582,7 @@ async def admin_export_users_callback(update: Update, context: ContextTypes.DEFA
 
 
 # ============================================================
-#  5. قائمة الإشعارات (عام + حسب الصف)
+#  6. قائمة الإشعارات (عام + حسب الصف + طلابي فقط)
 # ============================================================
 async def admin_broadcast_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """قائمة خيارات الإشعارات"""
@@ -475,8 +591,9 @@ async def admin_broadcast_menu_callback(update: Update, context: ContextTypes.DE
     if not await check_admin_privileges(update, context):
         return
 
-    # جلب عدد كل صف
+    # جلب عدد كل صف + طلابي
     grade_counts = {}
+    my_students_count = 0
     conn = None
     try:
         conn = connect_db()
@@ -489,6 +606,9 @@ async def admin_broadcast_menu_callback(update: Update, context: ContextTypes.DE
                 """)
                 for row in cur.fetchall():
                     grade_counts[row['grade']] = row['cnt']
+
+                cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE")
+                my_students_count = cur.fetchone()[0]
     except Exception:
         pass
     finally:
@@ -496,13 +616,14 @@ async def admin_broadcast_menu_callback(update: Update, context: ContextTypes.DE
             conn.close()
 
     total = sum(grade_counts.values())
-    msg = f"📣 إرسال إشعار\n\n👥 إجمالي المسجلين: {total}\n"
+    msg = f"📣 إرسال إشعار\n\n👥 إجمالي المسجلين: {total}\n⭐ طلابي: {my_students_count}\n"
     for g, c in grade_counts.items():
         msg += f"   • {g}: {c}\n"
     msg += "\nاختر نوع الإشعار:"
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"📣 إشعار للجميع ({total})", callback_data="admin_broadcast_start")],
+        [InlineKeyboardButton(f"⭐ إشعار لطلابي فقط ({my_students_count})", callback_data="admin_broadcast_my_students")],
         [InlineKeyboardButton("🎓 إشعار حسب الصف", callback_data="admin_broadcast_grade")],
         [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
     ])
@@ -517,10 +638,45 @@ async def admin_broadcast_start_callback(update: Update, context: ContextTypes.D
         return ConversationHandler.END
 
     context.user_data['broadcast_grade_filter'] = None
+    context.user_data['broadcast_my_students_only'] = False
     await query.edit_message_text(
         "📣 إشعار عام لجميع المسجلين\n\n"
         "أرسل نص الإشعار:\n"
         "(/cancel_broadcast للإلغاء)"
+    )
+    return BROADCAST_MESSAGE_TEXT
+
+
+# --- إشعار لطلابي فقط ---
+async def admin_broadcast_my_students_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return ConversationHandler.END
+
+    context.user_data['broadcast_grade_filter'] = None
+    context.user_data['broadcast_my_students_only'] = True
+
+    # عدد طلابي
+    conn = None
+    count = 0
+    try:
+        conn = connect_db()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM users WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE")
+                count = cur.fetchone()[0]
+    except Exception:
+        pass
+    finally:
+        if conn:
+            conn.close()
+
+    await query.edit_message_text(
+        f"⭐ إشعار لطلابي فقط\n"
+        f"👥 عدد المستهدفين: {count}\n\n"
+        f"أرسل نص الإشعار:\n"
+        f"(/cancel_broadcast للإلغاء)"
     )
     return BROADCAST_MESSAGE_TEXT
 
@@ -533,7 +689,8 @@ async def admin_broadcast_grade_callback(update: Update, context: ContextTypes.D
     if not await check_admin_privileges(update, context):
         return ConversationHandler.END
 
-    # جلب الصفوف المتاحة مع أعدادها
+    context.user_data['broadcast_my_students_only'] = False
+
     grades_info = []
     conn = None
     try:
@@ -580,7 +737,6 @@ async def broadcast_grade_selected(update: Update, context: ContextTypes.DEFAULT
     grade = query.data.replace("bcast_grade_", "")
     context.user_data['broadcast_grade_filter'] = grade
 
-    # عدد الطلاب في هذا الصف
     conn = None
     count = 0
     try:
@@ -612,7 +768,14 @@ async def received_broadcast_text(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["broadcast_text"] = broadcast_text
 
     grade_filter = context.user_data.get('broadcast_grade_filter')
-    target = f"طلاب {grade_filter}" if grade_filter else "جميع المسجلين"
+    my_students_only = context.user_data.get('broadcast_my_students_only', False)
+
+    if my_students_only:
+        target = "⭐ طلابي فقط"
+    elif grade_filter:
+        target = f"طلاب {grade_filter}"
+    else:
+        target = "جميع المسجلين"
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ نعم، إرسال", callback_data="admin_broadcast_confirm")],
@@ -640,23 +803,26 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
         return ConversationHandler.END
 
     grade_filter = context.user_data.get('broadcast_grade_filter')
+    my_students_only = context.user_data.get('broadcast_my_students_only', False)
     await query.edit_message_text("⏳ جاري الإرسال...")
 
-    # جلب المستخدمين المسجلين فقط
+    # جلب المستخدمين
     user_ids = []
     conn = None
     try:
         conn = connect_db()
         if conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                if grade_filter:
+                if my_students_only:
+                    cur.execute("SELECT user_id FROM users WHERE is_registered = TRUE AND COALESCE(is_my_student, FALSE) = TRUE")
+                elif grade_filter:
                     cur.execute("SELECT user_id FROM users WHERE is_registered = TRUE AND grade = %s", (grade_filter,))
                 else:
                     cur.execute("SELECT user_id FROM users WHERE is_registered = TRUE")
                 rows = cur.fetchall()
                 if rows:
                     user_ids = [row['user_id'] for row in rows]
-                logger.info(f"Broadcast: Found {len(user_ids)} users (grade_filter={grade_filter})")
+                logger.info(f"Broadcast: Found {len(user_ids)} users (grade={grade_filter}, my_students={my_students_only})")
     except Exception as e:
         logger.error(f"Error fetching users for broadcast: {e}")
         await query.edit_message_text("❌ خطأ في جلب المستخدمين", reply_markup=get_admin_menu_keyboard())
@@ -685,8 +851,14 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
             failed_count += 1
             failed_users.append({"user_id": user_id, "error": str(e)[:80]})
 
-    # النتيجة
-    target = f"طلاب {grade_filter}" if grade_filter else "جميع المسجلين"
+    # تحديد الهدف للعرض
+    if my_students_only:
+        target = "⭐ طلابي فقط"
+    elif grade_filter:
+        target = f"طلاب {grade_filter}"
+    else:
+        target = "جميع المسجلين"
+
     result = (
         f"اكتمل الإرسال.\n"
         f"🎯 الهدف: {target}\n"
@@ -703,7 +875,6 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
 
     await query.message.reply_text(result)
     _cleanup_broadcast_data(context)
-
     await query.message.reply_text("🛠️ لوحة تحكم الأدمن:", reply_markup=get_admin_menu_keyboard())
     return ConversationHandler.END
 
@@ -727,10 +898,11 @@ def _cleanup_broadcast_data(context):
     """تنظيف بيانات الإشعار من السياق"""
     context.user_data.pop("broadcast_text", None)
     context.user_data.pop("broadcast_grade_filter", None)
+    context.user_data.pop("broadcast_my_students_only", None)
 
 
 # ============================================================
-#  6. تعديل رسائل البوت
+#  7. تعديل رسائل البوت
 # ============================================================
 async def admin_edit_messages_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """قائمة تعديل الرسائل"""
@@ -809,3 +981,22 @@ async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.pop("editing_message_key", None)
     await update.message.reply_text("تم إلغاء التعديل.", reply_markup=get_admin_menu_keyboard())
     return ConversationHandler.END
+
+
+# ============================================================
+#  8. wrapper لفتح لوحة الإحصائيات من الزر
+# ============================================================
+async def admin_stats_panel_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """wrapper لفتح إحصائيات الأدمن من الزر بدل الأمر"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+    try:
+        from handlers.admin_interface import show_main_stats_menu_v4
+        await show_main_stats_menu_v4(update, context, query=query)
+    except ImportError:
+        await query.edit_message_text(
+            "📊 لعرض الإحصائيات استخدم الأمر:\n/adminstats_v4",
+            reply_markup=get_admin_menu_keyboard()
+        )
