@@ -2288,6 +2288,10 @@ class FinalWeeklyReportGenerator:
                     smart_recommendations.setdefault('تحسين المحتوى', []).append(
                         f"تم تجاوز {total_skipped} سؤال بسبب إنهاء الاختبار مبكراً — قد تكون الاختبارات طويلة")
             
+            # ── تحليلات تُستخدم في التوصيات ──
+            early_warnings = self.detect_early_warnings(end_date)
+            completion_rate = self.analyze_completion_rate(start_date, end_date)
+            
             # توصية الإنذار المبكر
             if early_warnings:
                 urgent = [w for w in early_warnings if 'عاجل' in w.get('مستوى الإنذار', '')]
@@ -2321,10 +2325,8 @@ class FinalWeeklyReportGenerator:
             topic_performance = self.analyze_topic_performance(start_date, end_date)
             weekly_tracking = self.get_weekly_student_tracking(end_date, weeks=4)
             speed_accuracy = self.analyze_speed_accuracy(start_date, end_date)
-            completion_rate = self.analyze_completion_rate(start_date, end_date)
             day_patterns = self.analyze_day_of_week_patterns(start_date, end_date)
             monthly_comparison = self.get_monthly_comparison(end_date)
-            early_warnings = self.detect_early_warnings(end_date)
             executive_summary = self.generate_executive_summary(
                 general_stats, user_progress, grade_analysis,
                 student_categories, improvement_trends,
