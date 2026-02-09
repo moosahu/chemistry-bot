@@ -2157,6 +2157,311 @@ class FinalWeeklyReportGenerator:
             return []
 
     # ============================================================
+    #  10. شهادات تفوق PDF
+    # ============================================================
+    def generate_certificates(self, start_date: datetime, end_date: datetime) -> List[Dict]:
+        """إنشاء شهادات تفوق PDF للطلاب المتميزين"""
+        try:
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib import colors
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            from reportlab.lib.enums import TA_CENTER
+            import arabic_reshaper
+            from bidi.algorithm import get_display
+            
+            # تسجيل الخط العربي
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            font_paths = [
+                os.path.join(project_dir, 'fonts', 'DejaVuSans.ttf'),
+                os.path.join(project_dir, '..', 'fonts', 'DejaVuSans.ttf'),
+                'fonts/DejaVuSans.ttf',
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            ]
+            font_name = 'Helvetica'
+            for fp in font_paths:
+                if os.path.exists(fp):
+                    try:
+                        pdfmetrics.registerFont(TTFont('CertFont', fp))
+                        font_name = 'CertFont'
+                        break
+                    except:
+                        pass
+            
+            def reshape_ar(text):
+                try:
+                    return get_display(arabic_reshaper.reshape(str(text)))
+                except:
+                    return str(text)
+            
+            # تحليل الطلاب
+            user_progress = self.get_user_progress_analysis(start_date, end_date)
+            
+            # معايير الشهادة
+            certificates = []
+            cert_dir = os.path.join(self.reports_dir, 'certificates')
+            os.makedirs(cert_dir, exist_ok=True)
+            
+            for student in user_progress:
+                avg = student.get('overall_avg_percentage', 0)
+                questions = student.get('total_questions_answered', 0)
+                quizzes = student.get('total_quizzes', 0)
+                name = student.get('full_name', '')
+                telegram_id = student.get('telegram_id', 0)
+                grade = student.get('grade', '')
+                trend = student.get('improvement_trend', '')
+                
+                # شروط الشهادة
+                cert_type = None
+                if avg >= 80 and questions >= 15:
+                    cert_type = 'متفوق'
+                    cert_emoji = '🥇'
+                    cert_color = '#FFD700'
+                    cert_msg = 'شهادة تفوق — أداء ممتاز'
+                elif avg >= 65 and questions >= 10:
+                    cert_type = 'متميز'
+                    cert_emoji = '🥈'
+                    cert_color = '#C0C0C0'
+                    cert_msg = 'شهادة تميز — أداء جيد'
+                elif trend == 'متحسن' and quizzes >= 3:
+                    cert_type = 'أكثر تحسناً'
+                    cert_emoji = '📈'
+                    cert_color = '#4CAF50'
+                    cert_msg = 'شهادة تقدير — أكثر تحسناً'
+                
+                if not cert_type or not telegram_id:
+                    continue
+                
+                # إنشاء PDF الشهادة
+                safe_name = name.replace(' ', '_').replace('/', '_')[:30]
+                pdf_path = os.path.join(cert_dir, f"cert_{safe_name}_{end_date.strftime('%Y%m%d')}.pdf")
+                
+                doc = SimpleDocTemplate(pdf_path, pagesize=landscape(A4),
+                                       rightMargin=50, leftMargin=50,
+                                       topMargin=40, bottomMargin=40)
+                
+                # أنماط النصوص
+                title_s = ParagraphStyle('CT', fontName=font_name, fontSize=28,
+                                        leading=34, alignment=TA_CENTER,
+                                        textColor=colors.HexColor('#1F4E79'))
+                subtitle_s = ParagraphStyle('CS', fontName=font_name, fontSize=14,
+                                          leading=18, alignment=TA_CENTER,
+                                          textColor=colors.HexColor('#666666'))
+                name_s = ParagraphStyle('CN', fontName=font_name, fontSize=24,
+                                       leading=30, alignment=TA_CENTER,
+                                       textColor=colors.HexColor('#2C3E50'))
+                detail_s = ParagraphStyle('CD', fontName=font_name, fontSize=16,
+                                         leading=20, alignment=TA_CENTER,
+                                         textColor=colors.HexColor('#34495E'))
+                badge_s = ParagraphStyle('CB', fontName=font_name, fontSize=36,
+                                        leading=42, alignment=TA_CENTER)
+                footer_s = ParagraphStyle('CF', fontName=font_name, fontSize=10,
+                                         leading=12, alignment=TA_CENTER,
+                                         textColor=colors.HexColor('#999999'))
+                
+                period = f"{start_date.strftime('%Y/%m/%d')} — {end_date.strftime('%Y/%m/%d')}"
+                
+                elems = []
+                elems.append(Spacer(1, 30))
+                
+                # إطار علوي
+                border_data = [['']]
+                border_table = Table(border_data, colWidths=[700], rowHeights=[3])
+                border_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#1F4E79')),
+                ]))
+                elems.append(border_table)
+                elems.append(Spacer(1, 25))
+                
+                elems.append(Paragraph(reshape_ar("🧪 بوت كيم تحصيلي"), subtitle_s))
+                elems.append(Spacer(1, 15))
+                elems.append(Paragraph(reshape_ar(cert_msg), title_s))
+                elems.append(Spacer(1, 10))
+                elems.append(Paragraph(cert_emoji, badge_s))
+                elems.append(Spacer(1, 20))
+                elems.append(Paragraph(reshape_ar("يُمنح هذا التقدير للطالب/ـة"), subtitle_s))
+                elems.append(Spacer(1, 10))
+                elems.append(Paragraph(reshape_ar(name), name_s))
+                elems.append(Spacer(1, 10))
+                elems.append(Paragraph(reshape_ar(f"الصف: {grade}"), detail_s))
+                elems.append(Spacer(1, 20))
+                
+                # تفاصيل الأداء
+                stats_text = f"المعدل: {avg}% | الاختبارات: {quizzes} | الأسئلة: {questions}"
+                elems.append(Paragraph(reshape_ar(stats_text), detail_s))
+                elems.append(Spacer(1, 15))
+                elems.append(Paragraph(reshape_ar(f"الفترة: {period}"), subtitle_s))
+                elems.append(Spacer(1, 30))
+                
+                # إطار سفلي
+                elems.append(border_table)
+                elems.append(Spacer(1, 10))
+                elems.append(Paragraph(reshape_ar("تم إنشاء هذه الشهادة تلقائياً بواسطة نظام كيم تحصيلي"), footer_s))
+                
+                doc.build(elems)
+                
+                certificates.append({
+                    'telegram_id': telegram_id,
+                    'name': name,
+                    'grade': grade,
+                    'cert_type': cert_type,
+                    'avg_score': avg,
+                    'pdf_path': pdf_path,
+                    'message': f"{cert_emoji} مبروك {name}!\n\n"
+                              f"حصلت على {cert_msg}\n"
+                              f"📊 معدلك: {avg}%\n"
+                              f"📝 اختباراتك: {quizzes}\n\n"
+                              f"استمر وبالتوفيق! 💪"
+                })
+                
+                logger.info(f"تم إنشاء شهادة {cert_type} لـ {name}")
+            
+            logger.info(f"تم إنشاء {len(certificates)} شهادة تفوق")
+            return certificates
+            
+        except ImportError as ie:
+            logger.warning(f"مكتبة PDF غير متاحة: {ie}")
+            return []
+        except Exception as e:
+            logger.error(f"خطأ في إنشاء الشهادات: {e}", exc_info=True)
+            return []
+
+    # ============================================================
+    #  11. إشعارات الطلاب الضعاف
+    # ============================================================
+    def get_students_needing_notification(self, start_date: datetime, end_date: datetime) -> List[Dict]:
+        """تحديد الطلاب اللي يحتاجون إشعارات تشجيعية أو تنبيهية"""
+        try:
+            user_progress = self.get_user_progress_analysis(start_date, end_date)
+            notifications = []
+            
+            for student in user_progress:
+                avg = student.get('overall_avg_percentage', 0)
+                questions = student.get('total_questions_answered', 0)
+                quizzes = student.get('total_quizzes', 0)
+                name = student.get('full_name', '')
+                telegram_id = student.get('telegram_id', 0)
+                trend = student.get('improvement_trend', '')
+                perf = student.get('performance_level', '')
+                speed_pattern = student.get('activity_level', '')
+                
+                if not telegram_id or quizzes == 0:
+                    continue
+                
+                notif_type = None
+                message = None
+                
+                # 1. طالب ضعيف (أقل من 40%)
+                if avg < 40 and questions >= 5:
+                    notif_type = 'ضعيف'
+                    message = (
+                        f"👋 مرحباً {name}\n\n"
+                        f"لاحظنا إنك تحتاج شوية مراجعة 📖\n"
+                        f"معدلك الحالي: {avg}%\n\n"
+                        f"💡 نصيحة: حاول تراجع المفاهيم الأساسية أول قبل تحل الاختبارات\n"
+                        f"📌 ركز على موضوع واحد وكرره لين تتقنه\n\n"
+                        f"أنت تقدر! 💪"
+                    )
+                
+                # 2. طالب متسرع (درجة متوسطة-منخفضة مع سرعة)
+                elif avg < 60 and avg >= 40:
+                    # نحسب السرعة من الداتا
+                    try:
+                        speed_data = self.analyze_speed_accuracy(start_date, end_date)
+                        for sd in speed_data:
+                            if sd.get('telegram_id') == telegram_id and sd.get('pattern') == 'متسرع':
+                                notif_type = 'متسرع'
+                                message = (
+                                    f"👋 مرحباً {name}\n\n"
+                                    f"⚡ لاحظنا إنك تجاوب بسرعة — وهذا ممكن يأثر على درجتك\n"
+                                    f"معدلك: {avg}% | سرعتك: {sd.get('avg_seconds_per_q', 0):.0f} ثانية/سؤال\n\n"
+                                    f"💡 جرب تقرأ السؤال مرتين قبل تختار الإجابة\n"
+                                    f"📌 خذ وقتك — الدقة أهم من السرعة!\n\n"
+                                    f"بالتوفيق! 🎯"
+                                )
+                                break
+                    except:
+                        pass
+                    
+                    # لو مو متسرع بس متوسط
+                    if not notif_type:
+                        notif_type = 'متوسط'
+                        message = (
+                            f"👋 مرحباً {name}\n\n"
+                            f"أداؤك متوسط وتقدر ترفعه! 📈\n"
+                            f"معدلك: {avg}%\n\n"
+                            f"💡 حاول تحل اختبارات أكثر عشان تتحسن\n"
+                            f"📌 راجع الأسئلة اللي غلطت فيها\n\n"
+                            f"نحن واثقين فيك! 🌟"
+                        )
+                
+                # 3. طالب متراجع
+                elif trend == 'متراجع' and avg < 70:
+                    notif_type = 'متراجع'
+                    message = (
+                        f"👋 مرحباً {name}\n\n"
+                        f"📉 لاحظنا تراجع بسيط في أدائك\n"
+                        f"معدلك الحالي: {avg}%\n\n"
+                        f"💡 لا تقلق! التراجع طبيعي — المهم تستمر\n"
+                        f"📌 خصص وقت يومي بسيط للمراجعة\n\n"
+                        f"بالتوفيق! 💪"
+                    )
+                
+                if notif_type and message:
+                    notifications.append({
+                        'telegram_id': telegram_id,
+                        'name': name,
+                        'grade': student.get('grade', ''),
+                        'type': notif_type,
+                        'avg_score': avg,
+                        'message': message
+                    })
+            
+            logger.info(f"تم تحديد {len(notifications)} طالب يحتاج إشعار")
+            return notifications
+            
+        except Exception as e:
+            logger.error(f"خطأ في تحديد الإشعارات: {e}", exc_info=True)
+            return []
+
+    # ============================================================
+    #  12. تقرير شهري مفصّل
+    # ============================================================
+    def create_monthly_report(self, end_date: datetime = None) -> str:
+        """إنشاء تقرير شهري شامل (30 يوم)"""
+        try:
+            if not end_date:
+                end_date = datetime.now()
+            start_date = end_date - timedelta(days=30)
+            
+            logger.info(f"بدء إنشاء التقرير الشهري: {start_date.strftime('%Y-%m-%d')} إلى {end_date.strftime('%Y-%m-%d')}")
+            
+            # نفس التقرير الأسبوعي لكن بفترة 30 يوم + تحليلات إضافية
+            report_path = self.create_final_excel_report(start_date, end_date)
+            
+            if report_path:
+                # إعادة تسمية الملف
+                monthly_path = report_path.replace('final_weekly_report', 'monthly_report')
+                os.rename(report_path, monthly_path)
+                
+                # PDF
+                pdf_old = report_path.replace('.xlsx', '.pdf')
+                pdf_new = monthly_path.replace('.xlsx', '.pdf')
+                if os.path.exists(pdf_old):
+                    os.rename(pdf_old, pdf_new)
+                
+                logger.info(f"تم إنشاء التقرير الشهري: {monthly_path}")
+                return monthly_path
+            
+            return ""
+            
+        except Exception as e:
+            logger.error(f"خطأ في إنشاء التقرير الشهري: {e}", exc_info=True)
+            return ""
+
+    # ============================================================
     #  9. تصدير PDF
     # ============================================================
     def export_report_pdf(self, excel_path: str) -> str:
@@ -3306,31 +3611,81 @@ class FinalWeeklyReportScheduler:
             return False
     
     def generate_and_send_weekly_report(self):
-        """إنشاء وإرسال التقرير الأسبوعي"""
+        """إنشاء وإرسال التقرير الأسبوعي + الشهادات + الإشعارات"""
         try:
-            # تحديد فترة الأسبوع الماضي
             end_date = datetime.now()
             start_date = end_date - timedelta(days=7)
             
             logger.info(f"بدء إنشاء التقرير الأسبوعي للفترة: {start_date} إلى {end_date}")
             
-            # إنشاء التقرير
+            # 1. إنشاء التقرير
             report_path = self.report_generator.create_final_excel_report(start_date, end_date)
             
-            # إرسال التقرير
+            # 2. إرسال التقرير بالإيميل
             if self.send_email_report(report_path, start_date, end_date):
                 logger.info("تم إنشاء وإرسال التقرير الأسبوعي بنجاح")
             else:
                 logger.error("فشل في إرسال التقرير الأسبوعي")
+            
+            # 3. إنشاء الشهادات (تُحفظ لإرسالها عبر التليجرام)
+            try:
+                self._pending_certificates = self.report_generator.generate_certificates(start_date, end_date)
+                logger.info(f"تم تجهيز {len(self._pending_certificates)} شهادة للإرسال")
+            except Exception as ce:
+                logger.error(f"خطأ في إنشاء الشهادات: {ce}")
+                self._pending_certificates = []
+            
+            # 4. تحديد الطلاب اللي يحتاجون إشعارات
+            try:
+                self._pending_notifications = self.report_generator.get_students_needing_notification(start_date, end_date)
+                logger.info(f"تم تجهيز {len(self._pending_notifications)} إشعار للإرسال")
+            except Exception as ne:
+                logger.error(f"خطأ في تحديد الإشعارات: {ne}")
+                self._pending_notifications = []
                 
         except Exception as e:
             logger.error(f"خطأ في إنشاء التقرير الأسبوعي: {e}")
     
+    def generate_and_send_monthly_report(self):
+        """إنشاء وإرسال التقرير الشهري"""
+        try:
+            end_date = datetime.now()
+            
+            logger.info("بدء إنشاء التقرير الشهري...")
+            
+            report_path = self.report_generator.create_monthly_report(end_date)
+            
+            if report_path and self.send_email_report(report_path, end_date - timedelta(days=30), end_date):
+                logger.info("تم إنشاء وإرسال التقرير الشهري بنجاح")
+            else:
+                logger.error("فشل في إرسال التقرير الشهري")
+                
+        except Exception as e:
+            logger.error(f"خطأ في التقرير الشهري: {e}")
+    
+    def get_pending_certificates(self) -> List[Dict]:
+        """الحصول على الشهادات الجاهزة للإرسال عبر التليجرام"""
+        certs = getattr(self, '_pending_certificates', [])
+        self._pending_certificates = []  # مسح بعد الاسترجاع
+        return certs
+    
+    def get_pending_notifications(self) -> List[Dict]:
+        """الحصول على الإشعارات الجاهزة للإرسال عبر التليجرام"""
+        notifs = getattr(self, '_pending_notifications', [])
+        self._pending_notifications = []
+        return notifs
+    
     def start_scheduler(self):
         """بدء جدولة التقارير"""
         try:
-            # جدولة التقرير كل يوم أحد الساعة 9 صباحاً
+            # تقرير أسبوعي: كل يوم أحد الساعة 9 صباحاً
             schedule.every().sunday.at("09:00").do(self.generate_and_send_weekly_report)
+            
+            # تقرير شهري: أول يوم من كل شهر (نستخدم فحص يومي)
+            def monthly_check():
+                if datetime.now().day == 1:
+                    self.generate_and_send_monthly_report()
+            schedule.every().day.at("10:00").do(monthly_check)
             
             self.running = True
             
@@ -3342,7 +3697,7 @@ class FinalWeeklyReportScheduler:
             self.scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
             self.scheduler_thread.start()
             
-            logger.info("تم بدء جدولة التقارير الأسبوعية - كل يوم أحد الساعة 9:00 صباحاً")
+            logger.info("تم بدء جدولة التقارير — أسبوعي: الأحد 9 صباحاً | شهري: أول كل شهر 10 صباحاً")
             
         except Exception as e:
             logger.error(f"خطأ في بدء جدولة التقارير: {e}")

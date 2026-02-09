@@ -100,11 +100,6 @@ try:
             admin_grade_toggle_student_callback,
             admin_untag_all_confirm_callback,
             admin_untag_all_execute_callback,
-            admin_report_weekly_callback,
-            admin_report_monthly_callback,
-            admin_report_certificates_callback,
-            admin_report_notify_callback,
-            admin_report_notify_confirm_callback,
             # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
@@ -465,12 +460,6 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_grade_toggle_student_callback, pattern=r"^gtoggle_"))
         application.add_handler(CallbackQueryHandler(admin_untag_all_confirm_callback, pattern=r"^admin_untag_all_confirm$"))
         application.add_handler(CallbackQueryHandler(admin_untag_all_execute_callback, pattern=r"^admin_untag_all_execute$"))
-        # === Report, Certificates & Notifications handlers ===
-        application.add_handler(CallbackQueryHandler(admin_report_weekly_callback, pattern=r"^admin_report_weekly$"))
-        application.add_handler(CallbackQueryHandler(admin_report_monthly_callback, pattern=r"^admin_report_monthly$"))
-        application.add_handler(CallbackQueryHandler(admin_report_certificates_callback, pattern=r"^admin_report_certificates$"))
-        application.add_handler(CallbackQueryHandler(admin_report_notify_callback, pattern=r"^admin_report_notify$"))
-        application.add_handler(CallbackQueryHandler(admin_report_notify_confirm_callback, pattern=r"^admin_report_notify_confirm$"))
         # noop handler for page number display
         async def noop_callback(update, context):
             await update.callback_query.answer()

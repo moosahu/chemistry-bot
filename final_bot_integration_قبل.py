@@ -105,25 +105,22 @@ async def final_report_status_command(update: Update, context: ContextTypes.DEFA
         
         # جدولة التقارير
         status_message += f"\n📅 جدولة التقارير:\n"
-        status_message += f"• أسبوعي: كل يوم أحد الساعة 9:00 صباحاً\n"
-        status_message += f"• شهري: أول كل شهر الساعة 10:00 صباحاً\n"
+        status_message += f"• التوقيت: كل يوم أحد الساعة 9:00 صباحاً\n"
+        status_message += f"• المحتوى: إحصائيات الأسبوع الماضي\n"
+        status_message += f"• التنسيق: ملف Excel شامل مع رسوم بيانية\n"
         
-        # المميزات
-        status_message += f"\n🌟 المميزات:\n"
-        status_message += f"• ✅ تقرير أسبوعي + شهري\n"
-        status_message += f"• ✅ شهادات تفوق PDF تلقائية\n"
-        status_message += f"• ✅ إشعارات تشجيعية للطلاب الضعاف\n"
-        status_message += f"• ✅ تحليل السرعة والدقة\n"
-        status_message += f"• ✅ ملخص تنفيذي + توصيات ذكية\n"
+        # المميزات الجديدة
+        status_message += f"\n🌟 المميزات المحسنة:\n"
+        status_message += f"• ✅ حل مشكلة الخطوط العربية\n"
+        status_message += f"• ✅ رسوم بيانية ملونة وواضحة\n"
+        status_message += f"• ✅ تحليلات ذكية وتوصيات عملية\n"
+        status_message += f"• ✅ تقارير Excel متعددة الأوراق\n"
         
         # الأوامر المتاحة
         status_message += f"\n🛠️ الأوامر المتاحة:\n"
-        status_message += f"• /final_generate - تقرير أسبوعي فوري\n"
-        status_message += f"• /final_monthly - تقرير شهري\n"
-        status_message += f"• /final_certificates - إرسال شهادات التفوق\n"
-        status_message += f"• /final_notify - إشعارات للطلاب الضعاف\n"
+        status_message += f"• /final_generate - إنشاء تقرير فوري\n"
+        status_message += f"• /final_status - عرض هذه الحالة\n"
         status_message += f"• /final_analytics - تحليلات سريعة\n"
-        status_message += f"• /final_status - حالة النظام\n"
         
         await update.message.reply_text(status_message)
         
@@ -232,201 +229,13 @@ async def final_analytics_command(update: Update, context: ContextTypes.DEFAULT_
 def add_final_admin_report_commands(application, reporting_system):
     """إضافة أوامر التقارير النهائية للمدراء"""
     try:
+        # إضافة معالجات الأوامر
         application.add_handler(CommandHandler("final_status", final_report_status_command))
         application.add_handler(CommandHandler("final_generate", final_generate_report_command))
         application.add_handler(CommandHandler("final_analytics", final_analytics_command))
-        application.add_handler(CommandHandler("final_monthly", final_monthly_report_command))
-        application.add_handler(CommandHandler("final_certificates", final_certificates_command))
-        application.add_handler(CommandHandler("final_notify", final_notify_command))
-        application.add_handler(CommandHandler("final_notify_confirm", final_notify_confirm_command))
         
         logger.info("تم إضافة أوامر التقارير النهائية للمدراء بنجاح")
         
     except Exception as e:
         logger.error(f"خطأ في إضافة أوامر التقارير النهائية: {e}")
-
-
-# ============================================================
-#  أمر التقرير الشهري
-# ============================================================
-async def final_monthly_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """إنشاء تقرير شهري"""
-    try:
-        user_id = update.effective_user.id
-        if not is_admin_user(user_id):
-            await update.message.reply_text("❌ هذا الأمر للمدراء فقط.")
-            return
-        
-        await update.message.reply_text("⏳ جاري إنشاء التقرير الشهري (30 يوم)...")
-        
-        scheduler = FinalWeeklyReportScheduler()
-        scheduler.generate_and_send_monthly_report()
-        
-        await update.message.reply_text(
-            "✅ تم إنشاء وإرسال التقرير الشهري بنجاح\n"
-            "📧 تم إرساله لإيميلك"
-        )
-        
-    except Exception as e:
-        logger.error(f"خطأ في التقرير الشهري: {e}")
-        await update.message.reply_text(f"❌ خطأ: {str(e)}")
-
-
-# ============================================================
-#  أمر إرسال شهادات التفوق
-# ============================================================
-async def final_certificates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """إنشاء وإرسال شهادات التفوق للطلاب المتميزين"""
-    try:
-        user_id = update.effective_user.id
-        if not is_admin_user(user_id):
-            await update.message.reply_text("❌ هذا الأمر للمدراء فقط.")
-            return
-        
-        await update.message.reply_text("⏳ جاري إنشاء شهادات التفوق...")
-        
-        from final_weekly_report import FinalWeeklyReportGenerator
-        from datetime import timedelta
-        
-        generator = FinalWeeklyReportGenerator()
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=7)
-        
-        certificates = generator.generate_certificates(start_date, end_date)
-        
-        if not certificates:
-            await update.message.reply_text("📋 لا يوجد طلاب مؤهلين للشهادات هذا الأسبوع")
-            return
-        
-        await update.message.reply_text(f"🏆 تم إنشاء {len(certificates)} شهادة\nجاري الإرسال...")
-        
-        sent = 0
-        failed = 0
-        
-        for cert in certificates:
-            try:
-                telegram_id = cert['telegram_id']
-                pdf_path = cert['pdf_path']
-                message = cert['message']
-                
-                # إرسال الرسالة التشجيعية
-                await context.bot.send_message(
-                    chat_id=telegram_id,
-                    text=message
-                )
-                
-                # إرسال الشهادة PDF
-                if os.path.exists(pdf_path):
-                    with open(pdf_path, 'rb') as pdf_file:
-                        await context.bot.send_document(
-                            chat_id=telegram_id,
-                            document=pdf_file,
-                            filename=f"شهادة_{cert['name']}.pdf",
-                            caption=f"🏆 شهادة {cert['cert_type']}"
-                        )
-                
-                sent += 1
-                logger.info(f"تم إرسال شهادة لـ {cert['name']} ({telegram_id})")
-                
-            except Exception as se:
-                failed += 1
-                logger.warning(f"فشل إرسال شهادة لـ {cert.get('name', '?')}: {se}")
-        
-        await update.message.reply_text(
-            f"✅ تم إرسال الشهادات\n"
-            f"📨 نجح: {sent}\n"
-            f"❌ فشل: {failed}"
-        )
-        
-    except Exception as e:
-        logger.error(f"خطأ في إرسال الشهادات: {e}")
-        await update.message.reply_text(f"❌ خطأ: {str(e)}")
-
-
-# ============================================================
-#  أمر إرسال إشعارات للطلاب الضعاف
-# ============================================================
-async def final_notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """إرسال إشعارات تشجيعية للطلاب الضعاف والمتسرعين"""
-    try:
-        user_id = update.effective_user.id
-        if not is_admin_user(user_id):
-            await update.message.reply_text("❌ هذا الأمر للمدراء فقط.")
-            return
-        
-        await update.message.reply_text("⏳ جاري تحديد الطلاب وتجهيز الإشعارات...")
-        
-        from final_weekly_report import FinalWeeklyReportGenerator
-        from datetime import timedelta
-        
-        generator = FinalWeeklyReportGenerator()
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=7)
-        
-        notifications = generator.get_students_needing_notification(start_date, end_date)
-        
-        if not notifications:
-            await update.message.reply_text("✅ لا يوجد طلاب يحتاجون إشعارات — أداء الجميع مقبول")
-            return
-        
-        # عرض ملخص قبل الإرسال
-        summary = f"📋 تم تحديد {len(notifications)} طالب:\n\n"
-        for n in notifications:
-            emoji = {'ضعيف': '🔴', 'متسرع': '⚡', 'متوسط': '🟡', 'متراجع': '📉'}.get(n['type'], '📌')
-            summary += f"{emoji} {n['name']} — {n['type']} ({n['avg_score']}%)\n"
-        summary += f"\nهل تبي أرسل الإشعارات؟ اضغط /final_notify_confirm"
-        
-        # حفظ الإشعارات في context
-        context.user_data['pending_notifications'] = notifications
-        
-        await update.message.reply_text(summary)
-        
-    except Exception as e:
-        logger.error(f"خطأ في تحديد الإشعارات: {e}")
-        await update.message.reply_text(f"❌ خطأ: {str(e)}")
-
-
-async def final_notify_confirm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تأكيد إرسال الإشعارات"""
-    try:
-        user_id = update.effective_user.id
-        if not is_admin_user(user_id):
-            return
-        
-        notifications = context.user_data.get('pending_notifications', [])
-        
-        if not notifications:
-            await update.message.reply_text("❌ لا توجد إشعارات معلقة. استخدم /final_notify أولاً")
-            return
-        
-        await update.message.reply_text(f"📨 جاري إرسال {len(notifications)} إشعار...")
-        
-        sent = 0
-        failed = 0
-        
-        for notif in notifications:
-            try:
-                await context.bot.send_message(
-                    chat_id=notif['telegram_id'],
-                    text=notif['message']
-                )
-                sent += 1
-                logger.info(f"تم إرسال إشعار لـ {notif['name']} ({notif['type']})")
-                
-            except Exception as se:
-                failed += 1
-                logger.warning(f"فشل إرسال إشعار لـ {notif.get('name', '?')}: {se}")
-        
-        # مسح الإشعارات المعلقة
-        context.user_data['pending_notifications'] = []
-        
-        await update.message.reply_text(
-            f"✅ تم إرسال الإشعارات\n"
-            f"📨 نجح: {sent}\n"
-            f"❌ فشل: {failed}"
-        )
-        
-    except Exception as e:
-        logger.error(f"خطأ في إرسال الإشعارات: {e}")
-        await update.message.reply_text(f"❌ خطأ: {str(e)}")
 
