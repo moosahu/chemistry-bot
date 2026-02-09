@@ -2241,54 +2241,43 @@ class FinalWeeklyReportGenerator:
             # ══ قراءة الإكسل ══
             wb = openpyxl.load_workbook(excel_path)
             
-            # الشيتات المهمة — مع تحديد الأعمدة المطلوبة لكل شيت
-            # None = كل الأعمدة، list = أرقام الأعمدة المحددة (1-indexed)
+            # الشيتات المهمة وعدد أعمدتها الأقصى
             pdf_sheets = [
-                ('الملخص التنفيذي', None),
-                ('لوحة المعلومات', None),
-                # ترتيب: الترتيب، الاسم، الصف، المتوسط، الأسئلة، الاختبارات، صحيحة، خاطئة، مستوى الأداء
-                ('ترتيب الطلاب', [1, 2, 3, 4, 5, 6, 7, 8, 9]),
-                ('أداء الصفوف', None),
-                ('أداء حسب المواضيع', None),
-                ('تحليل السرعة والدقة', None),
-                ('طلاب يحتاجون متابعة', None),
-                # الأسئلة الصعبة: نص السؤال، الاختبار، الإجابة، المحاولات، الصحيحة، الخاطئة، معدل الخطأ%، الصعوبة
-                ('الأسئلة الصعبة', [2, 3, 4, 5, 6, 7, 9, 11]),
-                ('التوصيات', None),
+                ('الملخص التنفيذي', 1),
+                ('لوحة المعلومات', 2),
+                ('ترتيب الطلاب', 12),
+                ('أداء الصفوف', 6),
+                ('أداء حسب المواضيع', 9),
+                ('تحليل السرعة والدقة', 9),
+                ('طلاب يحتاجون متابعة', 8),
+                ('الأسئلة الصعبة', 13),
+                ('التوصيات', 2),
             ]
             
-            for sheet_name, col_indices in pdf_sheets:
+            for sheet_name, max_cols in pdf_sheets:
                 if sheet_name not in wb.sheetnames:
                     continue
                 ws = wb[sheet_name]
                 if ws.max_row < 2:
                     continue
                 
-                # تحديد الأعمدة
-                if col_indices:
-                    selected_cols = [c for c in col_indices if c <= ws.max_column]
-                else:
-                    selected_cols = list(range(1, ws.max_column + 1))
-                
-                num_cols = len(selected_cols)
-                use_big = num_cols <= 3
+                actual_cols = min(ws.max_column, max_cols)
+                use_big = actual_cols <= 3
                 hs = h_style_big if use_big else h_style
                 ds = d_style_big if use_big else d_style
                 
                 # ── قراءة البيانات ──
-                col_max_lens = [0] * num_cols
+                col_max_lens = [0] * actual_cols
                 raw_rows = []
-                max_text = 45 if num_cols > 8 else 55
-                
                 for r in range(1, min(ws.max_row + 1, 50)):
                     row = []
-                    for idx, c in enumerate(selected_cols):
+                    for c in range(1, actual_cols + 1):
                         val = ws.cell(row=r, column=c).value
                         text = str(val) if val is not None else ''
-                        if len(text) > max_text:
-                            text = text[:max_text] + '...'
+                        if len(text) > 55:
+                            text = text[:55] + '...'
                         row.append(text)
-                        col_max_lens[idx] = max(col_max_lens[idx], len(text))
+                        col_max_lens[c-1] = max(col_max_lens[c-1], len(text))
                     raw_rows.append(row)
                 
                 if not raw_rows:
@@ -2299,14 +2288,11 @@ class FinalWeeklyReportGenerator:
                 col_max_lens = col_max_lens[::-1]
                 
                 # ── حساب عرض الأعمدة الذكي ──
-                # حد أدنى أعلى للأعمدة الكثيرة
-                min_width = 40 if num_cols > 6 else 50
-                
-                total_weight = sum(max(w, 4) for w in col_max_lens)
+                total_weight = sum(max(w, 3) for w in col_max_lens)
                 col_widths = []
                 for w in col_max_lens:
-                    ratio = max(w, 4) / total_weight
-                    width = max(ratio * page_width, min_width)
+                    ratio = max(w, 3) / total_weight
+                    width = max(ratio * page_width, 28)
                     col_widths.append(width)
                 
                 # ضبط ليناسب عرض الصفحة
