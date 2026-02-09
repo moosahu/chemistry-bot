@@ -2160,23 +2160,22 @@ class FinalWeeklyReportGenerator:
     #  9. تصدير PDF
     # ============================================================
     def export_report_pdf(self, excel_path: str) -> str:
-        """تصدير التقرير كـ PDF جاهز للطباعة مع تنسيق محسن"""
+        """تصدير التقرير كـ PDF جاهز للطباعة — أفقي مع RTL"""
         try:
             from reportlab.lib.pagesizes import A4, landscape
             from reportlab.lib import colors
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, 
-                                           Paragraph, Spacer, PageBreak, KeepTogether)
+                                           Paragraph, Spacer, PageBreak)
             from reportlab.pdfbase import pdfmetrics
             from reportlab.pdfbase.ttfonts import TTFont
             from reportlab.lib.enums import TA_RIGHT, TA_CENTER
-            from reportlab.lib.units import mm
             import arabic_reshaper
             from bidi.algorithm import get_display
             
             pdf_path = excel_path.replace('.xlsx', '.pdf')
             
-            # ══ البحث عن خط يدعم العربي ══
+            # ══ تسجيل الخط العربي ══
             arabic_font_name = None
             project_dir = os.path.dirname(os.path.abspath(__file__))
             font_search_paths = [
@@ -2185,158 +2184,134 @@ class FinalWeeklyReportGenerator:
                 'fonts/DejaVuSans.ttf',
                 '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
                 '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
-                '/usr/share/fonts/TTF/DejaVuSans.ttf',
             ]
-            
             for font_path in font_search_paths:
                 if os.path.exists(font_path):
                     try:
                         pdfmetrics.registerFont(TTFont('ArabicFont', font_path))
                         arabic_font_name = 'ArabicFont'
-                        logger.info(f"تم تسجيل خط عربي: {font_path}")
                         break
-                    except Exception as fe:
-                        logger.warning(f"تعذر تسجيل الخط {font_path}: {fe}")
-            
+                    except:
+                        pass
             if not arabic_font_name:
-                logger.warning("لم يتم العثور على خط عربي — PDF قد لا يعرض العربي بشكل صحيح")
                 arabic_font_name = 'Helvetica'
             
-            def reshape_arabic(text):
-                """تحويل النص العربي لعرض صحيح"""
+            def reshape_ar(text):
                 if not text or not isinstance(text, str):
                     return str(text) if text is not None else ''
                 try:
-                    reshaped = arabic_reshaper.reshape(str(text))
-                    return get_display(reshaped)
+                    return get_display(arabic_reshaper.reshape(str(text)))
                 except:
                     return str(text)
             
-            # ── أنماط النصوص ──
-            cell_style = ParagraphStyle(
-                'CellStyle', fontName=arabic_font_name,
-                fontSize=6, leading=8, alignment=TA_CENTER,
-                wordWrap='CJK'
-            )
-            cell_style_header = ParagraphStyle(
-                'CellStyleHeader', fontName=arabic_font_name,
-                fontSize=7, leading=9, alignment=TA_CENTER,
-                textColor=colors.white, wordWrap='CJK'
-            )
-            cell_style_big = ParagraphStyle(
-                'CellStyleBig', fontName=arabic_font_name,
-                fontSize=8, leading=10, alignment=TA_CENTER,
-                wordWrap='CJK'
-            )
-            cell_style_header_big = ParagraphStyle(
-                'CellStyleHeaderBig', fontName=arabic_font_name,
-                fontSize=9, leading=11, alignment=TA_CENTER,
-                textColor=colors.white, wordWrap='CJK'
-            )
-            
-            # قراءة Excel
-            wb = openpyxl.load_workbook(excel_path)
-            
-            # ═══ بناء الصفحات ═══
-            # الشيتات وإعداداتها: (اسم, عدد_أعمدة_أقصى, أفقي؟)
-            important_sheets = [
-                ('الملخص التنفيذي', 1, False),
-                ('لوحة المعلومات', 2, False),
-                ('ترتيب الطلاب', 10, True),
-                ('أداء الصفوف', 6, False),
-                ('أداء حسب المواضيع', 9, True),
-                ('تحليل السرعة والدقة', 9, True),
-                ('طلاب يحتاجون متابعة', 8, True),
-                ('الأسئلة الصعبة', 8, True),
-                ('التوصيات', 2, False),
-            ]
-            
-            # ── تجهيز الصفحات العمودية (Portrait) ──
-            portrait_elements = []
-            landscape_pages = []  # [(sheet_name, data)]
+            # ══ أنماط الخلايا ══
+            h_style = ParagraphStyle('H', fontName=arabic_font_name, fontSize=7,
+                                     leading=9, alignment=TA_CENTER, 
+                                     textColor=colors.white, wordWrap='CJK')
+            d_style = ParagraphStyle('D', fontName=arabic_font_name, fontSize=6.5,
+                                     leading=8, alignment=TA_CENTER, wordWrap='CJK')
+            h_style_big = ParagraphStyle('HB', fontName=arabic_font_name, fontSize=9,
+                                         leading=11, alignment=TA_CENTER,
+                                         textColor=colors.white, wordWrap='CJK')
+            d_style_big = ParagraphStyle('DB', fontName=arabic_font_name, fontSize=8,
+                                         leading=10, alignment=TA_CENTER, wordWrap='CJK')
             
             styles = getSampleStyleSheet()
-            title_style = ParagraphStyle('ArabicTitle', parent=styles['Title'],
+            title_style = ParagraphStyle('Title_AR', parent=styles['Title'],
                                         fontName=arabic_font_name,
                                         alignment=TA_CENTER, fontSize=16)
-            subtitle_style = ParagraphStyle('ArabicSubtitle', parent=styles['Normal'],
+            subtitle_style = ParagraphStyle('Sub_AR', parent=styles['Normal'],
                                           fontName=arabic_font_name,
                                           alignment=TA_CENTER, fontSize=10,
                                           textColor=colors.grey)
             
-            # عنوان التقرير
-            portrait_elements.append(Paragraph(reshape_arabic("📊 التقرير الأسبوعي"), title_style))
-            portrait_elements.append(Paragraph(reshape_arabic("بوت كيم تحصيلي"), subtitle_style))
-            portrait_elements.append(Spacer(1, 20))
+            # ══ إعداد الصفحة أفقية ══
+            page_size = landscape(A4)
+            page_width = page_size[0] - 50  # هوامش
             
-            for sheet_name, max_cols, use_landscape in important_sheets:
+            doc = SimpleDocTemplate(pdf_path, pagesize=page_size,
+                                   rightMargin=25, leftMargin=25,
+                                   topMargin=30, bottomMargin=30)
+            
+            elements = []
+            elements.append(Paragraph(reshape_ar("📊 التقرير الأسبوعي"), title_style))
+            elements.append(Paragraph(reshape_ar("بوت كيم تحصيلي"), subtitle_style))
+            elements.append(Spacer(1, 15))
+            
+            # ══ قراءة الإكسل ══
+            wb = openpyxl.load_workbook(excel_path)
+            
+            # الشيتات المهمة وعدد أعمدتها الأقصى
+            pdf_sheets = [
+                ('الملخص التنفيذي', 1),
+                ('لوحة المعلومات', 2),
+                ('ترتيب الطلاب', 12),
+                ('أداء الصفوف', 6),
+                ('أداء حسب المواضيع', 9),
+                ('تحليل السرعة والدقة', 9),
+                ('طلاب يحتاجون متابعة', 8),
+                ('الأسئلة الصعبة', 13),
+                ('التوصيات', 2),
+            ]
+            
+            for sheet_name, max_cols in pdf_sheets:
                 if sheet_name not in wb.sheetnames:
                     continue
-                    
                 ws = wb[sheet_name]
                 if ws.max_row < 2:
                     continue
                 
                 actual_cols = min(ws.max_column, max_cols)
-                is_wide = actual_cols > 4 or use_landscape
+                use_big = actual_cols <= 3
+                hs = h_style_big if use_big else h_style
+                ds = d_style_big if use_big else d_style
                 
-                # تحديد حجم الصفحة المتاح
-                if is_wide:
-                    page_width = landscape(A4)[0] - 60  # 60 = margins
-                else:
-                    page_width = A4[0] - 60
-                
-                # اختيار الأنماط حسب عدد الأعمدة
-                if actual_cols <= 3:
-                    h_style = cell_style_header_big
-                    d_style = cell_style_big
-                else:
-                    h_style = cell_style_header
-                    d_style = cell_style
-                
-                # ── حساب عرض الأعمدة الذكي ──
+                # ── قراءة البيانات ──
                 col_max_lens = [0] * actual_cols
-                all_rows_data = []
-                
+                raw_rows = []
                 for r in range(1, min(ws.max_row + 1, 50)):
-                    row_vals = []
+                    row = []
                     for c in range(1, actual_cols + 1):
                         val = ws.cell(row=r, column=c).value
                         text = str(val) if val is not None else ''
-                        if len(text) > 50:
-                            text = text[:50] + '...'
-                        row_vals.append(text)
+                        if len(text) > 55:
+                            text = text[:55] + '...'
+                        row.append(text)
                         col_max_lens[c-1] = max(col_max_lens[c-1], len(text))
-                    all_rows_data.append(row_vals)
+                    raw_rows.append(row)
                 
-                # توزيع العرض بناءً على أطول نص في كل عمود
+                if not raw_rows:
+                    continue
+                
+                # ── عكس الأعمدة (RTL) ──
+                raw_rows = [row[::-1] for row in raw_rows]
+                col_max_lens = col_max_lens[::-1]
+                
+                # ── حساب عرض الأعمدة الذكي ──
                 total_weight = sum(max(w, 3) for w in col_max_lens)
                 col_widths = []
                 for w in col_max_lens:
                     ratio = max(w, 3) / total_weight
-                    width = max(ratio * page_width, 25)  # حد أدنى 25
+                    width = max(ratio * page_width, 28)
                     col_widths.append(width)
                 
-                # تعديل ليتناسب مع عرض الصفحة
+                # ضبط ليناسب عرض الصفحة
                 total_w = sum(col_widths)
-                if total_w > page_width:
+                if total_w != page_width:
                     scale = page_width / total_w
                     col_widths = [w * scale for w in col_widths]
                 
-                # ── بناء الجدول بـ Paragraphs (التفاف تلقائي) ──
+                # ── بناء الجدول بـ Paragraphs ──
                 table_data = []
-                for r_idx, row_vals in enumerate(all_rows_data):
-                    row_cells = []
-                    for val in row_vals:
-                        reshaped = reshape_arabic(val)
+                for r_idx, row in enumerate(raw_rows):
+                    cells = []
+                    for val in row:
+                        reshaped = reshape_ar(val)
                         if r_idx == 0:
-                            row_cells.append(Paragraph(reshaped, h_style))
+                            cells.append(Paragraph(reshaped, hs))
                         else:
-                            row_cells.append(Paragraph(reshaped, d_style))
-                    table_data.append(row_cells)
-                
-                if not table_data:
-                    continue
+                            cells.append(Paragraph(reshaped, ds))
+                    table_data.append(cells)
                 
                 table = Table(table_data, colWidths=col_widths, repeatRows=1)
                 table.setStyle(TableStyle([
@@ -2345,125 +2320,20 @@ class FinalWeeklyReportGenerator:
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F8F8')]),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), 
+                     [colors.white, colors.HexColor('#F8F8F8')]),
                     ('TOPPADDING', (0, 0), (-1, -1), 3),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 3),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 4),
                 ]))
                 
-                section_title = Paragraph(reshape_arabic(f"▎{sheet_name}"), title_style)
-                
-                if is_wide:
-                    landscape_pages.append((section_title, table))
-                else:
-                    portrait_elements.append(section_title)
-                    portrait_elements.append(Spacer(1, 8))
-                    portrait_elements.append(table)
-                    portrait_elements.append(PageBreak())
+                elements.append(Paragraph(reshape_ar(f"▎{sheet_name}"), title_style))
+                elements.append(Spacer(1, 8))
+                elements.append(table)
+                elements.append(PageBreak())
             
-            # ═══ بناء PDF النهائي ═══
-            # نبني ملف مؤقت للصفحات العمودية
-            all_elements = list(portrait_elements)
-            
-            # إضافة الصفحات العريضة (نستخدم nextPageTemplate لو أمكن)
-            # بما أن SimpleDocTemplate ما يدعم تبديل الاتجاه بسهولة،
-            # نبني PDF واحد بالاتجاه الأفقي إذا فيه جداول عريضة
-            if landscape_pages:
-                # نستخدم الأفقي كاتجاه أساسي ونضيف كل شي
-                doc = SimpleDocTemplate(pdf_path, pagesize=landscape(A4),
-                                       rightMargin=25, leftMargin=25,
-                                       topMargin=30, bottomMargin=30)
-                
-                final_elements = []
-                # العنوان
-                final_elements.append(Paragraph(reshape_arabic("📊 التقرير الأسبوعي"), title_style))
-                final_elements.append(Paragraph(reshape_arabic("بوت كيم تحصيلي"), subtitle_style))
-                final_elements.append(Spacer(1, 15))
-                
-                # إعادة بناء كل الشيتات بالاتجاه الأفقي
-                for sheet_name, max_cols, use_landscape in important_sheets:
-                    if sheet_name not in wb.sheetnames:
-                        continue
-                    ws = wb[sheet_name]
-                    if ws.max_row < 2:
-                        continue
-                    
-                    actual_cols = min(ws.max_column, max_cols)
-                    page_width = landscape(A4)[0] - 50
-                    
-                    if actual_cols <= 3:
-                        h_style_use = cell_style_header_big
-                        d_style_use = cell_style_big
-                    else:
-                        h_style_use = cell_style_header
-                        d_style_use = cell_style
-                    
-                    # حساب عرض الأعمدة
-                    col_max_lens = [0] * actual_cols
-                    all_rows = []
-                    for r in range(1, min(ws.max_row + 1, 50)):
-                        row_vals = []
-                        for c in range(1, actual_cols + 1):
-                            val = ws.cell(row=r, column=c).value
-                            text = str(val) if val is not None else ''
-                            if len(text) > 60:
-                                text = text[:60] + '...'
-                            row_vals.append(text)
-                            col_max_lens[c-1] = max(col_max_lens[c-1], len(text))
-                        all_rows.append(row_vals)
-                    
-                    total_weight = sum(max(w, 3) for w in col_max_lens)
-                    col_widths = []
-                    for w in col_max_lens:
-                        ratio = max(w, 3) / total_weight
-                        width = max(ratio * page_width, 30)
-                        col_widths.append(width)
-                    total_w = sum(col_widths)
-                    if total_w > page_width:
-                        scale = page_width / total_w
-                        col_widths = [cw * scale for cw in col_widths]
-                    
-                    table_data = []
-                    for r_idx, row_vals in enumerate(all_rows):
-                        row_cells = []
-                        for val in row_vals:
-                            reshaped = reshape_arabic(val)
-                            if r_idx == 0:
-                                row_cells.append(Paragraph(reshaped, h_style_use))
-                            else:
-                                row_cells.append(Paragraph(reshaped, d_style_use))
-                        table_data.append(row_cells)
-                    
-                    if not table_data:
-                        continue
-                    
-                    table = Table(table_data, colWidths=col_widths, repeatRows=1)
-                    table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E79')),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F8F8')]),
-                        ('TOPPADDING', (0, 0), (-1, -1), 3),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-                        ('LEFTPADDING', (0, 0), (-1, -1), 3),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-                    ]))
-                    
-                    final_elements.append(Paragraph(reshape_arabic(f"▎{sheet_name}"), title_style))
-                    final_elements.append(Spacer(1, 8))
-                    final_elements.append(table)
-                    final_elements.append(PageBreak())
-                
-                doc.build(final_elements)
-            else:
-                doc = SimpleDocTemplate(pdf_path, pagesize=A4,
-                                       rightMargin=30, leftMargin=30,
-                                       topMargin=40, bottomMargin=40)
-                doc.build(all_elements)
-            
+            doc.build(elements)
             logger.info(f"تم تصدير PDF: {pdf_path}")
             return pdf_path
             
