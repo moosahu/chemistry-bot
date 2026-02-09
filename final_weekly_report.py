@@ -1448,6 +1448,15 @@ class FinalWeeklyReportGenerator:
                 general_stats, user_progress, grade_analysis, difficult_questions, time_patterns
             )
             
+            # توصية إضافية عن الأسئلة المتروكة
+            if individual_difficult_questions:
+                abandoned_count = sum(1 for q in individual_difficult_questions 
+                                    if 'تم إنهاء الاختبار' in str(q.get('common_wrong_answers', '')))
+                if abandoned_count > 0:
+                    total_q = len(individual_difficult_questions)
+                    smart_recommendations.setdefault('تحسين المحتوى', []).append(
+                        f"{abandoned_count} من {total_q} سؤال صعب سببها إنهاء الاختبار مبكراً — قد تكون الاختبارات طويلة")
+            
             # فصل الطلاب عن المعلمين أولاً
             students_only = [u for u in user_progress if u.get('grade', '') != 'معلم']
             teacher_accounts = [u for u in user_progress if u.get('grade', '') == 'معلم']
@@ -1653,22 +1662,38 @@ class FinalWeeklyReportGenerator:
                 
                 # ═══════════ 8. الأسئلة الصعبة ═══════════
                 if individual_difficult_questions:
-                    # فلترة الأسئلة التي لم يصل لها الطالب (ليست صعبة حقيقياً)
-                    real_difficult = [q for q in individual_difficult_questions 
-                                     if 'تم إنهاء الاختبار' not in str(q.get('common_wrong_answers', ''))
-                                     and (q.get('success_rate', 100) or 100) < 100]
+                    ind_translations = {
+                        'question_id': 'معرف السؤال', 'question_text': 'نص السؤال',
+                        'quiz_name': 'اسم الاختبار', 'correct_answer': 'الإجابة الصحيحة',
+                        'total_attempts': 'إجمالي المحاولات', 'correct_attempts': 'الصحيحة',
+                        'wrong_attempts': 'الخاطئة', 'error_rate': 'معدل الخطأ (%)',
+                        'success_rate': 'معدل النجاح (%)', 'difficulty_level': 'مستوى الصعوبة',
+                        'review_priority': 'أولوية المراجعة',
+                        'common_wrong_answers': 'الإجابات الخاطئة الشائعة'
+                    }
                     
-                    if real_difficult:
-                        ind_df = pd.DataFrame(real_difficult)
-                        ind_translations = {
-                            'question_id': 'معرف السؤال', 'question_text': 'نص السؤال',
-                            'quiz_name': 'اسم الاختبار', 'correct_answer': 'الإجابة الصحيحة',
-                            'total_attempts': 'إجمالي المحاولات', 'correct_attempts': 'الصحيحة',
-                            'wrong_attempts': 'الخاطئة', 'error_rate': 'معدل الخطأ (%)',
-                            'success_rate': 'معدل النجاح (%)', 'difficulty_level': 'مستوى الصعوبة',
-                            'review_priority': 'أولوية المراجعة',
-                            'common_wrong_answers': 'الإجابات الخاطئة الشائعة'
-                        }
+                    # فصل: أسئلة صعبة حقيقية vs أسئلة لم يصل لها الطالب
+                    real_difficult = []
+                    abandoned = []
+                    for q in individual_difficult_questions:
+                        if 'تم إنهاء الاختبار' in str(q.get('common_wrong_answers', '')):
+                            abandoned.append(q)
+                        else:
+                            real_difficult.append(q)
+                    
+                    # إضافة عمود "النوع" لتمييزها
+                    all_questions = []
+                    for q in real_difficult:
+                        q_copy = dict(q)
+                        q_copy['نوع الصعوبة'] = 'سؤال صعب فعلاً'
+                        all_questions.append(q_copy)
+                    for q in abandoned:
+                        q_copy = dict(q)
+                        q_copy['نوع الصعوبة'] = 'لم يصل لها الطالب (أنهى الاختبار مبكراً)'
+                        all_questions.append(q_copy)
+                    
+                    if all_questions:
+                        ind_df = pd.DataFrame(all_questions)
                         ind_df.rename(columns={k: v for k, v in ind_translations.items() if k in ind_df.columns}, inplace=True)
                         ind_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
                 
