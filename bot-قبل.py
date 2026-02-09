@@ -78,26 +78,9 @@ try:
             admin_broadcast_confirm_callback,
             admin_broadcast_cancel_callback,
             cancel_broadcast_command,
-            # === NEW: ملخص سريع ===
-            admin_quick_summary_callback,
-            # === NEW: بحث عن طالب ===
-            admin_search_student_callback,
-            search_student_input_handler,
-            cancel_search_command,
-            # === NEW: تصدير بزر ===
-            admin_export_users_callback,
-            # === NEW: قائمة الإشعارات + حسب الصف ===
-            admin_broadcast_menu_callback,
-            admin_broadcast_grade_callback,
-            broadcast_grade_selected,
-            # === NEW: قائمة تعديل الرسائل ===
-            admin_edit_messages_menu_callback,
-            # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
-            BROADCAST_CONFIRM,
-            SEARCH_STUDENT_INPUT,
-            BROADCAST_GRADE_SELECT,
+            BROADCAST_CONFIRM 
         )
         # إضافة استيراد أدوات تصدير بيانات المستخدمين
         from handlers.admin_tools.admin_commands import export_users_command
@@ -387,13 +370,9 @@ def main() -> None:
 
         broadcast_conv_handler = ConversationHandler(
             entry_points=[
-                CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$"),
-                CallbackQueryHandler(admin_broadcast_grade_callback, pattern=r"^admin_broadcast_grade$"),
+                CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$")
             ],
             states={
-                BROADCAST_GRADE_SELECT: [
-                    CallbackQueryHandler(broadcast_grade_selected, pattern=r"^bcast_grade_"),
-                ],
                 BROADCAST_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, received_broadcast_text)],
                 BROADCAST_CONFIRM: [
                     CallbackQueryHandler(admin_broadcast_confirm_callback, pattern=r"^admin_broadcast_confirm$"),
@@ -409,34 +388,10 @@ def main() -> None:
         )
         application.add_handler(broadcast_conv_handler)
 
-        # === NEW: بحث عن طالب ===
-        search_student_conv_handler = ConversationHandler(
-            entry_points=[
-                CallbackQueryHandler(admin_search_student_callback, pattern=r"^admin_search_student$"),
-            ],
-            states={
-                SEARCH_STUDENT_INPUT: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, search_student_input_handler),
-                ],
-            },
-            fallbacks=[
-                CommandHandler("cancel_search", cancel_search_command),
-                CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"),
-            ],
-            persistent=False,
-            name="search_student_conversation"
-        )
-        application.add_handler(search_student_conv_handler)
-
         # Add other admin tools handlers
         application.add_handler(CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"))
         application.add_handler(CallbackQueryHandler(admin_back_to_start_callback, pattern=r"^admin_back_to_start$"))
         application.add_handler(CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$"))
-        # === NEW handlers ===
-        application.add_handler(CallbackQueryHandler(admin_quick_summary_callback, pattern=r"^admin_quick_summary$"))
-        application.add_handler(CallbackQueryHandler(admin_export_users_callback, pattern=r"^admin_export_users$"))
-        application.add_handler(CallbackQueryHandler(admin_broadcast_menu_callback, pattern=r"^admin_broadcast_menu$"))
-        application.add_handler(CallbackQueryHandler(admin_edit_messages_menu_callback, pattern=r"^admin_edit_messages_menu$"))
 
         # Add export users command handler if available
         try:
