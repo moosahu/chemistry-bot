@@ -560,15 +560,13 @@ class FinalWeeklyReportGenerator:
                         else:
                             performance_level = "ضعيف"
                     
-                    # ══ مستوى النشاط: يراعي العدد المطلق + المعدل الأسبوعي ══
+                    # ══ مستوى النشاط: نسبي حسب فترة التقرير ══
                     period_days = max((end_date - start_date).days, 1)
                     period_weeks = max(period_days / 7, 1)
                     quizzes_per_week = total_quizzes / period_weeks
                     
                     if total_quizzes == 0:
                         activity_level = "غير نشط"
-                    elif total_quizzes == 1:
-                        activity_level = "تجربة واحدة"
                     elif quizzes_per_week < 1:
                         activity_level = "متقطع"
                     elif quizzes_per_week < 3:
@@ -1068,7 +1066,7 @@ class FinalWeeklyReportGenerator:
                     recommendations['تفعيل الطلاب'].append(
                         f"أنشط صف: {best['grade']} ({round(best.get('participation_rate', 0), 0):.0f}% مشاركة)")
                 
-                zero_grades = [g for g in student_grades if (g.get('active_students') or 0) == 0 and (g.get('total_students') or 0) > 0]
+                zero_grades = [g for g in student_grades if (g.get('active_students') or 0) == 0 and (g.get('student_count') or 0) > 0]
                 if zero_grades:
                     names = [g['grade'] for g in zero_grades]
                     recommendations['تفعيل الطلاب'].append(
@@ -1523,16 +1521,8 @@ class FinalWeeklyReportGenerator:
                 dashboard_data.append(['غير نشطين', len(inactive_students)])
                 dashboard_data.append(['', ''])
                 
-                # أفضل 3 طلاب (10+ سؤال، مرتبين بالترتيب المرجح)
-                def ws_dashboard(s):
-                    avg = float(s.get('overall_avg_percentage', 0) or 0)
-                    qs = int(s.get('total_questions_answered', 0) or 0)
-                    confidence = min(1.0, 0.3 + (qs / 30) * 0.7) if qs > 0 else 0
-                    return avg * confidence
-                
-                qualified = [s for s in active_students if (s.get('total_questions_answered') or 0) >= 10]
-                qualified.sort(key=ws_dashboard, reverse=True)
-                top3 = qualified[:3]
+                # أفضل 3 طلاب
+                top3 = [s for s in active_students if (s.get('total_questions_answered') or 0) >= 5][:3]
                 if top3:
                     dashboard_data.append(['⭐ أفضل الطلاب', ''])
                     for i, s in enumerate(top3, 1):
@@ -1588,7 +1578,7 @@ class FinalWeeklyReportGenerator:
                     for g in grade_analysis:
                         grade_data.append({
                             'الصف': g.get('grade', '-'),
-                            'إجمالي الطلاب': g.get('total_students', 0),
+                            'إجمالي الطلاب': g.get('student_count', 0),
                             'النشطين': g.get('active_students', 0),
                             'معدل المشاركة (%)': round(g.get('participation_rate', 0), 1),
                             'إجمالي الاختبارات': g.get('total_quizzes', 0),
@@ -1638,13 +1628,10 @@ class FinalWeeklyReportGenerator:
                         'result_id': 'معرف النتيجة', 'user_id': 'معرف المستخدم',
                         'full_name': 'اسم الطالب', 'username': 'اسم المستخدم',
                         'grade': 'الصف', 'quiz_id': 'معرف الاختبار',
-                        'quiz_name': 'اسم الاختبار', 'quiz_title': 'اسم الاختبار',
-                        'quiz_subject': 'المادة',
+                        'quiz_name': 'اسم الاختبار', 'quiz_subject': 'المادة',
                         'total_questions': 'عدد الأسئلة', 'score': 'الدرجة',
-                        'correct_answers': 'الصحيحة', 'wrong_answers': 'الخاطئة',
                         'percentage': 'النسبة (%)', 'time_taken_seconds': 'الوقت (ثانية)',
-                        'time_taken_minutes': 'الوقت (دقيقة)',
-                        'completed_at': 'تاريخ الاختبار', 'started_at': 'وقت البدء',
+                        'completed_at': 'تاريخ الاختبار',
                     }
                     quiz_df.rename(columns={k: v for k, v in quiz_translations.items() if k in quiz_df.columns}, inplace=True)
                     drop_cols = ['معرف النتيجة', 'معرف المستخدم', 'اسم المستخدم', 'معرف الاختبار']
@@ -1653,24 +1640,18 @@ class FinalWeeklyReportGenerator:
                 
                 # ═══════════ 8. الأسئلة الصعبة ═══════════
                 if individual_difficult_questions:
-                    # فلترة الأسئلة التي لم يصل لها الطالب (ليست صعبة حقيقياً)
-                    real_difficult = [q for q in individual_difficult_questions 
-                                     if 'تم إنهاء الاختبار' not in str(q.get('common_wrong_answers', ''))
-                                     and (q.get('success_rate', 100) or 100) < 100]
-                    
-                    if real_difficult:
-                        ind_df = pd.DataFrame(real_difficult)
-                        ind_translations = {
-                            'question_id': 'معرف السؤال', 'question_text': 'نص السؤال',
-                            'quiz_name': 'اسم الاختبار', 'correct_answer': 'الإجابة الصحيحة',
-                            'total_attempts': 'إجمالي المحاولات', 'correct_attempts': 'الصحيحة',
-                            'wrong_attempts': 'الخاطئة', 'error_rate': 'معدل الخطأ (%)',
-                            'success_rate': 'معدل النجاح (%)', 'difficulty_level': 'مستوى الصعوبة',
-                            'review_priority': 'أولوية المراجعة',
-                            'common_wrong_answers': 'الإجابات الخاطئة الشائعة'
-                        }
-                        ind_df.rename(columns={k: v for k, v in ind_translations.items() if k in ind_df.columns}, inplace=True)
-                        ind_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
+                    ind_df = pd.DataFrame(individual_difficult_questions)
+                    ind_translations = {
+                        'question_id': 'معرف السؤال', 'question_text': 'نص السؤال',
+                        'quiz_name': 'اسم الاختبار', 'correct_answer': 'الإجابة الصحيحة',
+                        'total_attempts': 'إجمالي المحاولات', 'correct_attempts': 'الصحيحة',
+                        'wrong_attempts': 'الخاطئة', 'error_rate': 'معدل الخطأ (%)',
+                        'success_rate': 'معدل النجاح (%)', 'difficulty_level': 'مستوى الصعوبة',
+                        'review_priority': 'أولوية المراجعة',
+                        'common_wrong_answers': 'الإجابات الخاطئة الشائعة'
+                    }
+                    ind_df.rename(columns={k: v for k, v in ind_translations.items() if k in ind_df.columns}, inplace=True)
+                    ind_df.to_excel(writer, sheet_name='الأسئلة الصعبة', index=False)
                 
                 # ═══════════ 9. أنماط النشاط ═══════════
                 daily_activity = time_patterns.get('daily_activity', [])
@@ -2085,7 +2066,7 @@ class FinalWeeklyReportGenerator:
                 if grade_analysis:
                     grade_df = pd.DataFrame(grade_analysis)
                     grade_cols = {
-                        'grade': 'الصف', 'total_students': 'عدد الطلاب',
+                        'grade': 'الصف', 'student_count': 'عدد الطلاب',
                         'active_students': 'النشطين', 'avg_percentage': 'متوسط الدرجات',
                         'total_quizzes': 'الاختبارات', 'avg_quizzes_per_student': 'اختبارات/طالب'
                     }
