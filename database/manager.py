@@ -751,3 +751,124 @@ class DatabaseManager:
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager V18] Global DB_MANAGER instance created.")
 
+
+# ============================================================
+#  جدول مواعيد التحصيلي
+# ============================================================
+
+def ensure_exam_schedule_table():
+    """إنشاء جدول مواعيد التحصيلي إذا ما كان موجود"""
+    conn = connect_db()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS exam_schedule (
+                id SERIAL PRIMARY KEY,
+                period_name VARCHAR(100) NOT NULL,
+                exam_start_date DATE,
+                exam_end_date DATE,
+                reg_boys_date DATE,
+                reg_girls_date DATE,
+                late_reg_date DATE,
+                last_reg_date DATE,
+                status VARCHAR(20) DEFAULT 'active',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        conn.commit()
+        logger.info("[DB] exam_schedule table ensured")
+    except Exception as e:
+        logger.error(f"[DB] Error creating exam_schedule table: {e}")
+        conn.rollback()
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+ensure_exam_schedule_table()
+
+
+def get_exam_periods(status_filter=None):
+    """جلب فترات الاختبار"""
+    conn = connect_db()
+    if not conn: return []
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        if status_filter:
+            cur.execute("SELECT * FROM exam_schedule WHERE status = %s ORDER BY exam_start_date", (status_filter,))
+        else:
+            cur.execute("SELECT * FROM exam_schedule ORDER BY exam_start_date")
+        rows = cur.fetchall()
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        logger.error(f"[DB] Error getting exam periods: {e}")
+        return []
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def add_exam_period(period_name, exam_start, exam_end, reg_boys=None, reg_girls=None,
+                    late_reg=None, last_reg=None, status='active', notes=None):
+    """إضافة فترة اختبار جديدة"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO exam_schedule
+            (period_name, exam_start_date, exam_end_date, reg_boys_date, reg_girls_date,
+             late_reg_date, last_reg_date, status, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (period_name, exam_start, exam_end, reg_boys, reg_girls, late_reg, last_reg, status, notes))
+        conn.commit()
+        logger.info(f"[DB] Added exam period: {period_name}")
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error adding exam period: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def update_exam_period_status(period_id, new_status):
+    """تغيير حالة فترة الاختبار"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE exam_schedule SET status = %s, updated_at = NOW() WHERE id = %s",
+                    (new_status, period_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error updating period status: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def delete_exam_period(period_id):
+    """حذف فترة اختبار"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM exam_schedule WHERE id = %s", (period_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error deleting period: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+

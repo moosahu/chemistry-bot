@@ -8,5 +8,6 @@ arabic_reshaper
 python-bidi
 SQLAlchemy
 aiohttp
+reportlab
 
 schedule>=1.2.0

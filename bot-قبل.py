@@ -78,9 +78,46 @@ try:
             admin_broadcast_confirm_callback,
             admin_broadcast_cancel_callback,
             cancel_broadcast_command,
+            # === NEW ===
+            admin_quick_summary_callback,
+            admin_search_student_callback,
+            search_student_input_handler,
+            cancel_search_command,
+            admin_export_users_callback,
+            admin_broadcast_menu_callback,
+            admin_broadcast_grade_callback,
+            admin_broadcast_my_students_callback,
+            admin_broadcast_my_grade_callback,
+            broadcast_grade_selected,
+            admin_edit_messages_menu_callback,
+            admin_stats_panel_button_callback,
+            admin_toggle_my_student_callback,
+            admin_my_students_list_callback,
+            admin_untag_student_from_list_callback,
+            admin_tag_by_grade_callback,
+            admin_tag_grade_action_callback,
+            admin_grade_students_list_callback,
+            admin_grade_toggle_student_callback,
+            admin_untag_all_confirm_callback,
+            admin_untag_all_execute_callback,
+            admin_report_weekly_callback,
+            admin_report_monthly_callback,
+            admin_report_certificates_callback,
+            admin_report_notify_callback,
+            admin_report_notify_confirm_callback,
+            admin_notify_toggle_callback,
+            admin_notify_select_all_callback,
+            admin_notify_deselect_all_callback,
+            admin_cert_toggle_callback,
+            admin_cert_select_all_callback,
+            admin_cert_deselect_all_callback,
+            admin_report_cert_confirm_callback,
+            # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
-            BROADCAST_CONFIRM 
+            BROADCAST_CONFIRM,
+            SEARCH_STUDENT_INPUT,
+            BROADCAST_GRADE_SELECT,
         )
         # إضافة استيراد أدوات تصدير بيانات المستخدمين
         from handlers.admin_tools.admin_commands import export_users_command
@@ -370,9 +407,15 @@ def main() -> None:
 
         broadcast_conv_handler = ConversationHandler(
             entry_points=[
-                CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$")
+                CallbackQueryHandler(admin_broadcast_start_callback, pattern=r"^admin_broadcast_start$"),
+                CallbackQueryHandler(admin_broadcast_grade_callback, pattern=r"^admin_broadcast_grade$"),
+                CallbackQueryHandler(admin_broadcast_my_students_callback, pattern=r"^admin_broadcast_my_students$"),
+                CallbackQueryHandler(admin_broadcast_my_grade_callback, pattern=r"^admin_broadcast_my_grade$"),
             ],
             states={
+                BROADCAST_GRADE_SELECT: [
+                    CallbackQueryHandler(broadcast_grade_selected, pattern=r"^bcast_grade_"),
+                ],
                 BROADCAST_MESSAGE_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, received_broadcast_text)],
                 BROADCAST_CONFIRM: [
                     CallbackQueryHandler(admin_broadcast_confirm_callback, pattern=r"^admin_broadcast_confirm$"),
@@ -388,10 +431,64 @@ def main() -> None:
         )
         application.add_handler(broadcast_conv_handler)
 
+        # === NEW: بحث عن طالب ===
+        search_student_conv_handler = ConversationHandler(
+            entry_points=[
+                CallbackQueryHandler(admin_search_student_callback, pattern=r"^admin_search_student$"),
+            ],
+            states={
+                SEARCH_STUDENT_INPUT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, search_student_input_handler),
+                ],
+            },
+            fallbacks=[
+                CommandHandler("cancel_search", cancel_search_command),
+                CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"),
+            ],
+            persistent=False,
+            name="search_student_conversation"
+        )
+        application.add_handler(search_student_conv_handler)
+
         # Add other admin tools handlers
         application.add_handler(CallbackQueryHandler(admin_show_tools_menu_callback, pattern=r"^admin_show_tools_menu$"))
         application.add_handler(CallbackQueryHandler(admin_back_to_start_callback, pattern=r"^admin_back_to_start$"))
         application.add_handler(CallbackQueryHandler(admin_edit_other_messages_menu_callback, pattern=r"^admin_edit_other_messages_menu$"))
+        # === NEW handlers ===
+        application.add_handler(CallbackQueryHandler(admin_quick_summary_callback, pattern=r"^admin_quick_summary$"))
+        application.add_handler(CallbackQueryHandler(admin_export_users_callback, pattern=r"^admin_export_users$"))
+        application.add_handler(CallbackQueryHandler(admin_broadcast_menu_callback, pattern=r"^admin_broadcast_menu$"))
+        application.add_handler(CallbackQueryHandler(admin_edit_messages_menu_callback, pattern=r"^admin_edit_messages_menu$"))
+        application.add_handler(CallbackQueryHandler(admin_stats_panel_button_callback, pattern=r"^stats_admin_panel_v4$"))
+        application.add_handler(CallbackQueryHandler(admin_toggle_my_student_callback, pattern=r"^toggle_my_student_"))
+        # === طلابي handlers ===
+        application.add_handler(CallbackQueryHandler(admin_my_students_list_callback, pattern=r"^admin_my_students_list$"))
+        application.add_handler(CallbackQueryHandler(admin_my_students_list_callback, pattern=r"^my_students_page_"))
+        application.add_handler(CallbackQueryHandler(admin_untag_student_from_list_callback, pattern=r"^untag_student_"))
+        application.add_handler(CallbackQueryHandler(admin_tag_by_grade_callback, pattern=r"^admin_tag_by_grade$"))
+        application.add_handler(CallbackQueryHandler(admin_tag_grade_action_callback, pattern=r"^tag_grade_"))
+        application.add_handler(CallbackQueryHandler(admin_tag_grade_action_callback, pattern=r"^untag_grade_"))
+        application.add_handler(CallbackQueryHandler(admin_grade_students_list_callback, pattern=r"^grade_students_"))
+        application.add_handler(CallbackQueryHandler(admin_grade_toggle_student_callback, pattern=r"^gtoggle_"))
+        application.add_handler(CallbackQueryHandler(admin_untag_all_confirm_callback, pattern=r"^admin_untag_all_confirm$"))
+        application.add_handler(CallbackQueryHandler(admin_untag_all_execute_callback, pattern=r"^admin_untag_all_execute$"))
+        # === Report, Certificates & Notifications handlers ===
+        application.add_handler(CallbackQueryHandler(admin_report_weekly_callback, pattern=r"^admin_report_weekly$"))
+        application.add_handler(CallbackQueryHandler(admin_report_monthly_callback, pattern=r"^admin_report_monthly$"))
+        application.add_handler(CallbackQueryHandler(admin_report_certificates_callback, pattern=r"^admin_report_certificates$"))
+        application.add_handler(CallbackQueryHandler(admin_report_notify_callback, pattern=r"^admin_report_notify$"))
+        application.add_handler(CallbackQueryHandler(admin_report_notify_confirm_callback, pattern=r"^admin_report_notify_confirm$"))
+        application.add_handler(CallbackQueryHandler(admin_notify_toggle_callback, pattern=r"^ntoggle_"))
+        application.add_handler(CallbackQueryHandler(admin_notify_select_all_callback, pattern=r"^notify_select_all$"))
+        application.add_handler(CallbackQueryHandler(admin_notify_deselect_all_callback, pattern=r"^notify_deselect_all$"))
+        application.add_handler(CallbackQueryHandler(admin_cert_toggle_callback, pattern=r"^ctoggle_"))
+        application.add_handler(CallbackQueryHandler(admin_cert_select_all_callback, pattern=r"^cert_select_all$"))
+        application.add_handler(CallbackQueryHandler(admin_cert_deselect_all_callback, pattern=r"^cert_deselect_all$"))
+        application.add_handler(CallbackQueryHandler(admin_report_cert_confirm_callback, pattern=r"^admin_report_cert_confirm$"))
+        # noop handler for page number display
+        async def noop_callback(update, context):
+            await update.callback_query.answer()
+        application.add_handler(CallbackQueryHandler(noop_callback, pattern=r"^noop$"))
 
         # Add export users command handler if available
         try:

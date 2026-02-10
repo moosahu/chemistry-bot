@@ -273,13 +273,14 @@ class DatabaseManager:
         query = """
         SELECT 
             r.user_id,
-            COALESCE(u.username, u.first_name, CAST(r.user_id AS VARCHAR)) as user_display_name,
+            COALESCE(u.full_name, u.username, u.first_name, CAST(r.user_id AS VARCHAR)) as user_display_name,
             AVG(r.score_percentage) as average_score_percentage,
-            COUNT(r.result_id) as total_quizzes_taken
+            COUNT(r.result_id) as total_quizzes_taken,
+            SUM(r.score) as total_correct
         FROM quiz_results r
         LEFT JOIN users u ON r.user_id = u.user_id
         WHERE r.completed_at IS NOT NULL AND r.score_percentage IS NOT NULL
-        GROUP BY r.user_id, u.username, u.first_name
+        GROUP BY r.user_id, u.full_name, u.username, u.first_name
         HAVING COUNT(r.result_id) > 0 
         ORDER BY average_score_percentage DESC, total_quizzes_taken DESC
         LIMIT %s;
@@ -292,6 +293,51 @@ class DatabaseManager:
             logger.warning("[DB Stats V18] No leaderboard data found or query failed.")
             leaderboard = []
         return leaderboard
+
+    def get_user_rank(self, user_id: int, weekly: bool = False) -> dict:
+        """Get user's rank in the leaderboard.
+        
+        Args:
+            user_id: Telegram user ID
+            weekly: If True, get rank for this week only
+            
+        Returns:
+            Dict with rank, total_users, avg_score, total_quizzes
+        """
+        logger.info(f"[DB Rank] Fetching rank for user {user_id}, weekly={weekly}")
+        date_filter = "AND r.completed_at >= (CURRENT_DATE - INTERVAL '6 days')" if weekly else ""
+        query = f"""
+        WITH user_scores AS (
+            SELECT 
+                r.user_id,
+                AVG(r.score_percentage) as avg_score,
+                COUNT(r.result_id) as total_quizzes,
+                SUM(r.score) as total_correct
+            FROM quiz_results r
+            WHERE r.completed_at IS NOT NULL 
+              AND r.score_percentage IS NOT NULL
+              {date_filter}
+            GROUP BY r.user_id
+            HAVING COUNT(r.result_id) > 0
+        ),
+        ranked AS (
+            SELECT 
+                user_id,
+                avg_score,
+                total_quizzes,
+                total_correct,
+                RANK() OVER (ORDER BY avg_score DESC, total_quizzes DESC) as rank,
+                COUNT(*) OVER () as total_users
+            FROM user_scores
+        )
+        SELECT rank, total_users, avg_score, total_quizzes, total_correct
+        FROM ranked
+        WHERE user_id = %s;
+        """
+        result = self._execute_query(query, (user_id,), fetch_one=True)
+        if result:
+            return result
+        return {"rank": 0, "total_users": 0, "avg_score": 0, "total_quizzes": 0, "total_correct": 0}
 
     # --- Admin Statistics Functions ---
     def _get_time_filter_condition(self, time_filter="all", date_column="created_at"):
@@ -458,6 +504,249 @@ class DatabaseManager:
                 })
         logger.info(f"[DB Admin Stats V18] Processed detailed_question_stats ({time_filter}): {len(detailed_stats)} questions.")
         return detailed_stats
+
+    # --- Weakness Quiz: Get questions user got wrong ---
+    def get_user_weak_questions(self, user_id: int, limit: int = 50) -> list:
+        """Get question IDs that the user answered incorrectly most often.
+        
+        Args:
+            user_id: Telegram user ID
+            limit: Maximum number of weak questions to return
+            
+        Returns:
+            List of dicts with question_id, question_text, times_wrong, times_answered
+        """
+        logger.info(f"[DB Weakness] Fetching weak questions for user {user_id}, limit {limit}")
+        query = """
+        WITH user_answers AS (
+            SELECT 
+                (answer_detail ->> 'question_id') as question_id,
+                (answer_detail ->> 'question_text') as question_text,
+                (answer_detail ->> 'is_correct')::boolean as is_correct,
+                (answer_detail ->> 'status') as status
+            FROM quiz_results qr, jsonb_array_elements(qr.answers_details) as answer_detail
+            WHERE qr.user_id = %s 
+              AND qr.completed_at IS NOT NULL 
+              AND qr.answers_details IS NOT NULL 
+              AND jsonb_typeof(qr.answers_details) = 'array'
+              AND (answer_detail ->> 'status') = 'answered'
+        )
+        SELECT 
+            question_id,
+            question_text,
+            COUNT(*) as times_answered,
+            SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END) as times_wrong,
+            ROUND(SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric * 100, 1) as error_rate
+        FROM user_answers
+        WHERE question_id IS NOT NULL
+        GROUP BY question_id, question_text
+        HAVING SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END) > 0
+        ORDER BY error_rate DESC, times_wrong DESC
+        LIMIT %s;
+        """
+        results = self._execute_query(query, (user_id, limit), fetch_all=True)
+        logger.info(f"[DB Weakness] Found {len(results) if results else 0} weak questions for user {user_id}")
+        return results if results else []
+
+    def get_user_weakness_by_unit(self, user_id: int) -> list:
+        """Get weakness analysis grouped by quiz scope (unit/course).
+        
+        Analyzes all wrong answers and groups them by the quiz_scope_id 
+        to identify which units the user struggles with most.
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            List of dicts with quiz_scope_id, quiz_type, total_wrong, total_answered, error_rate
+        """
+        logger.info(f"[DB Weakness] Fetching weakness by unit for user {user_id}")
+        query = """
+        WITH user_answers AS (
+            SELECT 
+                qr.quiz_scope_id,
+                qr.quiz_type,
+                (answer_detail ->> 'question_id') as question_id,
+                (answer_detail ->> 'is_correct')::boolean as is_correct,
+                (answer_detail ->> 'status') as status
+            FROM quiz_results qr, jsonb_array_elements(qr.answers_details) as answer_detail
+            WHERE qr.user_id = %s 
+              AND qr.completed_at IS NOT NULL 
+              AND qr.answers_details IS NOT NULL 
+              AND jsonb_typeof(qr.answers_details) = 'array'
+              AND (answer_detail ->> 'status') = 'answered'
+        )
+        SELECT 
+            quiz_scope_id,
+            quiz_type,
+            COUNT(*) as total_answered,
+            SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END) as total_wrong,
+            ROUND(SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(*), 0)::numeric * 100, 1) as error_rate
+        FROM user_answers
+        WHERE quiz_scope_id IS NOT NULL
+        GROUP BY quiz_scope_id, quiz_type
+        HAVING SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END) > 0
+        ORDER BY error_rate DESC, total_wrong DESC;
+        """
+        results = self._execute_query(query, (user_id,), fetch_all=True)
+        logger.info(f"[DB Weakness] Found {len(results) if results else 0} weak scopes for user {user_id}")
+        return results if results else []
+
+    def get_user_weak_questions_by_scope(self, user_id: int, quiz_scope_id: str, limit: int = 30) -> list:
+        """Get wrong question IDs for a specific quiz scope (unit/course).
+        
+        Args:
+            user_id: Telegram user ID
+            quiz_scope_id: The unit or course ID to filter by
+            limit: Maximum questions to return
+            
+        Returns:
+            List of dicts with question_id, times_wrong
+        """
+        logger.info(f"[DB Weakness] Fetching weak questions for user {user_id}, scope {quiz_scope_id}")
+        query = """
+        WITH user_answers AS (
+            SELECT 
+                (answer_detail ->> 'question_id') as question_id,
+                (answer_detail ->> 'is_correct')::boolean as is_correct,
+                (answer_detail ->> 'status') as status
+            FROM quiz_results qr, jsonb_array_elements(qr.answers_details) as answer_detail
+            WHERE qr.user_id = %s 
+              AND qr.quiz_scope_id = %s
+              AND qr.completed_at IS NOT NULL 
+              AND qr.answers_details IS NOT NULL 
+              AND jsonb_typeof(qr.answers_details) = 'array'
+              AND (answer_detail ->> 'status') = 'answered'
+        )
+        SELECT 
+            question_id,
+            SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END) as times_wrong
+        FROM user_answers
+        WHERE question_id IS NOT NULL
+        GROUP BY question_id
+        HAVING SUM(CASE WHEN NOT is_correct THEN 1 ELSE 0 END) > 0
+        ORDER BY times_wrong DESC
+        LIMIT %s;
+        """
+        results = self._execute_query(query, (user_id, quiz_scope_id, limit), fetch_all=True)
+        return results if results else []
+
+    # --- User Streak: Get consecutive days of quiz activity ---
+    def get_user_streak(self, user_id: int) -> dict:
+        """Get the user's current and longest quiz streak (consecutive days).
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            Dict with current_streak, longest_streak, last_quiz_date
+        """
+        logger.info(f"[DB Streak] Calculating streak for user {user_id}")
+        query = """
+        WITH quiz_dates AS (
+            SELECT DISTINCT DATE(completed_at) as quiz_date
+            FROM quiz_results
+            WHERE user_id = %s AND completed_at IS NOT NULL
+            ORDER BY quiz_date DESC
+        ),
+        streaks AS (
+            SELECT 
+                quiz_date,
+                quiz_date - (ROW_NUMBER() OVER (ORDER BY quiz_date DESC))::int AS streak_group
+            FROM quiz_dates
+        )
+        SELECT 
+            streak_group,
+            COUNT(*) as streak_length,
+            MAX(quiz_date) as latest_date,
+            MIN(quiz_date) as earliest_date
+        FROM streaks
+        GROUP BY streak_group
+        ORDER BY latest_date DESC;
+        """
+        results = self._execute_query(query, (user_id,), fetch_all=True)
+        
+        if not results:
+            return {"current_streak": 0, "longest_streak": 0, "last_quiz_date": None}
+        
+        # الـ streak الحالي هو أول مجموعة إذا كانت تشمل اليوم أو أمس
+        from datetime import date
+        today = date.today()
+        
+        current_streak = 0
+        longest_streak = 0
+        last_quiz_date = None
+        
+        for row in results:
+            streak_len = int(row.get("streak_length", 0))
+            latest = row.get("latest_date")
+            
+            if longest_streak < streak_len:
+                longest_streak = streak_len
+            
+            if last_quiz_date is None and latest:
+                last_quiz_date = latest
+            
+            # الـ streak الحالي: آخر تاريخ يكون اليوم أو أمس
+            if latest and current_streak == 0:
+                if isinstance(latest, datetime):
+                    latest = latest.date()
+                days_diff = (today - latest).days
+                if days_diff <= 1:  # اليوم أو أمس
+                    current_streak = streak_len
+        
+        result = {
+            "current_streak": current_streak,
+            "longest_streak": longest_streak,
+            "last_quiz_date": str(last_quiz_date) if last_quiz_date else None
+        }
+        logger.info(f"[DB Streak] User {user_id} streak: {result}")
+        return result
+
+    # --- Weekly Leaderboard ---
+    def get_weekly_leaderboard(self, limit: int = 10) -> list:
+        """Get leaderboard filtered to last 7 days only.
+        
+        Args:
+            limit: Maximum number of users to return
+            
+        Returns:
+            List of dicts with user info and scores
+        """
+        logger.info(f"[DB Leaderboard] Fetching weekly leaderboard, limit {limit}")
+        query = """
+        SELECT 
+            r.user_id,
+            COALESCE(u.full_name, u.username, u.first_name, CAST(r.user_id AS VARCHAR)) as user_display_name,
+            AVG(r.score_percentage) as average_score_percentage,
+            COUNT(r.result_id) as total_quizzes_taken,
+            SUM(r.score) as total_correct
+        FROM quiz_results r
+        LEFT JOIN users u ON r.user_id = u.user_id
+        WHERE r.completed_at IS NOT NULL 
+          AND r.score_percentage IS NOT NULL
+          AND r.completed_at >= (CURRENT_DATE - INTERVAL '6 days')
+        GROUP BY r.user_id, u.full_name, u.username, u.first_name
+        HAVING COUNT(r.result_id) > 0 
+        ORDER BY average_score_percentage DESC, total_quizzes_taken DESC
+        LIMIT %s;
+        """
+        leaderboard = self._execute_query(query, (limit,), fetch_all=True)
+        logger.info(f"[DB Leaderboard] Weekly leaderboard: {len(leaderboard) if leaderboard else 0} users")
+        return leaderboard if leaderboard else []
+
+    def get_user_info(self, user_id: int) -> dict | None:
+        """Get user information from database."""
+        logger.debug(f"[DB User] Fetching info for user {user_id}")
+        query = "SELECT * FROM users WHERE user_id = %s;"
+        return self._execute_query(query, (user_id,), fetch_one=True)
+
+    def get_system_message(self, message_key: str) -> str | None:
+        """Get a system message by key."""
+        logger.debug(f"[DB System] Fetching system message: {message_key}")
+        query = "SELECT message_text FROM system_messages WHERE message_key = %s;"
+        result = self._execute_query(query, (message_key,), fetch_one=True)
+        return result.get("message_text") if result else None
 
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager V18] Global DB_MANAGER instance created.")

@@ -38,6 +38,7 @@ BROADCAST_MESSAGE_TEXT = 1
 BROADCAST_CONFIRM = 2
 SEARCH_STUDENT_INPUT = 3
 BROADCAST_GRADE_SELECT = 4
+EXAM_SCHEDULE_INPUT = 5
 
 
 # ============================================================
@@ -83,6 +84,7 @@ def get_admin_menu_keyboard():
         [InlineKeyboardButton("🏆 شهادات تفوق", callback_data="admin_report_certificates"),
          InlineKeyboardButton("📱 إشعار الضعاف", callback_data="admin_report_notify")],
         [InlineKeyboardButton("📣 إرسال إشعار", callback_data="admin_broadcast_menu")],
+        [InlineKeyboardButton("⏳ مواعيد التحصيلي", callback_data="admin_exam_schedule")],
         [InlineKeyboardButton("✏️ تعديل رسائل البوت", callback_data="admin_edit_messages_menu")],
         [InlineKeyboardButton("⬅️ القائمة الرئيسية", callback_data="admin_back_to_start")],
     ])
@@ -1929,3 +1931,269 @@ async def admin_report_notify_confirm_callback(update: Update, context: ContextT
         text=f"✅ تم إرسال الإشعارات التشجيعية\n📨 نجح: {sent}\n❌ فشل: {failed}",
         reply_markup=keyboard
     )
+
+
+# ============================================================
+#  10. إدارة مواعيد التحصيلي
+# ============================================================
+
+def _format_date_ar(d):
+    """تنسيق التاريخ بالعربي (ميلادي + هجري)"""
+    if not d:
+        return "—"
+    months = {1:'يناير', 2:'فبراير', 3:'مارس', 4:'أبريل', 5:'مايو', 6:'يونيو',
+              7:'يوليو', 8:'أغسطس', 9:'سبتمبر', 10:'أكتوبر', 11:'نوفمبر', 12:'ديسمبر'}
+    if isinstance(d, str):
+        d = datetime.strptime(d, '%Y-%m-%d').date()
+    greg = f"{d.day} {months.get(d.month, '')} {d.year}"
+    try:
+        from hijri_converter import Gregorian
+        h = Gregorian(d.year, d.month, d.day).to_hijri()
+        h_months = {1:'محرم',2:'صفر',3:'ربيع الأول',4:'ربيع الثاني',
+                   5:'جمادى الأولى',6:'جمادى الآخرة',7:'رجب',8:'شعبان',
+                   9:'رمضان',10:'شوال',11:'ذو القعدة',12:'ذو الحجة'}
+        hijri = f"{h.day} {h_months.get(h.month, '')} {h.year}هـ"
+        return f"{greg} ({hijri})"
+    except Exception:
+        return greg
+
+
+async def admin_exam_schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """عرض مواعيد التحصيلي مع خيارات الإدارة"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    try:
+        from database.manager import get_exam_periods
+    except ImportError:
+        from manager import get_exam_periods
+
+    periods = get_exam_periods()
+
+    status_map = {'active': '🟢 مفعّل', 'upcoming': '🔜 قريباً', 'hidden': '🔴 مخفي'}
+
+    if not periods:
+        text = "⏳ مواعيد التحصيلي\n\nلا توجد فترات مضافة بعد"
+    else:
+        text = "⏳ إدارة مواعيد التحصيلي:\n\n"
+        for p in periods:
+            pid = p['id']
+            name = p['period_name']
+            status = status_map.get(p.get('status', 'active'), '❓')
+            text += f"📋 [{pid}] {name}\n"
+            text += f"   📅 {_format_date_ar(p.get('exam_start_date'))} — {_format_date_ar(p.get('exam_end_date'))}\n"
+            text += f"   الحالة: {status}\n"
+            if p.get('notes'):
+                text += f"   💡 {p['notes']}\n"
+            text += "\n"
+
+    keyboard = []
+
+    for p in periods:
+        pid = p['id']
+        name = p['period_name'][:12]
+        current = p.get('status', 'active')
+
+        row = []
+        if current != 'active':
+            row.append(InlineKeyboardButton(f"🟢 تفعيل", callback_data=f"exam_status_{pid}_active"))
+        if current != 'upcoming':
+            row.append(InlineKeyboardButton(f"🔜 قريباً", callback_data=f"exam_status_{pid}_upcoming"))
+        if current != 'hidden':
+            row.append(InlineKeyboardButton(f"🔴 إخفاء", callback_data=f"exam_status_{pid}_hidden"))
+        if row:
+            keyboard.append(row)
+
+        keyboard.append([InlineKeyboardButton(f"🗑 حذف: {name}", callback_data=f"exam_delete_{pid}")])
+
+    keyboard.append([InlineKeyboardButton("➕ إضافة فترة جديدة", callback_data="admin_exam_add")])
+    keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")])
+
+    try:
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception:
+        await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def admin_exam_status_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تبديل حالة فترة اختبار"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    parts = query.data.split("_")  # exam_status_{id}_{status}
+    period_id = int(parts[2])
+    new_status = parts[3]
+
+    try:
+        from database.manager import update_exam_period_status
+    except ImportError:
+        from manager import update_exam_period_status
+
+    status_names = {'active': '🟢 مفعّل', 'upcoming': '🔜 قريباً', 'hidden': '🔴 مخفي'}
+
+    if update_exam_period_status(period_id, new_status):
+        await query.answer(f"✅ تم: {status_names.get(new_status, new_status)}", show_alert=True)
+    else:
+        await query.answer("❌ فشل التحديث", show_alert=True)
+
+    await admin_exam_schedule_callback(update, context)
+
+
+async def admin_exam_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """حذف فترة مع تأكيد"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    period_id = int(query.data.replace("exam_delete_", ""))
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ تأكيد الحذف", callback_data=f"exam_del_yes_{period_id}")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="admin_exam_schedule")]
+    ])
+    await query.edit_message_text(f"⚠️ متأكد من حذف الفترة [{period_id}]؟", reply_markup=keyboard)
+
+
+async def admin_exam_delete_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تأكيد الحذف"""
+    query = update.callback_query
+    await query.answer()
+
+    period_id = int(query.data.replace("exam_del_yes_", ""))
+
+    try:
+        from database.manager import delete_exam_period
+    except ImportError:
+        from manager import delete_exam_period
+
+    if delete_exam_period(period_id):
+        await query.answer("✅ تم الحذف", show_alert=True)
+    else:
+        await query.answer("❌ فشل الحذف", show_alert=True)
+
+    await admin_exam_schedule_callback(update, context)
+
+
+async def admin_exam_add_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """بدء إضافة فترة جديدة"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return ConversationHandler.END
+
+    context.user_data['exam_add_step'] = 'waiting'
+
+    text = (
+        "➕ إضافة فترة اختبار جديدة\n\n"
+        "أرسل البيانات بالتنسيق التالي:\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "اسم الفترة\n"
+        "تاريخ بداية الاختبار\n"
+        "تاريخ نهاية الاختبار\n"
+        "تسجيل البنين (أو -)\n"
+        "تسجيل البنات (أو -)\n"
+        "تسجيل متأخر (أو -)\n"
+        "آخر تسجيل (أو -)\n"
+        "ملاحظات (أو -)\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "📌 مثال:\n"
+        "الفترة الأولى — تخصصات علمية\n"
+        "2026-05-13\n"
+        "2026-05-17\n"
+        "2026-02-23\n"
+        "2026-03-02\n"
+        "2026-04-13\n"
+        "2026-05-14\n"
+        "ورقي\n\n"
+        "أو /cancel_exam للإلغاء"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ إلغاء", callback_data="admin_exam_schedule")]
+    ])
+    await query.edit_message_text(text=text, reply_markup=keyboard)
+    return EXAM_SCHEDULE_INPUT
+
+
+async def admin_exam_add_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """معالجة إدخال بيانات الفترة الجديدة"""
+    text = update.message.text.strip()
+
+    if text == '/cancel_exam':
+        context.user_data.pop('exam_add_step', None)
+        await update.message.reply_text("تم الإلغاء", reply_markup=get_admin_menu_keyboard())
+        return ConversationHandler.END
+
+    lines = text.split('\n')
+
+    if len(lines) < 3:
+        await update.message.reply_text(
+            "❌ البيانات ناقصة — أحتاج على الأقل:\n"
+            "1. اسم الفترة\n"
+            "2. بداية الاختبار (YYYY-MM-DD)\n"
+            "3. نهاية الاختبار (YYYY-MM-DD)\n\n"
+            "حاول مرة ثانية أو /cancel_exam"
+        )
+        return EXAM_SCHEDULE_INPUT
+
+    def parse_date(s):
+        s = s.strip()
+        if s == '-' or not s:
+            return None
+        try:
+            return datetime.strptime(s, '%Y-%m-%d').date()
+        except ValueError:
+            return None
+
+    period_name = lines[0].strip()
+    exam_start = parse_date(lines[1])
+    exam_end = parse_date(lines[2])
+
+    if not exam_start or not exam_end:
+        await update.message.reply_text(
+            "❌ تنسيق التاريخ غلط\n"
+            "المطلوب: YYYY-MM-DD (مثال: 2026-05-13)\n\n"
+            "حاول مرة ثانية أو /cancel_exam"
+        )
+        return EXAM_SCHEDULE_INPUT
+
+    reg_boys = parse_date(lines[3]) if len(lines) > 3 else None
+    reg_girls = parse_date(lines[4]) if len(lines) > 4 else None
+    late_reg = parse_date(lines[5]) if len(lines) > 5 else None
+    last_reg = parse_date(lines[6]) if len(lines) > 6 else None
+    notes = lines[7].strip() if len(lines) > 7 and lines[7].strip() != '-' else None
+
+    try:
+        from database.manager import add_exam_period
+    except ImportError:
+        from manager import add_exam_period
+
+    if add_exam_period(period_name, exam_start, exam_end, reg_boys, reg_girls, late_reg, last_reg, 'active', notes):
+        result = f"✅ تم إضافة الفترة!\n\n"
+        result += f"📋 {period_name}\n"
+        result += f"📅 {_format_date_ar(exam_start)} — {_format_date_ar(exam_end)}\n"
+        if reg_boys: result += f"👦 تسجيل بنين: {_format_date_ar(reg_boys)}\n"
+        if reg_girls: result += f"👧 تسجيل بنات: {_format_date_ar(reg_girls)}\n"
+        if late_reg: result += f"⚠️ تسجيل متأخر: {_format_date_ar(late_reg)}\n"
+        if last_reg: result += f"🔒 آخر تسجيل: {_format_date_ar(last_reg)}\n"
+        if notes: result += f"💡 {notes}\n"
+        result += f"\nالحالة: 🟢 مفعّل"
+
+        await update.message.reply_text(result, reply_markup=get_admin_menu_keyboard())
+    else:
+        await update.message.reply_text("❌ فشل في الإضافة", reply_markup=get_admin_menu_keyboard())
+
+    context.user_data.pop('exam_add_step', None)
+    return ConversationHandler.END
+
+
+async def cancel_exam_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """إلغاء إضافة فترة"""
+    context.user_data.pop('exam_add_step', None)
+    await update.message.reply_text("تم الإلغاء", reply_markup=get_admin_menu_keyboard())
+    return ConversationHandler.END
