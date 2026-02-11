@@ -50,6 +50,27 @@ MOTIVATIONAL_QUOTES = [
     "النجاح العظيم يستغرق وقتاً، لا تتراجع أبداً",
 ]
 
+# ============================================================
+#  ثوابت القوالب الجاهزة
+# ============================================================
+TEMPLATE_SUBJECTS = [
+    {'name': 'فيزياء', 'start': 6, 'end': 88,
+     'bg': '#E3F2FD', 'header': '#1565C0'},
+    {'name': 'رياضيات', 'start': 80, 'end': 175,
+     'bg': '#FFEBEE', 'header': '#C62828'},
+    {'name': 'كيمياء', 'start': 178, 'end': 261,
+     'bg': '#E8F5E9', 'header': '#2E7D32'},
+    {'name': 'أحياء', 'start': 264, 'end': 351,
+     'bg': '#FFF3E0', 'header': '#E65100'},
+]
+
+TEMPLATE_PHRASES = [
+    'ابدأ بقوة', 'أنت قادر', 'استمر', 'تقدم رائع', 'رائع',
+    'ممتاز', 'واصل', 'ركز', 'أكمل', 'تمرن',
+    'نصف الطريق', 'متميز', 'متقدم', 'حل وتدرب', 'واصل التميز',
+    'قريب', 'شارفت', 'أيام قليلة', 'تقريباً', 'أنت مبدع',
+]
+
 
 async def _safe_edit(context, chat_id, message_id, text, reply_markup=None):
     try:
@@ -123,6 +144,7 @@ async def study_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("📋 عرض الجدول", callback_data="study_view_week_1")],
             [InlineKeyboardButton("📝 تسجيل إنجاز اليوم", callback_data="study_record_today")],
             [InlineKeyboardButton("📄 تصدير PDF", callback_data="study_export_pdf")],
+            [InlineKeyboardButton("📦 قوالب جاهزة", callback_data="study_templates")],
             [InlineKeyboardButton("🆕 جدول جديد", callback_data="study_new_plan"),
              InlineKeyboardButton("🗑 حذف الجدول", callback_data="study_delete_plan")],
             [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")],
@@ -136,6 +158,7 @@ async def study_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         keyboard = [
             [InlineKeyboardButton("🆕 إنشاء جدول جديد", callback_data="study_new_plan")],
+            [InlineKeyboardButton("📦 قوالب جاهزة", callback_data="study_templates")],
             [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")],
         ]
 
@@ -855,3 +878,331 @@ def _draw_week_table(c, x, y, w, h, week_num, days, ar):
     c.setStrokeColor(colors.HexColor('#2c3e50'))
     c.setLineWidth(1)
     c.rect(x, y, w, h-25)
+
+
+# ============================================================
+#  11. القوالب الجاهزة — Handlers
+# ============================================================
+async def study_templates_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض قائمة القوالب الجاهزة"""
+    query = update.callback_query
+    await query.answer()
+
+    text = (
+        "📦 <b>قوالب جاهزة</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "خطط مذاكرة جاهزة لـ 4 مواد:\n"
+        "⚡ فيزياء → 📐 رياضيات → ⚗ كيمياء → 🌿 أحياء\n\n"
+        "📄 الصفحات موزّعة تلقائياً على كل يوم\n"
+        "🖨 يطلع لك PDF جاهز للطباعة\n\n"
+        "اختر المدة:"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚡ 15 يوم (مكثف)", callback_data="study_tpl_15")],
+        [InlineKeyboardButton("📋 30 يوم (متوسط)", callback_data="study_tpl_30")],
+        [InlineKeyboardButton("📚 60 يوم (مريح)", callback_data="study_tpl_60")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="study_menu")],
+    ])
+    await _safe_edit(context, query.message.chat_id, query.message.message_id, text, keyboard)
+
+
+async def study_template_gen_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إنشاء وإرسال PDF القالب"""
+    query = update.callback_query
+    await query.answer("⏳ جاري إنشاء القالب...")
+
+    total_days = int(query.data.replace("study_tpl_", ""))
+    chat_id = query.message.chat_id
+    bot_username = (await context.bot.get_me()).username
+
+    # جلب مواعيد التحصيلي
+    exam_info = None
+    try:
+        try:
+            from database.manager import connect_db
+        except ImportError:
+            from manager import connect_db
+        conn = connect_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT period_name, exam_start_date, exam_end_date 
+            FROM exam_schedule 
+            WHERE status IN ('active','upcoming') 
+            ORDER BY exam_start_date LIMIT 2
+        """)
+        rows = cur.fetchall()
+        if rows:
+            exam_info = rows
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[Template] Could not fetch exam dates: {e}")
+
+    try:
+        pdf_bytes = _generate_template_pdf(total_days, bot_username, exam_info)
+        labels = {15: '15 يوم', 30: '30 يوم', 60: '60 يوم'}
+        await context.bot.send_document(
+            chat_id=chat_id,
+            document=io.BytesIO(pdf_bytes),
+            filename=f"خطة_مذاكرة_{total_days}_يوم.pdf",
+            caption=f"📦 خطتك للتميز — {labels.get(total_days, f'{total_days} يوم')}\n⚡فيزياء 📐رياضيات ⚗كيمياء 🌿أحياء"
+        )
+    except Exception as e:
+        logger.error(f"[Template] PDF error: {e}", exc_info=True)
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:150]}")
+
+
+# ============================================================
+#  12. توزيع الصفحات على الأيام
+# ============================================================
+def _distribute_pages(total_days):
+    """توزيع 4 مواد على N يوم بالتناسب"""
+    subjects = TEMPLATE_SUBJECTS[:]
+
+    subj_pages = [s['end'] - s['start'] + 1 for s in subjects]
+    total_pages = sum(subj_pages)
+
+    # توزيع الأيام بالتناسب
+    subj_day_counts = []
+    remaining = total_days
+    for i, pages in enumerate(subj_pages):
+        if i == len(subj_pages) - 1:
+            subj_day_counts.append(remaining)
+        else:
+            d = max(1, round(total_days * pages / total_pages))
+            subj_day_counts.append(d)
+            remaining -= d
+
+    days = []
+    day_num = 1
+    for si, subj in enumerate(subjects):
+        n_days = subj_day_counts[si]
+        pages = subj_pages[si]
+        ppd = pages / n_days
+
+        for di in range(n_days):
+            sp = subj['start'] + round(di * ppd)
+            ep = subj['start'] + round((di + 1) * ppd) - 1
+            if di == n_days - 1:
+                ep = subj['end']
+
+            # عبارة تحفيزية حسب الموقع
+            if day_num == total_days:
+                phrase = 'مبروك أتممت!'
+            elif di == n_days - 1:
+                phrase = 'أنهيت!'
+            elif di == 0 and si == 0:
+                phrase = 'ابدأ بقوة'
+            else:
+                phrase = TEMPLATE_PHRASES[day_num % len(TEMPLATE_PHRASES)]
+
+            days.append({
+                'day': day_num,
+                'subject': subj['name'],
+                'bg': subj['bg'],
+                'header_color': subj['header'],
+                'pages_start': sp,
+                'pages_end': ep,
+                'phrase': phrase,
+            })
+            day_num += 1
+
+    return days
+
+
+# ============================================================
+#  13. PDF القالب — تصميم بطاقات
+# ============================================================
+def _generate_template_pdf(total_days, bot_username, exam_info=None):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+
+    if not _ensure_arabic_font():
+        raise RuntimeError("خط عربي غير متوفر")
+
+    ar = _reshape_arabic
+    days = _distribute_pages(total_days)
+
+    buf = io.BytesIO()
+    width, height = A4  # 595 × 842
+    c = canvas.Canvas(buf, pagesize=A4)
+
+    cols = 6
+    rows_per_page = 5
+    margin_x = 12
+    gap = 3
+    top_area = 75
+    bottom_area = 95
+
+    usable_w = width - 2 * margin_x
+    usable_h = height - top_area - bottom_area
+
+    card_w = (usable_w - gap * (cols - 1)) / cols
+    card_h = (usable_h - gap * (rows_per_page - 1)) / rows_per_page
+
+    cards_per_page = cols * rows_per_page
+    labels = {15: '15 يوم', 30: '30 يوم', 60: '60 يوم'}
+
+    for page_start in range(0, len(days), cards_per_page):
+        if page_start > 0:
+            c.showPage()
+
+        page_days = days[page_start:page_start + cards_per_page]
+
+        # العنوان
+        _draw_tpl_header(c, width, height, total_days, exam_info, ar)
+
+        # البطاقات (RTL)
+        for idx, day in enumerate(page_days):
+            row = idx // cols
+            col_ltr = idx % cols
+            col = cols - 1 - col_ltr  # RTL
+
+            x = margin_x + col * (card_w + gap)
+            y = height - top_area - (row + 1) * (card_h + gap) + gap
+
+            _draw_tpl_card(c, x, y, card_w, card_h, day, ar)
+
+        # الفوتر
+        _draw_tpl_footer(c, width, bot_username, ar)
+
+    c.save()
+    return buf.getvalue()
+
+
+def _draw_tpl_header(c, width, height, total_days, exam_info, ar):
+    """رأس صفحة القالب"""
+    from reportlab.lib import colors
+
+    # خلفية العنوان
+    c.setFillColor(colors.HexColor('#f8f9fa'))
+    c.rect(0, height - 75, width, 75, fill=1)
+
+    # العنوان الرئيسي
+    c.setFillColor(colors.HexColor('#2c3e50'))
+    c.setFont('ArabicFontBold', 20)
+    c.drawCentredString(width / 2, height - 28, ar(f"خطتك للتميز - {total_days} يوم"))
+
+    # مواعيد التحصيلي
+    if exam_info and len(exam_info) >= 1:
+        c.setFillColor(colors.HexColor('#555555'))
+        c.setFont('ArabicFont', 8)
+        y = height - 45
+        for row in exam_info[:2]:
+            period = row[0] if row[0] else ''
+            start_d = row[1].strftime('%Y/%m/%d') if row[1] else ''
+            end_d = row[2].strftime('%Y/%m/%d') if row[2] else ''
+            line = f"{period}: {start_d} - {end_d}"
+            c.drawCentredString(width / 2, y, ar(line))
+            y -= 13
+    else:
+        c.setFillColor(colors.HexColor('#888888'))
+        c.setFont('ArabicFont', 9)
+        c.drawCentredString(width / 2, height - 50, ar("⚡فيزياء  📐رياضيات  ⚗كيمياء  🌿أحياء"))
+
+
+def _draw_tpl_card(c, x, y, w, h, day, ar):
+    """رسم بطاقة يوم واحد"""
+    from reportlab.lib import colors
+
+    # خلفية البطاقة
+    c.setFillColor(colors.HexColor(day['bg']))
+    c.roundRect(x, y, w, h, 4, fill=1)
+
+    # إطار
+    c.setStrokeColor(colors.HexColor('#dee2e6'))
+    c.setLineWidth(0.4)
+    c.roundRect(x, y, w, h, 4)
+
+    # شريط العنوان
+    header_h = 16
+    c.setFillColor(colors.HexColor(day['header_color']))
+    # رسم الشريط العلوي مع زوايا مستديرة من الأعلى فقط
+    c.saveState()
+    c.setFillColor(colors.HexColor(day['header_color']))
+    p = c.beginPath()
+    r = 4
+    p.moveTo(x, y + h - header_h)
+    p.lineTo(x, y + h - r)
+    p.arcTo(x, y + h - 2*r, x + 2*r, y + h, 90, 90)
+    p.lineTo(x + w - r, y + h)
+    p.arcTo(x + w - 2*r, y + h - 2*r, x + w, y + h, 0, 90)
+    p.lineTo(x + w, y + h - header_h)
+    p.close()
+    c.drawPath(p, fill=1, stroke=0)
+    c.restoreState()
+
+    # رقم اليوم
+    c.setFillColor(colors.white)
+    c.setFont('ArabicFontBold', 9)
+    c.drawCentredString(x + w / 2, y + h - header_h + 4, ar(f"يوم {day['day']}"))
+
+    center_x = x + w / 2
+    content_top = y + h - header_h
+
+    # اسم المادة
+    c.setFillColor(colors.HexColor(day['header_color']))
+    c.setFont('ArabicFontBold', 11)
+    c.drawCentredString(center_x, content_top - 18, ar(day['subject']))
+
+    # نطاق الصفحات
+    c.setFillColor(colors.HexColor('#333333'))
+    c.setFont('ArabicFont', 9)
+    pages_text = f"ص{day['pages_end']}-{day['pages_start']}"
+    c.drawCentredString(center_x, content_top - 34, ar(pages_text))
+
+    # العبارة التحفيزية
+    c.setFillColor(colors.HexColor('#666666'))
+    c.setFont('ArabicFont', 7)
+    c.drawCentredString(center_x, content_top - 48, ar(day['phrase']))
+
+    # مربع التحقق
+    cb_size = 11
+    cb_x = center_x - cb_size / 2
+    cb_y = y + 6
+    c.setStrokeColor(colors.HexColor('#999999'))
+    c.setLineWidth(0.8)
+    c.setFillColor(colors.white)
+    c.rect(cb_x, cb_y, cb_size, cb_size, fill=1)
+
+
+def _draw_tpl_footer(c, width, bot_username, ar):
+    """فوتر القالب — رسالة + QR"""
+    from reportlab.lib import colors
+    from reportlab.lib.utils import ImageReader
+
+    c.setFillColor(colors.HexColor('#555555'))
+    c.setFont('ArabicFont', 9)
+    c.drawCentredString(width / 2, 82, ar("كل يوم تقترب من هدفك | النجاح بانتظارك | أنت قادر على التميز"))
+
+    c.setFont('ArabicFont', 8)
+    c.drawCentredString(width / 2, 68, ar("سجل في بوت الكيمياء للاختبارات والتدريبات"))
+
+    c.setFillColor(colors.HexColor('#2c3e50'))
+    c.setFont('ArabicFontBold', 10)
+    c.drawCentredString(width / 2, 54, f"@{bot_username.upper()}")
+
+    # QR
+    try:
+        import qrcode
+        qr = qrcode.QRCode(version=1, box_size=3, border=1)
+        qr.add_data(f"https://t.me/{bot_username}")
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        qr_buf = io.BytesIO()
+        qr_img.save(qr_buf, format='PNG')
+        qr_buf.seek(0)
+        qr_size = 45
+        c.drawImage(ImageReader(qr_buf), width / 2 - qr_size / 2, 5, qr_size, qr_size)
+    except Exception as e:
+        logger.warning(f"[Template] QR error: {e}")
+
+    c.setFont('ArabicFont', 7)
+    c.setFillColor(colors.HexColor('#888888'))
+    c.drawCentredString(width / 2, 48, ar("امسح الباركود للانضمام"))
+
+    c.setFont('ArabicFontBold', 10)
+    c.setFillColor(colors.HexColor('#2c3e50'))
+    c.drawCentredString(width / 2, 0, ar("إعداد الأستاذ حسين الموسى"))

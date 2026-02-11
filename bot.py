@@ -59,6 +59,8 @@ try:
         study_export_pdf_callback,
         study_delete_plan_callback,
         study_delete_confirm_callback,
+        study_templates_callback,
+        study_template_gen_callback,
     )
 
     try:
@@ -555,6 +557,8 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(study_export_pdf_callback, pattern=r"^study_export_pdf$"))
         application.add_handler(CallbackQueryHandler(study_delete_plan_callback, pattern=r"^study_delete_plan$"))
         application.add_handler(CallbackQueryHandler(study_delete_confirm_callback, pattern=r"^study_delete_confirm$"))
+        application.add_handler(CallbackQueryHandler(study_templates_callback, pattern=r"^study_templates$"))
+        application.add_handler(CallbackQueryHandler(study_template_gen_callback, pattern=r"^study_tpl_\d+$"))
         logger.info("Study schedule handlers added.")
         # noop handler for page number display
         async def noop_callback(update, context):
