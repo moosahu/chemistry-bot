@@ -1468,8 +1468,8 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
     c.drawCentredString(x + w / 2, y + h - 18, _reshape_arabic(title))
 
     header_y = y + h - 50
-    col_labels = ['اليوم', 'التاريخ', 'الصفحة', 'ملاحظات', 'الإنجاز']
-    cw = [w * 0.15, w * 0.18, w * 0.20, w * 0.29, w * 0.18]
+    col_labels = ['الإنجاز', 'ملاحظات', 'الصفحة', 'التاريخ', 'اليوم']
+    cw = [w * 0.15, w * 0.18, w * 0.22, w * 0.28, w * 0.17]
 
     c.setFillColor(colors.HexColor('#ecf0f1'))
     c.rect(x, header_y, w, 20, fill=1)
@@ -1503,39 +1503,14 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         ty = ry + row_h / 2 - 3
         cx = x
 
-        # الترتيب: اليوم، التاريخ، الصفحة، ملاحظات، الإنجاز
-        # عمود اليوم
-        c.drawCentredString(cx + cw[0] / 2, ty, _reshape_arabic(day['day_name'][:8]))
-        cx += cw[0]
-        
-        # عمود التاريخ
-        c.drawCentredString(cx + cw[1] / 2, ty, day['day_date'].strftime('%m/%d'))
-        cx += cw[1]
+        c.setFillColor(colors.HexColor('#333333'))
+        ty = ry + row_h / 2 - 3
+        cx = x
 
-        if is_rest:
-            # عمود الصفحة + ملاحظات + الإنجاز = راحة
-            c.setFillColor(colors.HexColor('#e67e22'))
-            c.setFont('ArabicFontBold', 9)
-            c.drawCentredString(cx + (cw[2] + cw[3] + cw[4]) / 2, ty, _reshape_arabic("راحة"))
-            c.setFont('ArabicFont', 8)
-            c.setFillColor(colors.HexColor('#333333'))
-        else:
-            # عمود الصفحة
-            pages_text = day.get('pages', '') or ''
-            if not pages_text and day.get('pages_start') and day.get('pages_end'):
-                pages_text = f"{day['pages_start']}-{day['pages_end']}"
-            c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
-            cx += cw[2]
-            
-            # عمود ملاحظات
-            notes_text = day.get('notes', '') or ''
-            if notes_text:
-                c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
-            else:
-                c.drawCentredString(cx + cw[3] / 2, ty, notes_text)
-            cx += cw[3]
-            
-            # عمود الإنجاز
+        # الترتيب المعكوس (عربي من اليمين): الإنجاز، ملاحظات، الصفحة، التاريخ، اليوم
+
+        # عمود الإنجاز (الأول من اليمين)
+        if not is_rest:
             if day['is_completed']:
                 c.setFillColor(colors.HexColor('#27ae60'))
                 st = "✓"
@@ -1543,7 +1518,40 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
                 c.setFillColor(colors.HexColor('#bdc3c7'))
                 st = "☐"
             c.setFont('ArabicFontBold', 12)
-            c.drawCentredString(cx + cw[4] / 2, ty, st)
+            c.drawCentredString(cx + cw[0] / 2, ty, st)
+            c.setFont('ArabicFont', 8)
+            c.setFillColor(colors.HexColor('#333333'))
+        cx += cw[0]
+
+        # عمود ملاحظات (الثاني من اليمين)
+        if not is_rest:
+            notes_text = day.get('notes', '') or ''
+            if notes_text:
+                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
+            else:
+                c.drawCentredString(cx + cw[1] / 2, ty, notes_text)
+        cx += cw[1]
+
+        # عمود الصفحة (الثالث من اليمين)
+        if not is_rest:
+            pages_text = day.get('pages', '') or ''
+            if not pages_text and day.get('pages_start') and day.get('pages_end'):
+                pages_text = f"{day['pages_start']}-{day['pages_end']}"
+            c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
+        cx += cw[2]
+
+        # عمود التاريخ (الرابع من اليمين)
+        c.drawCentredString(cx + cw[3] / 2, ty, day['day_date'].strftime('%m/%d'))
+        cx += cw[3]
+
+        # عمود اليوم (الخامس - الأقصى اليسار)
+        c.drawCentredString(cx + cw[4] / 2, ty, _reshape_arabic(day['day_name'][:8]))
+
+        # إذا كان يوم راحة نكتب راحة على كل الأعمدة
+        if is_rest:
+            c.setFillColor(colors.HexColor('#e67e22'))
+            c.setFont('ArabicFontBold', 9)
+            c.drawCentredString(x + w / 2, ty, _reshape_arabic("راحة"))
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
 
