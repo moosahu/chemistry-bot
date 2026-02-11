@@ -1166,11 +1166,11 @@ def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_i
     c = canvas.Canvas(buf, pagesize=A4)
 
     cols = 6
-    rows_per_page = 7  # زيادة عدد الصفوف لتصغير المربعات أكثر
-    margin_x = 30  # زيادة الهامش الجانبي
-    gap = 7  # زيادة المسافة بين المربعات
+    rows_per_page = 8  # زيادة عدد الصفوف لتصغير المربعات أكثر
+    margin_x = 35  # زيادة الهامش الجانبي
+    gap = 8  # زيادة المسافة بين المربعات
     top_area = 75
-    bottom_area = 95
+    bottom_area = 120  # زيادة المساحة السفلية لضمان ظهور QR code
 
     usable_w = width - 2 * margin_x
     usable_h = height - top_area - bottom_area
@@ -1269,8 +1269,8 @@ def _draw_card(c, x, y, w, h, day, ar):
 
         c.setFillColor(colors.HexColor('#333333'))
         c.setFont('ArabicFont', 9)
-        # أرقام بدون bidi — تظهر LTR صحيح
-        c.drawCentredString(cx, ct - 34, f"{day['pages_start']}-{day['pages_end']}")
+        # أرقام الصفحات مع حرف ص
+        c.drawCentredString(cx, ct - 34, ar(f"ص {day['pages_start']}-{day['pages_end']}"))
 
         c.setFillColor(colors.HexColor('#666666'))
         c.setFont('ArabicFont', 7)
@@ -1503,16 +1503,36 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         ty = ry + row_h / 2 - 3
         cx = x
 
-        # الترتيب الجديد: الإنجاز، ملاحظات، الصفحة، التاريخ، اليوم
+        # الترتيب: اليوم، التاريخ، الصفحة، ملاحظات، الإنجاز
+        # عمود اليوم
+        c.drawCentredString(cx + cw[0] / 2, ty, _reshape_arabic(day['day_name'][:8]))
+        cx += cw[0]
+        
+        # عمود التاريخ
+        c.drawCentredString(cx + cw[1] / 2, ty, day['day_date'].strftime('%m/%d'))
+        cx += cw[1]
+
         if is_rest:
-            # عمود الإنجاز + ملاحظات + الصفحة = راحة
+            # عمود الصفحة + ملاحظات + الإنجاز = راحة
             c.setFillColor(colors.HexColor('#e67e22'))
             c.setFont('ArabicFontBold', 9)
-            c.drawCentredString(cx + (cw[0] + cw[1] + cw[2]) / 2, ty, _reshape_arabic("راحة"))
+            c.drawCentredString(cx + (cw[2] + cw[3] + cw[4]) / 2, ty, _reshape_arabic("راحة"))
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
-            cx += cw[0] + cw[1] + cw[2]
         else:
+            # عمود الصفحة
+            pages_text = day.get('pages', '') or ''
+            c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
+            cx += cw[2]
+            
+            # عمود ملاحظات
+            notes_text = day.get('notes', '') or ''
+            if notes_text:
+                c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
+            else:
+                c.drawCentredString(cx + cw[3] / 2, ty, notes_text)
+            cx += cw[3]
+            
             # عمود الإنجاز
             if day['is_completed']:
                 c.setFillColor(colors.HexColor('#27ae60'))
@@ -1521,30 +1541,9 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
                 c.setFillColor(colors.HexColor('#bdc3c7'))
                 st = "☐"
             c.setFont('ArabicFontBold', 12)
-            c.drawCentredString(cx + cw[0] / 2, ty, st)
+            c.drawCentredString(cx + cw[4] / 2, ty, st)
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
-            cx += cw[0]
-            
-            # عمود ملاحظات
-            notes_text = day.get('notes', '') or ''
-            if notes_text:
-                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
-            else:
-                c.drawCentredString(cx + cw[1] / 2, ty, notes_text)
-            cx += cw[1]
-            
-            # عمود الصفحة
-            pages_text = day.get('pages', '') or ''
-            c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
-            cx += cw[2]
-        
-        # عمود التاريخ
-        c.drawCentredString(cx + cw[3] / 2, ty, day['day_date'].strftime('%m/%d'))
-        cx += cw[3]
-        
-        # عمود اليوم
-        c.drawCentredString(cx + cw[4] / 2, ty, _reshape_arabic(day['day_name'][:8]))
 
     c.setStrokeColor(colors.HexColor('#2c3e50'))
     c.setLineWidth(1)
