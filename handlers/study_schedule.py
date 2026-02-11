@@ -1062,12 +1062,24 @@ def _ensure_arabic_font():
         pass
 
     search_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts', 'Amiri-Regular.ttf'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts', 'DejaVuSans.ttf'),
+        '/home/ubuntu/fonts/Amiri-Regular.ttf',
         '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
         '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
         '/usr/share/fonts/TTF/DejaVuSans.ttf',
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts', 'DejaVuSans.ttf'),
+        '/opt/render/project/src/fonts/Amiri-Regular.ttf',
         '/opt/render/project/src/fonts/DejaVuSans.ttf',
         '/opt/render/project/src/DejaVuSans.ttf',
+    ]
+    
+    search_paths_bold = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts', 'Amiri-Bold.ttf'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts', 'DejaVuSans.ttf'),
+        '/home/ubuntu/fonts/Amiri-Bold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        '/opt/render/project/src/fonts/Amiri-Bold.ttf',
+        '/opt/render/project/src/fonts/DejaVuSans.ttf',
     ]
 
     font_path = None
@@ -1111,7 +1123,18 @@ def _ensure_arabic_font():
     except Exception:
         return False
 
-    bold_path = font_path.replace('Sans.ttf', 'Sans-Bold.ttf')
+    # تسجيل الخط Bold
+    bold_path = None
+    for fp in search_paths_bold:
+        if os.path.exists(fp):
+            bold_path = fp
+            break
+    
+    if not bold_path:
+        bold_path = font_path.replace('Regular.ttf', 'Bold.ttf')
+        if not os.path.exists(bold_path):
+            bold_path = font_path.replace('Sans.ttf', 'Sans-Bold.ttf')
+    
     try:
         if os.path.exists(bold_path):
             pdfmetrics.registerFont(TTFont('ArabicFontBold', bold_path))
@@ -1357,28 +1380,28 @@ def _draw_weekly_cover(c, width, height, plan, subj_display, student_name, bot_u
     c.rect(0, height - 80, width, 80, fill=1)
     c.setFillColor(colors.white)
     c.setFont('ArabicFontBold', 22)
-    c.drawCentredString(width / 2, height - 35, "بوت كيم تحصيلي")
+    c.drawCentredString(width / 2, height - 35, _reshape_arabic("بوت كيم تحصيلي"))
     c.setFont('ArabicFont', 14)
-    c.drawCentredString(width / 2, height - 60, "إعداد: أ. حسين الموسى")
+    c.drawCentredString(width / 2, height - 60, _reshape_arabic("إعداد: أ. حسين الموسى"))
 
     c.setFillColor(colors.HexColor('#2c3e50'))
     c.setFont('ArabicFontBold', 36)
-    c.drawCentredString(width / 2, height - 170, "جدول مذاكرة")
+    c.drawCentredString(width / 2, height - 170, _reshape_arabic("جدول مذاكرة"))
     c.setFillColor(colors.HexColor('#e74c3c'))
     c.setFont('ArabicFontBold', 42)
-    c.drawCentredString(width / 2, height - 230, subj_display[:30])
+    c.drawCentredString(width / 2, height - 230, _reshape_arabic(subj_display[:30]))
 
     c.setFillColor(colors.HexColor('#555555'))
     c.setFont('ArabicFont', 15)
     y = height - 300
-    c.drawCentredString(width / 2, y, f"المدة: {plan['num_weeks']} أسابيع — أيام المذاكرة: {study_days} يوم")
+    c.drawCentredString(width / 2, y, _reshape_arabic(f"المدة: {plan['num_weeks']} أسابيع — أيام المذاكرة: {study_days} يوم"))
     y -= 28
-    c.drawCentredString(width / 2, y, f"أيام الراحة: {rest_display}")
+    c.drawCentredString(width / 2, y, _reshape_arabic(f"أيام الراحة: {rest_display}"))
     y -= 28
-    c.drawCentredString(width / 2, y, f"البداية: {plan['start_date'].strftime('%Y-%m-%d')}")
+    c.drawCentredString(width / 2, y, _reshape_arabic(f"البداية: {plan['start_date'].strftime('%Y-%m-%d')}"))
     if student_name:
         y -= 28
-        c.drawCentredString(width / 2, y, f"الطالب/ة: {student_name}")
+        c.drawCentredString(width / 2, y, _reshape_arabic(f"الطالب/ة: {student_name}"))
 
     try:
         import qrcode
@@ -1410,7 +1433,7 @@ def _draw_weeks_page(c, width, height, subj_display, weeks_data, week_nums):
     c.setFillColor(colors.white)
     c.setFont('ArabicFontBold', 12)
     c.drawCentredString(width / 2, height - 27,
-                        f"جدول مذاكرة {subj_display[:20]} — أ. حسين الموسى — بوت كيم تحصيلي")
+                        _reshape_arabic(f"جدول مذاكرة {subj_display[:20]} — أ. حسين الموسى — بوت كيم تحصيلي"))
 
     usable_h = height - 100
     table_w = (usable_w - 20) / 2
@@ -1430,7 +1453,7 @@ def _draw_weeks_page(c, width, height, subj_display, weeks_data, week_nums):
 
     c.setFillColor(colors.HexColor('#888888'))
     c.setFont('ArabicFont', 9)
-    c.drawCentredString(width / 2, 12, random.choice(MOTIVATIONAL_QUOTES))
+    c.drawCentredString(width / 2, 12, _reshape_arabic(random.choice(MOTIVATIONAL_QUOTES)))
 
 
 def _draw_week_table(c, x, y, w, h, week_num, days):
@@ -1441,7 +1464,7 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
     c.roundRect(x, y + h - 25, w, 25, 5, fill=1)
     c.setFillColor(colors.white)
     c.setFont('ArabicFontBold', 11)
-    c.drawCentredString(x + w / 2, y + h - 18, title)
+    c.drawCentredString(x + w / 2, y + h - 18, _reshape_arabic(title))
 
     header_y = y + h - 50
     col_labels = ['اليوم', 'التاريخ', 'الصفحة', 'ملاحظات', 'الإنجاز']
@@ -1453,7 +1476,7 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
     c.setFont('ArabicFontBold', 8)
     cx = x
     for i, col in enumerate(col_labels):
-        c.drawCentredString(cx + cw[i] / 2, header_y + 6, col)
+        c.drawCentredString(cx + cw[i] / 2, header_y + 6, _reshape_arabic(col))
         cx += cw[i]
 
     row_h = (h - 55) / 7
@@ -1479,7 +1502,7 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         ty = ry + row_h / 2 - 3
         cx = x
 
-        c.drawCentredString(cx + cw[0] / 2, ty, day['day_name'][:8])
+        c.drawCentredString(cx + cw[0] / 2, ty, _reshape_arabic(day['day_name'][:8]))
         cx += cw[0]
         c.drawCentredString(cx + cw[1] / 2, ty, day['day_date'].strftime('%m/%d'))
         cx += cw[1]
@@ -1487,7 +1510,7 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         if is_rest:
             c.setFillColor(colors.HexColor('#e67e22'))
             c.setFont('ArabicFontBold', 9)
-            c.drawCentredString(cx + (cw[2] + cw[3] + cw[4]) / 2, ty, "راحة")
+            c.drawCentredString(cx + (cw[2] + cw[3] + cw[4]) / 2, ty, _reshape_arabic("راحة"))
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
         else:
@@ -1495,7 +1518,10 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
             c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
             cx += cw[2]
             notes_text = day.get('notes', '') or ''
-            c.drawCentredString(cx + cw[3] / 2, ty, str(notes_text)[:25])
+            if notes_text:
+                c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
+            else:
+                c.drawCentredString(cx + cw[3] / 2, ty, notes_text)
             cx += cw[3]
 
             if day['is_completed']:
