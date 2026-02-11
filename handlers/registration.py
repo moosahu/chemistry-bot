@@ -1391,8 +1391,11 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         await query.answer()
         
         db_manager = context.bot_data.get("DB_MANAGER")
-        stats = db_manager.get_user_overall_stats(user_id) if db_manager else None
-        quiz_count = stats.get('total_quizzes', 0) if stats else 0
+        try:
+            stats = db_manager.get_user_overall_stats(user_id) if db_manager else None
+            quiz_count = stats.get('total_quizzes', 0) if stats else 0
+        except (AttributeError, Exception):
+            quiz_count = 0
         
         text = (
             "⚠️ حذف الحساب نهائياً\n"
