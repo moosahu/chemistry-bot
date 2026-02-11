@@ -1280,7 +1280,7 @@ def _draw_card(c, x, y, w, h, day, ar):
         c.setStrokeColor(colors.HexColor('#999999'))
         c.setLineWidth(0.6)
         c.setFillColor(colors.white)
-        c.rect(cx - cb_size / 2, y + 8, cb_size, cb_size, fill=1)  # رفع المربع من 4 إلى 8
+        c.rect(cx - cb_size / 2, y + 12, cb_size, cb_size, fill=1)  # رفع المربع لتجنب التداخل
 
 
 def _draw_card_footer(c, width, bot_username, ar):
