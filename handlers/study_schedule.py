@@ -1351,7 +1351,7 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
 
     weeks_data = {}
 
-    # استخراج بيانات التوزيع وربطها مع الأيام
+    # === إضافة: ربط بيانات المادة والصفحات ===
     subjects_data = _parse_subjects_json(plan.get('subject', ''))
     rest_days_str = plan.get('rest_days', '')
     rest_days_list = []
@@ -1360,12 +1360,10 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
             if d.strip().isdigit():
                 rest_days_list.append(int(d.strip()))
 
-    # توزيع الصفحات على الأيام
     if subjects_data:
         total_days = plan.get('num_weeks', 1) * 7
         distributed = _distribute_pages(total_days, subjects_data, rest_days_list)
 
-        # ربط البيانات
         day_map = {}
         for dist in distributed:
             day_num = dist.get('day', 0)
@@ -1376,14 +1374,13 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
                     'pages_end': dist.get('pages_end', 0)
                 }
 
-        # إضافة البيانات لكل يوم
         for day in all_days:
             day_num = day.get('day_number', 0)
             if day_num in day_map and not day.get('is_rest_day', False):
                 day['subject'] = day_map[day_num]['subject']
                 day['pages_start'] = day_map[day_num]['pages_start']
                 day['pages_end'] = day_map[day_num]['pages_end']
-
+    # === نهاية الإضافة ===
     for day in all_days:
         weeks_data.setdefault(day['week_number'], []).append(day)
 
@@ -1537,39 +1534,16 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         ty = ry + row_h / 2 - 3
         cx = x
 
-        # الترتيب: اليوم، التاريخ، الصفحة، ملاحظات، الإنجاز
-        # عمود اليوم
-        c.drawCentredString(cx + cw[0] / 2, ty, _reshape_arabic(day['day_name'][:8]))
-        cx += cw[0]
-        
-        # عمود التاريخ
-        c.drawCentredString(cx + cw[1] / 2, ty, day['day_date'].strftime('%m/%d'))
-        cx += cw[1]
+        # === الترتيب المعكوس: الإنجاز، ملاحظات، الصفحة، التاريخ، اليوم ===
 
         if is_rest:
-            # عمود الصفحة + ملاحظات + الإنجاز = راحة
             c.setFillColor(colors.HexColor('#e67e22'))
             c.setFont('ArabicFontBold', 9)
-            c.drawCentredString(cx + (cw[2] + cw[3] + cw[4]) / 2, ty, _reshape_arabic("راحة"))
+            c.drawCentredString(x + w / 2, ty, _reshape_arabic("راحة"))
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
         else:
-            # عمود الصفحة
-            pages_text = day.get('pages', '') or ''
-            if not pages_text and day.get('pages_start') and day.get('pages_end'):
-                pages_text = f"{day['pages_start']}-{day['pages_end']}"
-            c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
-            cx += cw[2]
-            
-            # عمود ملاحظات
-            notes_text = day.get('notes', '') or ''
-            if notes_text:
-                c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
-            else:
-                c.drawCentredString(cx + cw[3] / 2, ty, notes_text)
-            cx += cw[3]
-            
-            # عمود الإنجاز
+            # 1. عمود الإنجاز (الأول من اليمين)
             if day['is_completed']:
                 c.setFillColor(colors.HexColor('#27ae60'))
                 st = "✓"
@@ -1577,9 +1551,42 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
                 c.setFillColor(colors.HexColor('#bdc3c7'))
                 st = "☐"
             c.setFont('ArabicFontBold', 12)
-            c.drawCentredString(cx + cw[4] / 2, ty, st)
+            c.drawCentredString(cx + cw[0] / 2, ty, st)
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
+            cx += cw[0]
+
+            # 2. عمود الملاحظات (الثاني من اليمين)
+            notes_text = day.get('notes', '') or ''
+            if notes_text:
+                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(str(notes_text)[:20]))
+            cx += cw[1]
+
+            # 3. عمود الصفحة (الثالث من اليمين) - المادة + الصفحات
+            subject = day.get('subject', '') or ''
+            pages_text = day.get('pages', '') or ''
+            if not pages_text and day.get('pages_start') and day.get('pages_end'):
+                pages_text = f"{day['pages_start']}-{day['pages_end']}"
+
+            if subject and pages_text:
+                display = f"{subject}: {pages_text}"
+            elif pages_text:
+                display = pages_text
+            elif subject:
+                display = subject
+            else:
+                display = ""
+
+            if display:
+                c.drawCentredString(cx + cw[2] / 2, ty, _reshape_arabic(display[:22]))
+            cx += cw[2]
+
+            # 4. عمود التاريخ (الرابع من اليمين)
+            c.drawCentredString(cx + cw[3] / 2, ty, day['day_date'].strftime('%m/%d'))
+            cx += cw[3]
+
+            # 5. عمود اليوم (الخامس - أقصى اليسار)
+            c.drawCentredString(cx + cw[4] / 2, ty, _reshape_arabic(day['day_name'][:8]))
 
     c.setStrokeColor(colors.HexColor('#2c3e50'))
     c.setLineWidth(1)
