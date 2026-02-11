@@ -1469,7 +1469,7 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
 
     header_y = y + h - 50
     col_labels = ['اليوم', 'التاريخ', 'الصفحة', 'ملاحظات', 'الإنجاز']
-    cw = [w * 0.15, w * 0.18, w * 0.20, w * 0.29, w * 0.18]
+    cw = [w * 0.15, w * 0.18, w * 0.18, w * 0.34, w * 0.15]
 
     c.setFillColor(colors.HexColor('#ecf0f1'))
     c.rect(x, header_y, w, 20, fill=1)
