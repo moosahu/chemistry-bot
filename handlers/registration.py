@@ -1500,7 +1500,22 @@ async def handle_confirm_delete_account(update: Update, context: CallbackContext
             user_data_for_notify = {}
     
     # تنفيذ الحذف
-    result = db_manager.delete_user_account(user_id)
+    try:
+        from database.manager import delete_user_account
+    except ImportError:
+        try:
+            from manager import delete_user_account
+        except ImportError:
+            delete_user_account = None
+    
+    if not delete_user_account:
+        await safe_edit_message_text(
+            context.bot, chat_id, query.message.message_id,
+            text="❌ خطأ في تحميل دالة الحذف"
+        )
+        return ConversationHandler.END
+    
+    result = delete_user_account(user_id)
     
     if result.get('success'):
         quiz_count = result.get('quizzes_deleted', 0)

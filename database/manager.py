@@ -775,6 +775,30 @@ DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager V18] Global DB_MANAGER instance created.")
 
 
+def delete_user_account(user_id):
+    """حذف حساب المستخدم وجميع بياناته — دالة مستقلة"""
+    logger.info(f"[DB Delete] Starting account deletion for user {user_id}")
+    conn = connect_db()
+    if not conn:
+        return {'success': False, 'error': 'لا يوجد اتصال بقاعدة البيانات'}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM quiz_results WHERE user_id = %s", (user_id,))
+        quiz_count = cur.fetchone()[0]
+        cur.execute("DELETE FROM quiz_results WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
+        conn.commit()
+        logger.info(f"[DB Delete] User {user_id} deleted: {quiz_count} quizzes removed")
+        return {'success': True, 'quizzes_deleted': quiz_count}
+    except Exception as e:
+        logger.error(f"[DB Delete] Error deleting user {user_id}: {e}")
+        conn.rollback()
+        return {'success': False, 'error': str(e)}
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
 # ============================================================
 #  جدول مواعيد التحصيلي
 # ============================================================
