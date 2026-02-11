@@ -1365,7 +1365,7 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
         total_days = plan.get('num_weeks', 1) * 7
         distributed = _distribute_pages(total_days, subjects_data, rest_days_list)
 
-        # ربط البيانات: إنشاء map بين رقم اليوم ومعلوماته
+        # ربط البيانات
         day_map = {}
         for dist in distributed:
             day_num = dist.get('day', 0)
@@ -1376,7 +1376,7 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
                     'pages_end': dist.get('pages_end', 0)
                 }
 
-        # إضافة البيانات لكل يوم في all_days
+        # إضافة البيانات لكل يوم
         for day in all_days:
             day_num = day.get('day_number', 0)
             if day_num in day_map and not day.get('is_rest_day', False):
