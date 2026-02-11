@@ -48,12 +48,17 @@ try:
     from handlers.common import exam_countdown_callback
     from handlers.study_schedule import (
         study_menu_callback,
+        study_new_plan_callback,
+        study_subject_callback,
+        study_duration_callback,
+        study_rest_toggle_callback,
+        study_confirm_create_callback,
         study_view_week_callback,
         study_toggle_day_callback,
+        study_record_today_callback,
         study_export_pdf_callback,
         study_delete_plan_callback,
         study_delete_confirm_callback,
-        get_study_schedule_conv_handler,
     )
 
     try:
@@ -537,15 +542,19 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_bot_settings_callback, pattern=r"^admin_bot_settings$"))
         application.add_handler(CallbackQueryHandler(admin_toggle_deletion_callback, pattern=r"^admin_toggle_deletion$"))
         application.add_handler(CallbackQueryHandler(admin_toggle_schedule_callback, pattern=r"^admin_toggle_schedule$"))
-        # Study Schedule handlers
+        # Study Schedule handlers (all callback-based, no ConversationHandler)
         application.add_handler(CallbackQueryHandler(study_menu_callback, pattern=r"^study_menu$"))
+        application.add_handler(CallbackQueryHandler(study_new_plan_callback, pattern=r"^study_new_plan$"))
+        application.add_handler(CallbackQueryHandler(study_subject_callback, pattern=r"^study_subj_"))
+        application.add_handler(CallbackQueryHandler(study_duration_callback, pattern=r"^study_dur_\d+$"))
+        application.add_handler(CallbackQueryHandler(study_rest_toggle_callback, pattern=r"^study_rest_\d$"))
+        application.add_handler(CallbackQueryHandler(study_confirm_create_callback, pattern=r"^study_confirm_create$"))
         application.add_handler(CallbackQueryHandler(study_view_week_callback, pattern=r"^study_view_week_\d+$"))
         application.add_handler(CallbackQueryHandler(study_toggle_day_callback, pattern=r"^study_toggle_\d+_w\d+$"))
+        application.add_handler(CallbackQueryHandler(study_record_today_callback, pattern=r"^study_record_today$"))
         application.add_handler(CallbackQueryHandler(study_export_pdf_callback, pattern=r"^study_export_pdf$"))
         application.add_handler(CallbackQueryHandler(study_delete_plan_callback, pattern=r"^study_delete_plan$"))
         application.add_handler(CallbackQueryHandler(study_delete_confirm_callback, pattern=r"^study_delete_confirm$"))
-        study_conv = get_study_schedule_conv_handler()
-        application.add_handler(study_conv)
         logger.info("Study schedule handlers added.")
         # noop handler for page number display
         async def noop_callback(update, context):
