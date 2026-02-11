@@ -1351,7 +1351,7 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
 
     weeks_data = {}
 
-    # === إضافة: ربط بيانات المادة والصفحات ===
+    # === ربط بيانات المادة والصفحات بطريقة محسّنة ===
     subjects_data = _parse_subjects_json(plan.get('subject', ''))
     rest_days_str = plan.get('rest_days', '')
     rest_days_list = []
@@ -1364,23 +1364,15 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
         total_days = plan.get('num_weeks', 1) * 7
         distributed = _distribute_pages(total_days, subjects_data, rest_days_list)
 
-        day_map = {}
-        for dist in distributed:
-            day_num = dist.get('day', 0)
-            if not dist.get('is_rest', False):
-                day_map[day_num] = {
-                    'subject': dist.get('subject', ''),
-                    'pages_start': dist.get('pages_start', 0),
-                    'pages_end': dist.get('pages_end', 0)
-                }
-
-        for day in all_days:
-            day_num = day.get('day_number', 0)
-            if day_num in day_map and not day.get('is_rest_day', False):
-                day['subject'] = day_map[day_num]['subject']
-                day['pages_start'] = day_map[day_num]['pages_start']
-                day['pages_end'] = day_map[day_num]['pages_end']
-    # === نهاية الإضافة ===
+        # نستخدم INDEX بدل day_number للربط (أدق وأضمن)
+        for idx, day in enumerate(all_days):
+            if idx < len(distributed):
+                dist = distributed[idx]
+                if not dist.get('is_rest', False) and not day.get('is_rest_day', False):
+                    day['subject'] = dist.get('subject', '')
+                    day['pages_start'] = dist.get('pages_start', 0)
+                    day['pages_end'] = dist.get('pages_end', 0)
+    # === نهاية الربط ===
     for day in all_days:
         weeks_data.setdefault(day['week_number'], []).append(day)
 
@@ -1565,9 +1557,15 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
             # 3. عمود الصفحة (الثالث من اليمين) - المادة + الصفحات
             subject = day.get('subject', '') or ''
             pages_text = day.get('pages', '') or ''
-            if not pages_text and day.get('pages_start') and day.get('pages_end'):
-                pages_text = f"{day['pages_start']}-{day['pages_end']}"
 
+            # جلب رقم الصفحات إذا مو موجود
+            if not pages_text:
+                ps = day.get('pages_start', 0)
+                pe = day.get('pages_end', 0)
+                if ps and pe:
+                    pages_text = f"{ps}-{pe}"
+
+            # بناء النص: مادة + صفحات
             if subject and pages_text:
                 display = f"{subject}: {pages_text}"
             elif pages_text:
