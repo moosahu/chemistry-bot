@@ -1167,8 +1167,8 @@ def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_i
 
     cols = 6
     rows_per_page = 5
-    margin_x = 12
-    gap = 3
+    margin_x = 20  # زيادة الهامش الجانبي
+    gap = 5  # زيادة المسافة بين المربعات
     top_area = 75
     bottom_area = 95
 
@@ -1361,7 +1361,7 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
         # إضافة رقم الصفحة
         c.setFillColor(colors.HexColor('#888888'))
         c.setFont('ArabicFont', 9)
-        c.drawCentredString(width / 2, 5, _reshape_arabic(f"ص {page_num}"))
+        c.drawCentredString(width / 2, 15, _reshape_arabic(f"ص {page_num}"))
         page_num += 1
         c.showPage()
 
@@ -1439,11 +1439,12 @@ def _draw_weeks_page(c, width, height, subj_display, weeks_data, week_nums):
     table_w = (usable_w - 20) / 2
     table_h = (usable_h - 30) / 2
 
+    # ترتيب الجداول من اليمين لليسار (عربي)
     positions = [
-        (margin, height - 60 - table_h),
-        (margin + table_w + 20, height - 60 - table_h),
-        (margin, height - 80 - 2 * table_h),
-        (margin + table_w + 20, height - 80 - 2 * table_h),
+        (margin + table_w + 20, height - 60 - table_h),      # اليمين فوق
+        (margin, height - 60 - table_h),                      # اليسار فوق
+        (margin + table_w + 20, height - 80 - 2 * table_h),  # اليمين تحت
+        (margin, height - 80 - 2 * table_h),                  # اليسار تحت
     ]
 
     for idx, wn in enumerate(week_nums[:4]):
