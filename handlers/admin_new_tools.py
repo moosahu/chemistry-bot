@@ -2221,14 +2221,20 @@ async def admin_bot_settings_callback(update: Update, context: ContextTypes.DEFA
     deletion_icon = "🟢 مفعّل" if deletion_status == 'on' else "🔴 مقفل"
     deletion_btn_text = "🔴 قفل حذف الحساب" if deletion_status == 'on' else "🟢 فتح حذف الحساب"
 
+    schedule_status = get_bot_setting('allow_study_schedule', 'off')
+    schedule_icon = "🟢 مفعّل" if schedule_status == 'on' else "🔴 مقفل"
+    schedule_btn_text = "🔴 قفل جدول المذاكرة" if schedule_status == 'on' else "🟢 فتح جدول المذاكرة"
+
     text = (
         "⚙️ إعدادات البوت\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"🗑 حذف الحساب: {deletion_icon}\n"
+        f"📅 جدول المذاكرة: {schedule_icon}\n"
     )
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(deletion_btn_text, callback_data="admin_toggle_deletion")],
+        [InlineKeyboardButton(schedule_btn_text, callback_data="admin_toggle_schedule")],
         [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
     ])
 
@@ -2252,18 +2258,67 @@ async def admin_toggle_deletion_callback(update: Update, context: ContextTypes.D
     new_value = 'off' if current == 'on' else 'on'
     set_bot_setting('allow_account_deletion', new_value)
 
-    new_icon = "🟢 مفعّل" if new_value == 'on' else "🔴 مقفل"
-    new_btn = "🔴 قفل حذف الحساب" if new_value == 'on' else "🟢 فتح حذف الحساب"
+    # إعادة عرض الإعدادات كاملة
+    deletion_icon = "🟢 مفعّل" if new_value == 'on' else "🔴 مقفل"
+    deletion_btn = "🔴 قفل حذف الحساب" if new_value == 'on' else "🟢 فتح حذف الحساب"
+
+    schedule_status = get_bot_setting('allow_study_schedule', 'off')
+    schedule_icon = "🟢 مفعّل" if schedule_status == 'on' else "🔴 مقفل"
+    schedule_btn = "🔴 قفل جدول المذاكرة" if schedule_status == 'on' else "🟢 فتح جدول المذاكرة"
 
     text = (
         "⚙️ إعدادات البوت\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"🗑 حذف الحساب: {new_icon}\n\n"
+        f"🗑 حذف الحساب: {deletion_icon}\n"
+        f"📅 جدول المذاكرة: {schedule_icon}\n\n"
         f"✅ تم التحديث بنجاح"
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(new_btn, callback_data="admin_toggle_deletion")],
+        [InlineKeyboardButton(deletion_btn, callback_data="admin_toggle_deletion")],
+        [InlineKeyboardButton(schedule_btn, callback_data="admin_toggle_schedule")],
+        [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
+    ])
+
+    await query.edit_message_text(text=text, reply_markup=keyboard)
+
+
+async def admin_toggle_schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تبديل حالة جدول المذاكرة"""
+    query = update.callback_query
+    await query.answer()
+
+    if not await check_admin_privileges(update, context):
+        return
+
+    try:
+        from database.manager import get_bot_setting, set_bot_setting
+    except ImportError:
+        from manager import get_bot_setting, set_bot_setting
+
+    current = get_bot_setting('allow_study_schedule', 'off')
+    new_value = 'off' if current == 'on' else 'on'
+    set_bot_setting('allow_study_schedule', new_value)
+
+    # إعادة عرض الإعدادات كاملة
+    deletion_status = get_bot_setting('allow_account_deletion', 'off')
+    deletion_icon = "🟢 مفعّل" if deletion_status == 'on' else "🔴 مقفل"
+    deletion_btn = "🔴 قفل حذف الحساب" if deletion_status == 'on' else "🟢 فتح حذف الحساب"
+
+    schedule_icon = "🟢 مفعّل" if new_value == 'on' else "🔴 مقفل"
+    schedule_btn = "🔴 قفل جدول المذاكرة" if new_value == 'on' else "🟢 فتح جدول المذاكرة"
+
+    text = (
+        "⚙️ إعدادات البوت\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🗑 حذف الحساب: {deletion_icon}\n"
+        f"📅 جدول المذاكرة: {schedule_icon}\n\n"
+        f"✅ تم التحديث بنجاح"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(deletion_btn, callback_data="admin_toggle_deletion")],
+        [InlineKeyboardButton(schedule_btn, callback_data="admin_toggle_schedule")],
         [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
     ])
 

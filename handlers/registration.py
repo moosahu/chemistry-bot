@@ -549,10 +549,21 @@ def create_main_menu_keyboard(user_id, db_manager=None):
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
-        [InlineKeyboardButton("📅 جدول المذاكرة", callback_data="study_menu")],
-        [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
-        [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
     ]
+    
+    # زر جدول المذاكرة — يظهر فقط إذا مفعّل
+    try:
+        try:
+            from database.manager import get_bot_setting
+        except ImportError:
+            from manager import get_bot_setting
+        if get_bot_setting('allow_study_schedule', 'off') == 'on':
+            keyboard.append([InlineKeyboardButton("📅 جدول المذاكرة", callback_data="study_menu")])
+    except Exception:
+        pass
+    
+    keyboard.append([InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")])
+    keyboard.append([InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")])
     return InlineKeyboardMarkup(keyboard)
 
 # حفظ أو تحديث معلومات المستخدم في قاعدة البيانات
