@@ -60,7 +60,15 @@ try:
         study_delete_plan_callback,
         study_delete_confirm_callback,
         study_templates_callback,
+        study_tpl_menu_callback,
         study_template_gen_callback,
+        study_custom_start_callback,
+        study_custom_subj_toggle_callback,
+        study_custom_next_pages_callback,
+        study_custom_skip_subj_callback,
+        study_cust_cancel_callback,
+        study_custom_dur_callback,
+        study_custom_pages_handler,
     )
 
     try:
@@ -558,7 +566,19 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(study_delete_plan_callback, pattern=r"^study_delete_plan$"))
         application.add_handler(CallbackQueryHandler(study_delete_confirm_callback, pattern=r"^study_delete_confirm$"))
         application.add_handler(CallbackQueryHandler(study_templates_callback, pattern=r"^study_templates$"))
+        application.add_handler(CallbackQueryHandler(study_tpl_menu_callback, pattern=r"^study_tpl_menu$"))
         application.add_handler(CallbackQueryHandler(study_template_gen_callback, pattern=r"^study_tpl_\d+$"))
+        application.add_handler(CallbackQueryHandler(study_custom_start_callback, pattern=r"^study_custom_start$"))
+        application.add_handler(CallbackQueryHandler(study_custom_subj_toggle_callback, pattern=r"^study_cust_subj_\d+$"))
+        application.add_handler(CallbackQueryHandler(study_custom_next_pages_callback, pattern=r"^study_cust_next_pages$"))
+        application.add_handler(CallbackQueryHandler(study_custom_skip_subj_callback, pattern=r"^study_cust_skip_subj$"))
+        application.add_handler(CallbackQueryHandler(study_cust_cancel_callback, pattern=r"^study_cust_cancel$"))
+        application.add_handler(CallbackQueryHandler(study_custom_dur_callback, pattern=r"^study_cust_dur_\d+$"))
+        # Text handler for custom pages input (group=2 to avoid conflicts)
+        from telegram.ext import MessageHandler, filters
+        application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, study_custom_pages_handler
+        ), group=2)
         logger.info("Study schedule handlers added.")
         # noop handler for page number display
         async def noop_callback(update, context):

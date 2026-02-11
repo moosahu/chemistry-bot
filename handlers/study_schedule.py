@@ -881,62 +881,72 @@ def _draw_week_table(c, x, y, w, h, week_num, days, ar):
 
 
 # ============================================================
-#  11. القوالب الجاهزة — Handlers
+#  11. القوالب — القائمة الرئيسية
 # ============================================================
+CUSTOM_SUBJECTS_POOL = [
+    {'name': 'فيزياء', 'icon': '⚡'},
+    {'name': 'رياضيات', 'icon': '📐'},
+    {'name': 'كيمياء', 'icon': '⚗'},
+    {'name': 'أحياء', 'icon': '🌿'},
+]
+
+CUSTOM_COLORS = [
+    {'bg': '#E3F2FD', 'header': '#1565C0'},  # أزرق - فيزياء
+    {'bg': '#FFEBEE', 'header': '#C62828'},  # أحمر - رياضيات
+    {'bg': '#E8F5E9', 'header': '#2E7D32'},  # أخضر - كيمياء
+    {'bg': '#FFF3E0', 'header': '#E65100'},  # برتقالي - أحياء
+]
+
 async def study_templates_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض قائمة القوالب الجاهزة"""
+    """عرض قائمة القوالب"""
     query = update.callback_query
     await query.answer()
 
     text = (
-        "📦 <b>قوالب جاهزة</b>\n"
+        "📦 <b>القوالب والجداول</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "خطط مذاكرة جاهزة لـ 4 مواد:\n"
-        "⚡ فيزياء → 📐 رياضيات → ⚗ كيمياء → 🌿 أحياء\n\n"
-        "📄 الصفحات موزّعة تلقائياً على كل يوم\n"
-        "🖨 يطلع لك PDF جاهز للطباعة\n\n"
+        "📥 <b>قوالب جاهزة:</b> 4 مواد بصفحات موزّعة تلقائياً\n"
+        "✏️ <b>صمم جدولك:</b> اختر المواد وحدد الصفحات بنفسك\n"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📥 قوالب جاهزة", callback_data="study_tpl_menu")],
+        [InlineKeyboardButton("✏️ صمم جدولك", callback_data="study_custom_start")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="study_menu")],
+    ])
+    await _safe_edit(context, query.message.chat_id, query.message.message_id, text, keyboard)
+
+
+# ============================================================
+#  11a. القوالب الجاهزة
+# ============================================================
+async def study_tpl_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    text = (
+        "📥 <b>قوالب جاهزة</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "4 مواد: ⚡فيزياء → 📐رياضيات → ⚗كيمياء → 🌿أحياء\n"
+        "📄 الصفحات موزّعة تلقائياً على كل يوم\n\n"
         "اختر المدة:"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ 15 يوم (مكثف)", callback_data="study_tpl_15")],
         [InlineKeyboardButton("📋 30 يوم (متوسط)", callback_data="study_tpl_30")],
         [InlineKeyboardButton("📚 60 يوم (مريح)", callback_data="study_tpl_60")],
-        [InlineKeyboardButton("🔙 رجوع", callback_data="study_menu")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data="study_templates")],
     ])
     await _safe_edit(context, query.message.chat_id, query.message.message_id, text, keyboard)
 
 
 async def study_template_gen_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """إنشاء وإرسال PDF القالب"""
+    """إنشاء وإرسال PDF القالب الجاهز"""
     query = update.callback_query
     await query.answer("⏳ جاري إنشاء القالب...")
 
     total_days = int(query.data.replace("study_tpl_", ""))
     chat_id = query.message.chat_id
     bot_username = (await context.bot.get_me()).username
-
-    # جلب مواعيد التحصيلي
-    exam_info = None
-    try:
-        try:
-            from database.manager import connect_db
-        except ImportError:
-            from manager import connect_db
-        conn = connect_db()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT period_name, exam_start_date, exam_end_date 
-            FROM exam_schedule 
-            WHERE status IN ('active','upcoming') 
-            ORDER BY exam_start_date LIMIT 2
-        """)
-        rows = cur.fetchall()
-        if rows:
-            exam_info = rows
-        cur.close()
-        conn.close()
-    except Exception as e:
-        logger.warning(f"[Template] Could not fetch exam dates: {e}")
+    exam_info = _fetch_exam_info()
 
     try:
         pdf_bytes = _generate_template_pdf(total_days, bot_username, exam_info)
@@ -953,11 +963,341 @@ async def study_template_gen_callback(update: Update, context: ContextTypes.DEFA
 
 
 # ============================================================
+#  11b. صمم جدولك — الخطوة 1: اختيار المواد
+# ============================================================
+async def study_custom_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء تصميم جدول مخصص — اختيار المواد"""
+    query = update.callback_query
+    await query.answer()
+
+    # تهيئة
+    context.user_data['custom_selected'] = []  # قائمة المواد المختارة
+    context.user_data['custom_subjects'] = []  # بيانات المواد (اسم، بداية، نهاية)
+    context.user_data.pop('custom_pages_state', None)
+
+    await _show_custom_subjects(context, query.message.chat_id, query.message.message_id)
+
+
+async def _show_custom_subjects(context, chat_id, message_id):
+    selected = context.user_data.get('custom_selected', [])
+
+    text = (
+        "✏️ <b>صمم جدولك</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "<b>الخطوة 1 من 3:</b> اختر المواد\n"
+        "(اضغط لتفعيل/تعطيل)\n\n"
+    )
+
+    for i, subj in enumerate(CUSTOM_SUBJECTS_POOL):
+        icon = "✅" if i in selected else "⬜"
+        text += f"{icon} {subj['icon']} {subj['name']}\n"
+
+    if selected:
+        text += f"\n📚 المواد المختارة: {len(selected)}"
+
+    rows = []
+    for i in range(0, len(CUSTOM_SUBJECTS_POOL), 2):
+        row = []
+        for j in range(i, min(i + 2, len(CUSTOM_SUBJECTS_POOL))):
+            subj = CUSTOM_SUBJECTS_POOL[j]
+            icon = "✅" if j in selected else "⬜"
+            row.append(InlineKeyboardButton(
+                f"{icon} {subj['icon']} {subj['name']}",
+                callback_data=f"study_cust_subj_{j}"
+            ))
+        rows.append(row)
+
+    if selected:
+        rows.append([InlineKeyboardButton(f"▶ التالي ({len(selected)} مواد)", callback_data="study_cust_next_pages")])
+    rows.append([InlineKeyboardButton("❌ إلغاء", callback_data="study_templates")])
+
+    await _safe_edit(context, chat_id, message_id, text, InlineKeyboardMarkup(rows))
+
+
+async def study_custom_subj_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تبديل اختيار مادة"""
+    query = update.callback_query
+    idx = int(query.data.replace("study_cust_subj_", ""))
+    selected = context.user_data.get('custom_selected', [])
+
+    if idx in selected:
+        selected.remove(idx)
+        await query.answer()
+    else:
+        if len(selected) >= 4:
+            await query.answer("⚠️ أقصى 4 مواد", show_alert=True)
+            return
+        selected.append(idx)
+        await query.answer()
+
+    context.user_data['custom_selected'] = selected
+    await _show_custom_subjects(context, query.message.chat_id, query.message.message_id)
+
+
+# ============================================================
+#  11c. الخطوة 2: إدخال الصفحات لكل مادة
+# ============================================================
+async def study_custom_next_pages_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """الانتقال لإدخال صفحات أول مادة"""
+    query = update.callback_query
+    selected = context.user_data.get('custom_selected', [])
+
+    if not selected:
+        await query.answer("⚠️ اختر مادة واحدة على الأقل", show_alert=True)
+        return
+
+    await query.answer()
+
+    # ترتيب المواد حسب الاختيار
+    context.user_data['custom_subjects'] = []
+    context.user_data['custom_pages_idx'] = 0
+    context.user_data['custom_pages_state'] = True  # تفعيل استقبال النص
+
+    await _show_pages_input(context, query.message.chat_id, query.message.message_id)
+
+
+async def _show_pages_input(context, chat_id, message_id):
+    """عرض طلب إدخال صفحات المادة الحالية"""
+    selected = context.user_data.get('custom_selected', [])
+    idx = context.user_data.get('custom_pages_idx', 0)
+    done_subjects = context.user_data.get('custom_subjects', [])
+
+    if idx >= len(selected):
+        # انتهينا من كل المواد → اختيار المدة
+        await _show_custom_duration(context, chat_id, message_id)
+        return
+
+    subj = CUSTOM_SUBJECTS_POOL[selected[idx]]
+    current = idx + 1
+    total = len(selected)
+
+    text = (
+        f"✏️ <b>صمم جدولك</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>الخطوة 2 من 3:</b> حدد الصفحات ({current}/{total})\n\n"
+    )
+
+    # عرض المواد المكتملة
+    for ds in done_subjects:
+        text += f"✅ {ds['icon']} {ds['name']}: ص{ds['start']}-{ds['end']}\n"
+
+    text += (
+        f"\n{subj['icon']} <b>{subj['name']}</b>\n"
+        f"أرسل رقم البداية والنهاية:\n\n"
+        f"💡 مثال: <code>6-88</code> أو <code>6 88</code>"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏭ تخطي هذه المادة", callback_data="study_cust_skip_subj")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="study_cust_cancel")],
+    ])
+
+    await _safe_edit(context, chat_id, message_id, text, keyboard)
+
+
+async def study_custom_pages_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالجة إدخال الصفحات — MessageHandler"""
+    # تحقق إن المستخدم في وضع إدخال الصفحات
+    if not context.user_data.get('custom_pages_state'):
+        return  # مو بوضع إدخال، تجاهل
+
+    text = update.message.text.strip()
+    selected = context.user_data.get('custom_selected', [])
+    idx = context.user_data.get('custom_pages_idx', 0)
+
+    if idx >= len(selected):
+        context.user_data['custom_pages_state'] = False
+        return
+
+    # تحليل الإدخال
+    parts = None
+    for sep in ['-', ' ', '،', ',']:
+        if sep in text:
+            parts = text.split(sep, 1)
+            break
+
+    if not parts or len(parts) != 2:
+        await update.message.reply_text("⚠️ أدخل البداية والنهاية مفصولين بـ - أو مسافة\nمثال: <code>6-88</code>", parse_mode="HTML")
+        return
+
+    try:
+        start = int(parts[0].strip().replace('ص', ''))
+        end = int(parts[1].strip().replace('ص', ''))
+        if start < 1 or end < start or end > 9999:
+            raise ValueError()
+    except ValueError:
+        await update.message.reply_text("⚠️ أرقام غير صحيحة. جرب: <code>6-88</code>", parse_mode="HTML")
+        return
+
+    # حفظ البيانات
+    subj = CUSTOM_SUBJECTS_POOL[selected[idx]]
+    done = context.user_data.get('custom_subjects', [])
+    color_idx = len(done) % len(CUSTOM_COLORS)
+    done.append({
+        'name': subj['name'],
+        'icon': subj['icon'],
+        'start': start,
+        'end': end,
+        'bg': CUSTOM_COLORS[color_idx]['bg'],
+        'header': CUSTOM_COLORS[color_idx]['header'],
+    })
+    context.user_data['custom_subjects'] = done
+    context.user_data['custom_pages_idx'] = idx + 1
+
+    msg = await update.message.reply_text("⏳")
+    await _show_pages_input(context, update.effective_chat.id, msg.message_id)
+
+
+async def study_custom_skip_subj_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تخطي مادة"""
+    query = update.callback_query
+    await query.answer()
+
+    selected = context.user_data.get('custom_selected', [])
+    idx = context.user_data.get('custom_pages_idx', 0)
+
+    # تخطي — ننقل للمادة اللي بعدها
+    context.user_data['custom_pages_idx'] = idx + 1
+
+    if idx + 1 >= len(selected):
+        # تحقق إن في مواد مكتملة
+        done = context.user_data.get('custom_subjects', [])
+        if not done:
+            await _safe_edit(context, query.message.chat_id, query.message.message_id,
+                             "⚠️ لازم تضيف مادة واحدة على الأقل مع صفحات",
+                             InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="study_custom_start")]]))
+            return
+
+    await _show_pages_input(context, query.message.chat_id, query.message.message_id)
+
+
+async def study_cust_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إلغاء التصميم المخصص"""
+    query = update.callback_query
+    await query.answer()
+    # تنظيف البيانات
+    for k in ['custom_selected', 'custom_subjects', 'custom_pages_idx', 'custom_pages_state']:
+        context.user_data.pop(k, None)
+    await study_templates_callback(update, context)
+
+
+# ============================================================
+#  11d. الخطوة 3: اختيار المدة
+# ============================================================
+async def _show_custom_duration(context, chat_id, message_id):
+    """عرض اختيار المدة بعد إدخال كل الصفحات"""
+    context.user_data['custom_pages_state'] = False  # إيقاف استقبال النص
+    done = context.user_data.get('custom_subjects', [])
+
+    total_pages = sum(s['end'] - s['start'] + 1 for s in done)
+
+    text = (
+        "✏️ <b>صمم جدولك</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "<b>الخطوة 3 من 3:</b> اختر المدة\n\n"
+    )
+    for s in done:
+        pages = s['end'] - s['start'] + 1
+        text += f"{s['icon']} {s['name']}: ص{s['start']}-{s['end']} ({pages} صفحة)\n"
+
+    text += f"\n📄 إجمالي الصفحات: <b>{total_pages}</b>\n\n"
+
+    # حساب صفحات/يوم لكل مدة
+    for days in [15, 30, 60]:
+        ppd = round(total_pages / days, 1)
+        text += f"{'⚡' if days==15 else '📋' if days==30 else '📚'} {days} يوم ≈ {ppd} ص/يوم\n"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚡ 15 يوم", callback_data="study_cust_dur_15"),
+         InlineKeyboardButton("📋 30 يوم", callback_data="study_cust_dur_30")],
+        [InlineKeyboardButton("📚 60 يوم", callback_data="study_cust_dur_60"),
+         InlineKeyboardButton("📖 45 يوم", callback_data="study_cust_dur_45")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="study_cust_cancel")],
+    ])
+    await _safe_edit(context, chat_id, message_id, text, keyboard)
+
+
+async def study_custom_dur_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إنشاء PDF المخصص"""
+    query = update.callback_query
+    await query.answer("⏳ جاري إنشاء الجدول...")
+
+    total_days = int(query.data.replace("study_cust_dur_", ""))
+    chat_id = query.message.chat_id
+    done = context.user_data.get('custom_subjects', [])
+
+    if not done:
+        await _safe_edit(context, chat_id, query.message.message_id,
+                         "⚠️ لا توجد مواد",
+                         InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="study_templates")]]))
+        return
+
+    bot_username = (await context.bot.get_me()).username
+
+    # جلب مواعيد التحصيلي
+    exam_info = _fetch_exam_info()
+
+    # تحويل المواد لصيغة القالب
+    custom_subjects = []
+    for s in done:
+        custom_subjects.append({
+            'name': s['name'],
+            'start': s['start'],
+            'end': s['end'],
+            'bg': s.get('bg', '#F5F5F5'),
+            'header': s.get('header', '#333333'),
+        })
+
+    try:
+        pdf_bytes = _generate_template_pdf(total_days, bot_username, exam_info, custom_subjects)
+        subj_names = ' '.join(s['icon'] + s['name'] for s in done)
+        await context.bot.send_document(
+            chat_id=chat_id,
+            document=io.BytesIO(pdf_bytes),
+            filename=f"جدول_مذاكرة_{total_days}_يوم.pdf",
+            caption=f"✏️ جدولك المخصص — {total_days} يوم\n{subj_names}"
+        )
+    except Exception as e:
+        logger.error(f"[Custom] PDF error: {e}", exc_info=True)
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:150]}")
+
+    # تنظيف
+    for k in ['custom_selected', 'custom_subjects', 'custom_pages_idx', 'custom_pages_state']:
+        context.user_data.pop(k, None)
+
+
+def _fetch_exam_info():
+    """جلب مواعيد التحصيلي"""
+    try:
+        try:
+            from database.manager import connect_db
+        except ImportError:
+            from manager import connect_db
+        conn = connect_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT period_name, exam_start_date, exam_end_date 
+            FROM exam_schedule 
+            WHERE status IN ('active','upcoming') 
+            ORDER BY exam_start_date LIMIT 2
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return rows if rows else None
+    except Exception:
+        return None
+
+
+# ============================================================
 #  12. توزيع الصفحات على الأيام
 # ============================================================
-def _distribute_pages(total_days):
-    """توزيع 4 مواد على N يوم بالتناسب"""
-    subjects = TEMPLATE_SUBJECTS[:]
+def _distribute_pages(total_days, custom_subjects=None):
+    """توزيع المواد على N يوم بالتناسب"""
+    if custom_subjects:
+        subjects = custom_subjects
+    else:
+        subjects = TEMPLATE_SUBJECTS[:]
 
     subj_pages = [s['end'] - s['start'] + 1 for s in subjects]
     total_pages = sum(subj_pages)
@@ -1013,7 +1353,7 @@ def _distribute_pages(total_days):
 # ============================================================
 #  13. PDF القالب — تصميم بطاقات
 # ============================================================
-def _generate_template_pdf(total_days, bot_username, exam_info=None):
+def _generate_template_pdf(total_days, bot_username, exam_info=None, custom_subjects=None):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.pdfgen import canvas
@@ -1023,7 +1363,7 @@ def _generate_template_pdf(total_days, bot_username, exam_info=None):
         raise RuntimeError("خط عربي غير متوفر")
 
     ar = _reshape_arabic
-    days = _distribute_pages(total_days)
+    days = _distribute_pages(total_days, custom_subjects)
 
     buf = io.BytesIO()
     width, height = A4  # 595 × 842
