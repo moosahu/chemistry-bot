@@ -9,6 +9,7 @@ python-bidi
 SQLAlchemy
 aiohttp
 reportlab
+qrcode[pil]
 
 schedule>=1.2.0
 hijri-converter
