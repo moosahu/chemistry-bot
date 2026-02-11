@@ -73,26 +73,3 @@ async def notify_admin_on_registration(user_id, user_data, context: ContextTypes
     
     except Exception as e:
         logger.error(f"خطأ في إرسال إشعار للمدير عن المستخدم الجديد {user_id}: {e}")
-
-
-async def notify_admin_on_deletion(user_id, user_data, quizzes_deleted, context: ContextTypes.DEFAULT_TYPE):
-    """إرسال إشعار للمدير عند حذف مستخدم حسابه"""
-    try:
-        from handlers.admin_tools.email_notification import send_account_deletion_notification_async
-
-        notification_data = {
-            'user_id': user_id,
-            'full_name': user_data.get('full_name', ''),
-            'email': user_data.get('email', ''),
-            'phone': user_data.get('phone', ''),
-            'grade': user_data.get('grade', ''),
-            'quizzes_deleted': quizzes_deleted
-        }
-
-        success = await send_account_deletion_notification_async(notification_data)
-        if success:
-            logger.info(f"تم إرسال إشعار حذف حساب المستخدم {user_id}")
-        else:
-            logger.warning(f"فشل إرسال إشعار حذف حساب المستخدم {user_id}")
-    except Exception as e:
-        logger.error(f"خطأ في إرسال إشعار حذف المستخدم {user_id}: {e}")

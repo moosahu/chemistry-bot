@@ -121,6 +121,9 @@ try:
             admin_exam_add_callback,
             admin_exam_add_input_handler,
             cancel_exam_command,
+            # Bot Settings
+            admin_bot_settings_callback,
+            admin_toggle_deletion_callback,
             # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
@@ -520,6 +523,9 @@ def main() -> None:
             name="exam_add_conversation"
         )
         application.add_handler(exam_add_conv_handler)
+        # Bot Settings handlers
+        application.add_handler(CallbackQueryHandler(admin_bot_settings_callback, pattern=r"^admin_bot_settings$"))
+        application.add_handler(CallbackQueryHandler(admin_toggle_deletion_callback, pattern=r"^admin_toggle_deletion$"))
         # noop handler for page number display
         async def noop_callback(update, context):
             await update.callback_query.answer()

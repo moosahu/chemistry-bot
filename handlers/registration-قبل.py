@@ -243,7 +243,30 @@ def is_valid_phone(phone):
     """التحقق من صحة تنسيق رقم الجوال"""
     # يقبل أرقام سعودية تبدأ بـ 05 أو +966 أو 00966
     pattern = r'^(05\d{8}|\+966\d{9}|00966\d{9})$'
-    return re.match(pattern, phone) is not None
+    if not re.match(pattern, phone):
+        return False
+    
+    # استخراج آخر 9 أرقام (الرقم بدون المفتاح)
+    digits = re.sub(r'[^\d]', '', phone)
+    last9 = digits[-9:]  # 5XXXXXXXX
+    suffix = last9[1:]   # آخر 8 أرقام
+    
+    # رفض أرقام كل خاناتها نفس الرقم: 0500000000, 0555555555
+    if len(set(suffix)) == 1:
+        return False
+    
+    # رفض أرقام تسلسلية: 0512345678, 0598765432
+    if suffix in "0123456789" or suffix in "9876543210":
+        return False
+    
+    # رفض أنماط مكررة: 0512121212, 0512341234
+    for plen in [1, 2, 3, 4]:
+        pat = suffix[:plen]
+        repeated = pat * (8 // plen)
+        if len(repeated) == 8 and suffix == repeated:
+            return False
+    
+    return True
 
 
 # === نظام التحقق الشامل من الاسم ===
@@ -260,6 +283,37 @@ _FAKE_NAMES = {
     "name", "noname", "none", "null", "undefined", "temp",
     "fake", "anonymous", "unknown",
 }
+
+# كلمات ليست أسماء أشخاص — مصطلحات دراسية وعامة
+_NON_NAME_WORDS = {
+    # مصطلحات دراسية
+    "ثانوي", "ابتدائي", "متوسط", "جامعي", "الترم", "الفصل", "الوحدة", "الوحده",
+    "الدرس", "الباب", "المادة", "المنهج", "الكتاب", "الصف", "الاول", "الأول",
+    "الاولى", "الأولى", "الثاني", "الثانية", "الثالث", "الثالثة", "الرابع", "الرابعة",
+    "كيمياء", "فيزياء", "رياضيات", "احياء", "أحياء", "علوم", "انجليزي", "عربي",
+    "اول", "أول", "ثاني", "ثالث", "رابع", "خامس", "سادس",
+    # مصطلحات تعليمية
+    "اختبار", "امتحان", "واجب", "مراجعة", "مذاكرة", "تمارين", "حل", "سؤال",
+    "اسئلة", "أسئلة", "اجابة", "إجابة", "نتيجة", "درجة", "علامة",
+    # كلمات عامة ليست أسماء
+    "السلام", "عليكم", "مرحبا", "اهلا", "شكرا", "لوسمحت", "سمحت", "سمحتي",
+    "ارجو", "أرجو", "ممكن", "ابغى", "أبغى", "ابي", "أبي", "عندي", "ابغا",
+    "الله", "يعطيك", "العافية", "بسم", "الرحمن", "الرحيم",
+    "لو", "بس", "كيف", "وين", "متى", "ليش", "وش", "ايش",
+    # كلمات وصفية
+    "كبير", "صغير", "جديد", "قديم", "حلو", "زين", "تمام", "اوكي",
+}
+
+def _count_non_name_words(name_parts: list) -> int:
+    """عد الكلمات اللي مو أسماء أشخاص"""
+    count = 0
+    for part in name_parts:
+        clean = part
+        if clean.startswith("ال") and len(clean) > 3:
+            clean = clean[2:]
+        if part.lower() in _NON_NAME_WORDS or clean in _NON_NAME_WORDS:
+            count += 1
+    return count
 
 def _clean_name(raw_name: str) -> str:
     """تنظيف الاسم: إزالة مسافات زائدة + تنسيق"""
@@ -402,6 +456,27 @@ def validate_name(raw_name: str) -> tuple[bool, str, str]:
                         "⚠️ الاسم يحتوي على نمط مكرر غير طبيعي.\n\n"
                         "يرجى إدخال اسمك الحقيقي."
                     )
+    
+    # 12. فحص الكلمات اللي مو أسماء أشخاص (مصطلحات دراسية، كلمات عامة)
+    non_name_count = _count_non_name_words(parts)
+    if non_name_count >= 2:
+        return False, "", (
+            "⚠️ يبدو أن المدخل ليس اسم شخص.\n\n"
+            "يرجى إدخال اسمك الحقيقي الثلاثي (مثال: محمد علي العلي)"
+        )
+    
+    # 13. فحص إن الاسم الأول على الأقل يشبه اسم شخص (ليس أداة/حرف جر)
+    _NOT_FIRST_NAMES = {
+        "في", "من", "الى", "إلى", "على", "عن", "مع", "هذا", "هذه", "ذلك",
+        "تلك", "هو", "هي", "هم", "هن", "نحن", "انا", "أنا", "انت", "أنت",
+        "كل", "بعض", "غير", "بين", "حتى", "لكن", "اذا", "إذا", "ثم", "لما",
+        "اخ", "أخ", "يا", "لو", "بس",
+    }
+    if parts[0] in _NOT_FIRST_NAMES:
+        return False, "", (
+            "⚠️ يبدو أن المدخل ليس اسم شخص.\n\n"
+            "يرجى إدخال اسمك الحقيقي (مثال: محمد علي العلي)"
+        )
     
     # ✅ الاسم صحيح — تنسيق نهائي
     if has_english:
@@ -888,7 +963,7 @@ async def handle_phone_input(update: Update, context: CallbackContext) -> int:
         await safe_send_message(
             context.bot,
             chat_id,
-            text="⚠️ رقم الجوال غير صحيح. يرجى إدخال رقم جوال سعودي صالح (يبدأ بـ 05 أو +966 أو 00966):"
+            text="⚠️ رقم الجوال غير صحيح.\n\nيرجى إدخال رقم جوال سعودي حقيقي (يبدأ بـ 05).\n❌ لا تُقبل أرقام وهمية مثل 0500000000"
         )
         logger.info(f"[DEBUG] handle_phone_input: Asking for phone again, returning state REGISTRATION_PHONE ({REGISTRATION_PHONE})")
         return REGISTRATION_PHONE
@@ -1477,7 +1552,7 @@ async def handle_edit_phone_input(update: Update, context: CallbackContext) -> i
         await safe_send_message(
             context.bot,
             chat_id,
-            text="⚠️ رقم الجوال غير صحيح. يرجى إدخال رقم جوال سعودي صالح (يبدأ بـ 05 أو +966 أو 00966):"
+            text="⚠️ رقم الجوال غير صحيح.\n\nيرجى إدخال رقم جوال سعودي حقيقي (يبدأ بـ 05).\n❌ لا تُقبل أرقام وهمية مثل 0500000000"
         )
         logger.info(f"[DEBUG] handle_edit_phone_input: Asking for phone again, returning state EDIT_USER_PHONE ({EDIT_USER_PHONE})")
         return EDIT_USER_PHONE

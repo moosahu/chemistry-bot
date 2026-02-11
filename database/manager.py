@@ -748,6 +748,29 @@ class DatabaseManager:
         result = self._execute_query(query, (message_key,), fetch_one=True)
         return result.get("message_text") if result else None
 
+    def delete_user_account(self, user_id: int) -> dict:
+        """حذف حساب المستخدم وجميع بياناته بالكامل"""
+        logger.info(f"[DB Delete] Starting account deletion for user {user_id}")
+        conn = connect_db()
+        if not conn:
+            return {'success': False, 'error': 'لا يوجد اتصال بقاعدة البيانات'}
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM quiz_results WHERE user_id = %s", (user_id,))
+            quiz_count = cur.fetchone()[0]
+            cur.execute("DELETE FROM quiz_results WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM users WHERE user_id = %s", (user_id,))
+            conn.commit()
+            logger.info(f"[DB Delete] User {user_id} deleted: {quiz_count} quizzes removed")
+            return {'success': True, 'quizzes_deleted': quiz_count}
+        except Exception as e:
+            logger.error(f"[DB Delete] Error deleting user {user_id}: {e}")
+            conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            if cur: cur.close()
+            if conn: conn.close()
+
 DB_MANAGER = DatabaseManager()
 logger.info("[DB Manager V18] Global DB_MANAGER instance created.")
 
@@ -872,3 +895,160 @@ def delete_exam_period(period_id):
         if cur: cur.close()
         if conn: conn.close()
 
+
+# ============================================================
+#  جدول الحسابات المحذوفة (فترة الانتظار)
+# ============================================================
+
+def ensure_deleted_accounts_table():
+    """إنشاء جدول الحسابات المحذوفة"""
+    conn = connect_db()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS deleted_accounts (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                deleted_at TIMESTAMP DEFAULT NOW(),
+                full_name VARCHAR(200)
+            );
+        """)
+        conn.commit()
+        logger.info("[DB] deleted_accounts table ensured")
+    except Exception as e:
+        logger.error(f"[DB] Error creating deleted_accounts table: {e}")
+        conn.rollback()
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+ensure_deleted_accounts_table()
+
+
+def record_account_deletion(user_id, full_name=None):
+    """تسجيل حذف الحساب"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO deleted_accounts (user_id, full_name) VALUES (%s, %s)", (user_id, full_name))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error recording deletion: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def check_deletion_cooldown(user_id, cooldown_days=7):
+    """التحقق هل المستخدم حذف حسابه مؤخراً — يرجع None إذا مافي حظر"""
+    conn = connect_db()
+    if not conn: return None
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""
+            SELECT deleted_at FROM deleted_accounts 
+            WHERE user_id = %s ORDER BY deleted_at DESC LIMIT 1
+        """, (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        from datetime import datetime, timedelta
+        deleted_at = row['deleted_at']
+        cooldown_end = deleted_at + timedelta(days=cooldown_days)
+        now = datetime.now()
+        if now < cooldown_end:
+            remaining = cooldown_end - now
+            return {
+                'in_cooldown': True,
+                'deleted_at': deleted_at,
+                'cooldown_end': cooldown_end,
+                'remaining_days': remaining.days,
+                'remaining_hours': remaining.seconds // 3600
+            }
+        return None
+    except Exception as e:
+        logger.error(f"[DB] Error checking cooldown: {e}")
+        return None
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+# ============================================================
+#  جدول إعدادات البوت (تفعيل/تعطيل الميزات)
+# ============================================================
+
+def ensure_bot_settings_table():
+    """إنشاء جدول إعدادات البوت"""
+    conn = connect_db()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                setting_key VARCHAR(50) PRIMARY KEY,
+                setting_value VARCHAR(200) NOT NULL,
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        cur.execute("""
+            INSERT INTO bot_settings (setting_key, setting_value)
+            VALUES ('allow_account_deletion', 'off')
+            ON CONFLICT (setting_key) DO NOTHING;
+        """)
+        conn.commit()
+        logger.info("[DB] bot_settings table ensured")
+    except Exception as e:
+        logger.error(f"[DB] Error creating bot_settings table: {e}")
+        conn.rollback()
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+ensure_bot_settings_table()
+
+
+def get_bot_setting(key, default='off'):
+    """جلب إعداد من جدول الإعدادات"""
+    conn = connect_db()
+    if not conn: return default
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT setting_value FROM bot_settings WHERE setting_key = %s", (key,))
+        row = cur.fetchone()
+        return row['setting_value'] if row else default
+    except Exception as e:
+        logger.error(f"[DB] Error getting setting {key}: {e}")
+        return default
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def set_bot_setting(key, value):
+    """تعديل إعداد في جدول الإعدادات"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO bot_settings (setting_key, setting_value, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = %s, updated_at = NOW()
+        """, (key, value, value))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error setting {key}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()

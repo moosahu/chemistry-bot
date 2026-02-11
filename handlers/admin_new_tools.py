@@ -86,6 +86,7 @@ def get_admin_menu_keyboard():
         [InlineKeyboardButton("📣 إرسال إشعار", callback_data="admin_broadcast_menu")],
         [InlineKeyboardButton("⏳ مواعيد التحصيلي", callback_data="admin_exam_schedule")],
         [InlineKeyboardButton("✏️ تعديل رسائل البوت", callback_data="admin_edit_messages_menu")],
+        [InlineKeyboardButton("⚙️ إعدادات البوت", callback_data="admin_bot_settings")],
         [InlineKeyboardButton("⬅️ القائمة الرئيسية", callback_data="admin_back_to_start")],
     ])
 
@@ -2197,3 +2198,73 @@ async def cancel_exam_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.pop('exam_add_step', None)
     await update.message.reply_text("تم الإلغاء", reply_markup=get_admin_menu_keyboard())
     return ConversationHandler.END
+
+
+# ============================================================
+#  11. إعدادات البوت
+# ============================================================
+
+async def admin_bot_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """عرض إعدادات البوت"""
+    query = update.callback_query
+    await query.answer()
+
+    if not await check_admin_privileges(update, context):
+        return
+
+    try:
+        from database.manager import get_bot_setting
+    except ImportError:
+        from manager import get_bot_setting
+
+    deletion_status = get_bot_setting('allow_account_deletion', 'off')
+    deletion_icon = "🟢 مفعّل" if deletion_status == 'on' else "🔴 مقفل"
+    deletion_btn_text = "🔴 قفل حذف الحساب" if deletion_status == 'on' else "🟢 فتح حذف الحساب"
+
+    text = (
+        "⚙️ إعدادات البوت\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🗑 حذف الحساب: {deletion_icon}\n"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(deletion_btn_text, callback_data="admin_toggle_deletion")],
+        [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
+    ])
+
+    await query.edit_message_text(text=text, reply_markup=keyboard)
+
+
+async def admin_toggle_deletion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تبديل حالة حذف الحساب"""
+    query = update.callback_query
+    await query.answer()
+
+    if not await check_admin_privileges(update, context):
+        return
+
+    try:
+        from database.manager import get_bot_setting, set_bot_setting
+    except ImportError:
+        from manager import get_bot_setting, set_bot_setting
+
+    current = get_bot_setting('allow_account_deletion', 'off')
+    new_value = 'off' if current == 'on' else 'on'
+    set_bot_setting('allow_account_deletion', new_value)
+
+    new_icon = "🟢 مفعّل" if new_value == 'on' else "🔴 مقفل"
+    new_btn = "🔴 قفل حذف الحساب" if new_value == 'on' else "🟢 فتح حذف الحساب"
+
+    text = (
+        "⚙️ إعدادات البوت\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"🗑 حذف الحساب: {new_icon}\n\n"
+        f"✅ تم التحديث بنجاح"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(new_btn, callback_data="admin_toggle_deletion")],
+        [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
+    ])
+
+    await query.edit_message_text(text=text, reply_markup=keyboard)

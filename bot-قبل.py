@@ -45,6 +45,7 @@ try:
     )
     from database.db_setup import get_engine, create_tables # MODIFIED: create_connection to get_engine
     from handlers.common import start_handler, main_menu_callback
+    from handlers.common import exam_countdown_callback
 
     try:
         from handlers.quiz import quiz_conv_handler
@@ -112,12 +113,21 @@ try:
             admin_cert_select_all_callback,
             admin_cert_deselect_all_callback,
             admin_report_cert_confirm_callback,
+            # Exam Schedule
+            admin_exam_schedule_callback,
+            admin_exam_status_callback,
+            admin_exam_delete_callback,
+            admin_exam_delete_confirm_callback,
+            admin_exam_add_callback,
+            admin_exam_add_input_handler,
+            cancel_exam_command,
             # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
             BROADCAST_CONFIRM,
             SEARCH_STUDENT_INPUT,
             BROADCAST_GRADE_SELECT,
+            EXAM_SCHEDULE_INPUT,
         )
         # إضافة استيراد أدوات تصدير بيانات المستخدمين
         from handlers.admin_tools.admin_commands import export_users_command
@@ -378,6 +388,10 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^(main_menu|about_bot)$"))
     logger.info("Global main_menu_callback handler added.")
     
+    # Exam countdown handler (for students)
+    application.add_handler(CallbackQueryHandler(exam_countdown_callback, pattern="^exam_countdown$"))
+    logger.info("Exam countdown handler added.")
+    
     # إضافة معالج عرض الاختبارات المحفوظة (resume_saved_quiz موجود في quiz_conv_handler)
     try:
         from handlers.quiz import show_saved_quizzes_menu
@@ -485,6 +499,27 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_cert_select_all_callback, pattern=r"^cert_select_all$"))
         application.add_handler(CallbackQueryHandler(admin_cert_deselect_all_callback, pattern=r"^cert_deselect_all$"))
         application.add_handler(CallbackQueryHandler(admin_report_cert_confirm_callback, pattern=r"^admin_report_cert_confirm$"))
+        # === Exam Schedule handlers ===
+        application.add_handler(CallbackQueryHandler(admin_exam_schedule_callback, pattern=r"^admin_exam_schedule$"))
+        application.add_handler(CallbackQueryHandler(admin_exam_status_callback, pattern=r"^exam_status_"))
+        application.add_handler(CallbackQueryHandler(admin_exam_delete_callback, pattern=r"^exam_delete_\d+$"))
+        application.add_handler(CallbackQueryHandler(admin_exam_delete_confirm_callback, pattern=r"^exam_del_yes_"))
+        # Exam add conversation handler
+        exam_add_conv_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(admin_exam_add_callback, pattern=r"^admin_exam_add$")],
+            states={
+                EXAM_SCHEDULE_INPUT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, admin_exam_add_input_handler),
+                ],
+            },
+            fallbacks=[
+                CommandHandler("cancel_exam", cancel_exam_command),
+                CallbackQueryHandler(admin_exam_schedule_callback, pattern=r"^admin_exam_schedule$"),
+            ],
+            persistent=False,
+            name="exam_add_conversation"
+        )
+        application.add_handler(exam_add_conv_handler)
         # noop handler for page number display
         async def noop_callback(update, context):
             await update.callback_query.answer()

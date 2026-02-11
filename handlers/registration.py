@@ -22,11 +22,15 @@ from telegram.ext import (
 
 # استيراد دالة إشعارات البريد الإلكتروني
 try:
-    from handlers.admin_tools.registration_notification import notify_admin_on_registration
+    from handlers.admin_tools.registration_notification import notify_admin_on_registration, notify_admin_on_deletion
     EMAIL_NOTIFICATIONS_AVAILABLE = True
 except ImportError:
-    EMAIL_NOTIFICATIONS_AVAILABLE = False
-    logging.warning("لم يتم العثور على وحدة registration_notification في handlers.admin_tools. إشعارات البريد الإلكتروني غير متاحة.")
+    try:
+        from registration_notification import notify_admin_on_registration, notify_admin_on_deletion
+        EMAIL_NOTIFICATIONS_AVAILABLE = True
+    except ImportError:
+        EMAIL_NOTIFICATIONS_AVAILABLE = False
+        logging.warning("لم يتم العثور على وحدة registration_notification. إشعارات البريد الإلكتروني غير متاحة.")
 
 # تعريف الدوال المساعدة مباشرة في بداية الملف (خارج أي كتلة try/except)
 async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None):
@@ -522,8 +526,20 @@ def create_edit_info_keyboard():
         [InlineKeyboardButton("✏️ تعديل البريد الإلكتروني", callback_data="edit_email")],
         [InlineKeyboardButton("✏️ تعديل رقم الجوال", callback_data="edit_phone")],
         [InlineKeyboardButton("✏️ تعديل الصف الدراسي", callback_data="edit_grade")],
-        [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")]
     ]
+    # إضافة زر الحذف فقط إذا كان مفعّل من الأدمن
+    try:
+        from database.manager import get_bot_setting
+    except ImportError:
+        try:
+            from manager import get_bot_setting
+        except ImportError:
+            get_bot_setting = None
+    
+    if get_bot_setting and get_bot_setting('allow_account_deletion', 'off') == 'on':
+        keyboard.append([InlineKeyboardButton("🗑 حذف حسابي", callback_data="delete_my_account")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 # إنشاء لوحة مفاتيح القائمة الرئيسية
@@ -752,6 +768,38 @@ async def start_command(update: Update, context: CallbackContext) -> int:
     else:
         # المستخدم غير مسجل أو معلوماته ناقصة
         logger.warning(f"[SECURITY] المستخدم {user_id} غير مسجل أو معلوماته ناقصة")
+        
+        # التحقق من فترة الانتظار بعد حذف الحساب
+        try:
+            from database.manager import check_deletion_cooldown
+        except ImportError:
+            try:
+                from manager import check_deletion_cooldown
+            except ImportError:
+                check_deletion_cooldown = None
+        
+        if check_deletion_cooldown:
+            cooldown = check_deletion_cooldown(user_id, cooldown_days=7)
+            if cooldown:
+                days = cooldown['remaining_days']
+                hours = cooldown['remaining_hours']
+                if days > 0:
+                    time_msg = f"{days} يوم و {hours} ساعة"
+                else:
+                    time_msg = f"{hours} ساعة"
+                
+                await safe_send_message(
+                    context.bot,
+                    chat_id,
+                    text=(
+                        "⏳ لا يمكنك التسجيل حالياً\n"
+                        "━━━━━━━━━━━━━━━━━━\n\n"
+                        "لقد قمت بحذف حسابك مؤخراً\n"
+                        f"يمكنك التسجيل مرة أخرى بعد: {time_msg}\n\n"
+                        "نراك قريباً! 👋"
+                    )
+                )
+                return ConversationHandler.END
         
         # تسجيل محاولة وصول غير مصرح بها
         security_manager.record_failed_attempt(user_id)
@@ -1338,6 +1386,36 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         )
         logger.info(f"[DEBUG] handle_edit_info_selection: Editing grade, returning state EDIT_USER_GRADE ({EDIT_USER_GRADE})")
         return EDIT_USER_GRADE
+    elif field == "delete_my_account":
+        # حذف الحساب — عرض تأكيد
+        await query.answer()
+        
+        db_manager = context.bot_data.get("DB_MANAGER")
+        stats = db_manager.get_user_overall_stats(user_id) if db_manager else None
+        quiz_count = stats.get('total_quizzes', 0) if stats else 0
+        
+        text = (
+            "⚠️ حذف الحساب نهائياً\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "سيتم حذف جميع بياناتك:\n"
+            f"👤 معلوماتك الشخصية\n"
+            f"📝 {quiz_count} اختبار ونتائجه\n"
+            f"📊 جميع إحصائياتك\n\n"
+            "❗ هذا الإجراء لا يمكن التراجع عنه\n"
+            "⏳ لن تتمكن من التسجيل مرة أخرى إلا بعد أسبوع\n\n"
+            "هل أنت متأكد؟"
+        )
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🗑 نعم، احذف حسابي", callback_data="confirm_delete_account")],
+            [InlineKeyboardButton("🔙 لا، رجوع", callback_data="edit_my_info")]
+        ])
+        
+        await safe_edit_message_text(
+            context.bot, chat_id, query.message.message_id,
+            text=text, reply_markup=keyboard
+        )
+        return EDIT_USER_INFO_MENU
     elif field == "main_menu":
         # العودة إلى القائمة الرئيسية
         logger.info(f"[DEBUG] handle_edit_info_selection: User chose main_menu, returning END ({END})")
@@ -1386,6 +1464,84 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
         )
         logger.info(f"[DEBUG] handle_edit_info_selection: Invalid edit field, returning state EDIT_USER_INFO_MENU ({EDIT_USER_INFO_MENU})")
         return EDIT_USER_INFO_MENU
+
+async def handle_confirm_delete_account(update: Update, context: CallbackContext) -> int:
+    """تأكيد حذف الحساب نهائياً"""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
+    
+    logger.info(f"[Delete Account] User {user_id} confirmed account deletion")
+    
+    db_manager = context.bot_data.get("DB_MANAGER")
+    if not db_manager:
+        await safe_edit_message_text(
+            context.bot, chat_id, query.message.message_id,
+            text="❌ خطأ في الاتصال بقاعدة البيانات"
+        )
+        return ConversationHandler.END
+    
+    # جلب بيانات الطالب قبل الحذف (للإشعار)
+    user_info = db_manager.get_user_info(user_id) or {}
+    user_data_for_notify = {
+        'full_name': user_info.get('full_name', context.user_data.get('registration_data', {}).get('full_name', '')),
+        'email': user_info.get('email', ''),
+        'phone': user_info.get('phone', ''),
+        'grade': user_info.get('grade', ''),
+    }
+    
+    # تنفيذ الحذف
+    result = db_manager.delete_user_account(user_id)
+    
+    if result.get('success'):
+        quiz_count = result.get('quizzes_deleted', 0)
+        
+        # تسجيل الحذف في جدول الانتظار
+        try:
+            from database.manager import record_account_deletion
+        except ImportError:
+            try:
+                from manager import record_account_deletion
+            except ImportError:
+                record_account_deletion = None
+        
+        if record_account_deletion:
+            record_account_deletion(user_id, user_data_for_notify.get('full_name', ''))
+        
+        # إرسال إشعار للأدمن بالإيميل
+        if EMAIL_NOTIFICATIONS_AVAILABLE:
+            try:
+                await notify_admin_on_deletion(user_id, user_data_for_notify, quiz_count, context)
+            except Exception as e:
+                logger.error(f"[Delete Account] Failed to notify admin: {e}")
+        
+        text = (
+            "✅ تم حذف حسابك بنجاح\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"🗑 تم حذف {quiz_count} اختبار\n"
+            "👤 تم حذف جميع بياناتك\n\n"
+            "⏳ يمكنك التسجيل مرة أخرى بعد أسبوع\n"
+            "بالضغط على /start\n\n"
+            "نتمنى لك التوفيق! 💪"
+        )
+        await safe_edit_message_text(
+            context.bot, chat_id, query.message.message_id,
+            text=text
+        )
+        context.user_data.clear()
+    else:
+        error = result.get('error', 'خطأ غير معروف')
+        await safe_edit_message_text(
+            context.bot, chat_id, query.message.message_id,
+            text=f"❌ فشل حذف الحساب\n{error}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 رجوع", callback_data="edit_my_info")]
+            ])
+        )
+        return EDIT_USER_INFO_MENU
+    
+    return ConversationHandler.END
 
 # معالجة إدخال الاسم الجديد
 async def handle_edit_name_input(update: Update, context: CallbackContext) -> int:
@@ -1722,7 +1878,10 @@ edit_info_conv_handler = ConversationHandler(
         CallbackQueryHandler(handle_edit_info_request, pattern=r'^edit_my_info$')
     ],
     states={
-        EDIT_USER_INFO_MENU: [CallbackQueryHandler(handle_edit_info_selection, pattern=r'^(edit_\w+|main_menu)$')],
+        EDIT_USER_INFO_MENU: [
+            CallbackQueryHandler(handle_edit_info_selection, pattern=r'^(edit_\w+|main_menu|delete_my_account)$'),
+            CallbackQueryHandler(handle_confirm_delete_account, pattern=r'^confirm_delete_account$'),
+        ],
         EDIT_USER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_name_input)],
         EDIT_USER_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_email_input)],
         EDIT_USER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_phone_input)],
