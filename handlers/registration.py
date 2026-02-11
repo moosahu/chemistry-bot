@@ -1486,13 +1486,18 @@ async def handle_confirm_delete_account(update: Update, context: CallbackContext
         return ConversationHandler.END
     
     # جلب بيانات الطالب قبل الحذف (للإشعار)
-    user_info = db_manager.get_user_info(user_id) or {}
-    user_data_for_notify = {
-        'full_name': user_info.get('full_name', context.user_data.get('registration_data', {}).get('full_name', '')),
-        'email': user_info.get('email', ''),
-        'phone': user_info.get('phone', ''),
-        'grade': user_info.get('grade', ''),
-    }
+    user_data_for_notify = context.user_data.get('registration_data', {})
+    if not user_data_for_notify.get('full_name'):
+        try:
+            ui = get_user_info(db_manager, user_id) or {}
+            user_data_for_notify = {
+                'full_name': ui.get('full_name', ''),
+                'email': ui.get('email', ''),
+                'phone': ui.get('phone', ''),
+                'grade': ui.get('grade', ''),
+            }
+        except Exception:
+            user_data_for_notify = {}
     
     # تنفيذ الحذف
     result = db_manager.delete_user_account(user_id)
