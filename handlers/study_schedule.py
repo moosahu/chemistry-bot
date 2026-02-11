@@ -1503,17 +1503,28 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         ty = ry + row_h / 2 - 3
         cx = x
 
-        # الترتيب الجديد: الإنجاز، ملاحظات، الصفحة، التاريخ، اليوم
+        c.drawCentredString(cx + cw[0] / 2, ty, _reshape_arabic(day['day_name'][:8]))
+        cx += cw[0]
+        c.drawCentredString(cx + cw[1] / 2, ty, day['day_date'].strftime('%m/%d'))
+        cx += cw[1]
+
         if is_rest:
-            # عمود الإنجاز + ملاحظات + الصفحة = راحة
             c.setFillColor(colors.HexColor('#e67e22'))
             c.setFont('ArabicFontBold', 9)
-            c.drawCentredString(cx + (cw[0] + cw[1] + cw[2]) / 2, ty, _reshape_arabic("راحة"))
+            c.drawCentredString(cx + (cw[2] + cw[3] + cw[4]) / 2, ty, _reshape_arabic("راحة"))
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
-            cx += cw[0] + cw[1] + cw[2]
         else:
-            # عمود الإنجاز
+            pages_text = day.get('pages', '') or ''
+            c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
+            cx += cw[2]
+            notes_text = day.get('notes', '') or ''
+            if notes_text:
+                c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
+            else:
+                c.drawCentredString(cx + cw[3] / 2, ty, notes_text)
+            cx += cw[3]
+
             if day['is_completed']:
                 c.setFillColor(colors.HexColor('#27ae60'))
                 st = "✓"
@@ -1521,30 +1532,9 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
                 c.setFillColor(colors.HexColor('#bdc3c7'))
                 st = "☐"
             c.setFont('ArabicFontBold', 12)
-            c.drawCentredString(cx + cw[0] / 2, ty, st)
+            c.drawCentredString(cx + cw[4] / 2, ty, st)
             c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
-            cx += cw[0]
-            
-            # عمود ملاحظات
-            notes_text = day.get('notes', '') or ''
-            if notes_text:
-                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(str(notes_text)[:25]))
-            else:
-                c.drawCentredString(cx + cw[1] / 2, ty, notes_text)
-            cx += cw[1]
-            
-            # عمود الصفحة
-            pages_text = day.get('pages', '') or ''
-            c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
-            cx += cw[2]
-        
-        # عمود التاريخ
-        c.drawCentredString(cx + cw[3] / 2, ty, day['day_date'].strftime('%m/%d'))
-        cx += cw[3]
-        
-        # عمود اليوم
-        c.drawCentredString(cx + cw[4] / 2, ty, _reshape_arabic(day['day_name'][:8]))
 
     c.setStrokeColor(colors.HexColor('#2c3e50'))
     c.setLineWidth(1)
