@@ -575,7 +575,6 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(study_cust_cancel_callback, pattern=r"^study_cust_cancel$"))
         application.add_handler(CallbackQueryHandler(study_custom_dur_callback, pattern=r"^study_cust_dur_\d+$"))
         # Text handler for custom pages input (group=2 to avoid conflicts)
-        from telegram.ext import MessageHandler, filters
         application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND, study_custom_pages_handler
         ), group=2)
