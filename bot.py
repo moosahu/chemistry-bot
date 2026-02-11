@@ -133,6 +133,7 @@ try:
             # Bot Settings
             admin_bot_settings_callback,
             admin_toggle_deletion_callback,
+            admin_toggle_schedule_callback,
             # States
             EDIT_MESSAGE_TEXT, 
             BROADCAST_MESSAGE_TEXT, 
@@ -535,7 +536,6 @@ def main() -> None:
         # Bot Settings handlers
         application.add_handler(CallbackQueryHandler(admin_bot_settings_callback, pattern=r"^admin_bot_settings$"))
         application.add_handler(CallbackQueryHandler(admin_toggle_deletion_callback, pattern=r"^admin_toggle_deletion$"))
-        from handlers.admin_tools.admin_new_tools import admin_toggle_schedule_callback
         application.add_handler(CallbackQueryHandler(admin_toggle_schedule_callback, pattern=r"^admin_toggle_schedule$"))
         # Study Schedule handlers
         application.add_handler(CallbackQueryHandler(study_menu_callback, pattern=r"^study_menu$"))
