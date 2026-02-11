@@ -1280,7 +1280,7 @@ def _draw_card(c, x, y, w, h, day, ar):
         c.setStrokeColor(colors.HexColor('#999999'))
         c.setLineWidth(0.6)
         c.setFillColor(colors.white)
-        c.rect(cx - cb_size / 2, y + 4, cb_size, cb_size, fill=1)
+        c.rect(cx - cb_size / 2, y + 8, cb_size, cb_size, fill=1)  # رفع المربع من 4 إلى 8
 
 
 def _draw_card_footer(c, width, bot_username, ar):
@@ -1522,6 +1522,8 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         else:
             # عمود الصفحة
             pages_text = day.get('pages', '') or ''
+            if not pages_text and day.get('pages_start') and day.get('pages_end'):
+                pages_text = f"{day['pages_start']}-{day['pages_end']}"
             c.drawCentredString(cx + cw[2] / 2, ty, str(pages_text)[:12])
             cx += cw[2]
             
