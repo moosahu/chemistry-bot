@@ -1349,7 +1349,9 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
     c.drawCentredString(width / 2, 15, _reshape_arabic("ص 1"))
     c.showPage()
 
-    # استخراج بيانات التوزيع من الخطة وإضافتها للأيام
+    weeks_data = {}
+
+    # استخراج بيانات التوزيع وربطها مع الأيام
     subjects_data = _parse_subjects_json(plan.get('subject', ''))
     rest_days_str = plan.get('rest_days', '')
     rest_days_list = []
@@ -1358,35 +1360,33 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
             if d.strip().isdigit():
                 rest_days_list.append(int(d.strip()))
 
-    # توزيع الصفحات على الأيام مرة ثانية لربطها
+    # توزيع الصفحات على الأيام
     if subjects_data:
         total_days = plan.get('num_weeks', 1) * 7
-        distributed_days = _distribute_pages(total_days, subjects_data, rest_days_list)
+        distributed = _distribute_pages(total_days, subjects_data, rest_days_list)
 
-        # إنشاء dictionary للربط السريع بين رقم اليوم وبياناته
-        day_info_map = {}
-        for dist_day in distributed_days:
-            day_num = dist_day.get('day', 0)
-            day_info_map[day_num] = {
-                'subject': dist_day.get('subject', ''),
-                'pages_start': dist_day.get('pages_start', 0),
-                'pages_end': dist_day.get('pages_end', 0),
-                'is_rest': dist_day.get('is_rest', False)
-            }
+        # ربط البيانات: إنشاء map بين رقم اليوم ومعلوماته
+        day_map = {}
+        for dist in distributed:
+            day_num = dist.get('day', 0)
+            if not dist.get('is_rest', False):
+                day_map[day_num] = {
+                    'subject': dist.get('subject', ''),
+                    'pages_start': dist.get('pages_start', 0),
+                    'pages_end': dist.get('pages_end', 0)
+                }
 
-        # إضافة المعلومات لكل يوم في all_days
+        # إضافة البيانات لكل يوم في all_days
         for day in all_days:
             day_num = day.get('day_number', 0)
-            if day_num in day_info_map:
-                info = day_info_map[day_num]
-                if not day.get('pages') and not day.get('is_rest_day', False):
-                    day['subject'] = info['subject']
-                    day['pages_start'] = info['pages_start']
-                    day['pages_end'] = info['pages_end']
+            if day_num in day_map and not day.get('is_rest_day', False):
+                day['subject'] = day_map[day_num]['subject']
+                day['pages_start'] = day_map[day_num]['pages_start']
+                day['pages_end'] = day_map[day_num]['pages_end']
 
-    weeks_data = {}
     for day in all_days:
         weeks_data.setdefault(day['week_number'], []).append(day)
+
     week_nums = sorted(weeks_data.keys())
     page_num = 2
     for i in range(0, len(week_nums), 4):
@@ -1502,8 +1502,8 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
     c.drawCentredString(x + w / 2, y + h - 18, _reshape_arabic(title))
 
     header_y = y + h - 50
-    col_labels = ['اليوم', 'التاريخ', 'الصفحة', 'ملاحظات', 'الإنجاز']
-    cw = [w * 0.15, w * 0.18, w * 0.18, w * 0.34, w * 0.15]
+    col_labels = ['الإنجاز', 'ملاحظات', 'الصفحة', 'التاريخ', 'اليوم']
+    cw = [w * 0.15, w * 0.18, w * 0.24, w * 0.26, w * 0.17]
 
     c.setFillColor(colors.HexColor('#ecf0f1'))
     c.rect(x, header_y, w, 20, fill=1)
