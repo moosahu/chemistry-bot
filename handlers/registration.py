@@ -549,6 +549,7 @@ def create_main_menu_keyboard(user_id, db_manager=None):
         [InlineKeyboardButton("🧠 بدء اختبار جديد", callback_data="start_quiz")],
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
+        [InlineKeyboardButton("📅 جدول المذاكرة", callback_data="study_menu")],
         [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
         [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
     ]
@@ -1404,13 +1405,15 @@ async def handle_edit_info_selection(update: Update, context: CallbackContext) -
             f"👤 معلوماتك الشخصية\n"
             f"📝 {quiz_count} اختبار ونتائجه\n"
             f"📊 جميع إحصائياتك\n\n"
-            "❗ هذا الإجراء لا يمكن التراجع عنه\n"
-            "⏳ لن تتمكن من التسجيل مرة أخرى إلا بعد أسبوع\n\n"
+            "❗ هذا الإجراء لا يمكن التراجع عنه\n\n"
+            "⛔ تنبيه مهم:\n"
+            "لن تتمكن من التسجيل مرة أخرى\n"
+            "إلا بعد أسبوع (7 أيام) من الحذف\n\n"
             "هل أنت متأكد؟"
         )
         
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🗑 نعم، احذف حسابي", callback_data="confirm_delete_account")],
+            [InlineKeyboardButton("🗑 نعم، احذف (لن أتمكن من التسجيل لمدة أسبوع)", callback_data="confirm_delete_account")],
             [InlineKeyboardButton("🔙 لا، رجوع", callback_data="edit_my_info")]
         ])
         

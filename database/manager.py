@@ -1076,3 +1076,251 @@ def set_bot_setting(key, value):
     finally:
         if cur: cur.close()
         if conn: conn.close()
+
+
+# ============================================================
+#  جدول خطط المذاكرة
+# ============================================================
+
+def ensure_study_tables():
+    """إنشاء جداول خطط المذاكرة"""
+    conn = connect_db()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS study_plans (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                subject VARCHAR(100) DEFAULT 'كيمياء',
+                num_weeks INT DEFAULT 4,
+                rest_days VARCHAR(50) DEFAULT '',
+                start_date DATE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                is_active BOOLEAN DEFAULT TRUE
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS study_plan_days (
+                id SERIAL PRIMARY KEY,
+                plan_id INT REFERENCES study_plans(id) ON DELETE CASCADE,
+                day_date DATE NOT NULL,
+                week_number INT NOT NULL,
+                day_name VARCHAR(20),
+                is_rest_day BOOLEAN DEFAULT FALSE,
+                is_completed BOOLEAN DEFAULT FALSE,
+                pages VARCHAR(100),
+                notes TEXT,
+                completed_at TIMESTAMP
+            );
+        """)
+        # إضافة عمود is_rest_day لو الجدول موجود بدونه
+        cur.execute("""
+            ALTER TABLE study_plan_days ADD COLUMN IF NOT EXISTS is_rest_day BOOLEAN DEFAULT FALSE;
+        """)
+        cur.execute("""
+            ALTER TABLE study_plans ADD COLUMN IF NOT EXISTS rest_days VARCHAR(50) DEFAULT '';
+        """)
+        conn.commit()
+        logger.info("[DB] study_plans & study_plan_days tables ensured")
+    except Exception as e:
+        logger.error(f"[DB] Error creating study tables: {e}")
+        conn.rollback()
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+ensure_study_tables()
+
+
+def create_study_plan(user_id, subject, num_weeks, start_date, rest_days_list=None):
+    """إنشاء خطة مذاكرة جديدة مع أيام الراحة"""
+    conn = connect_db()
+    if not conn: return None
+    if rest_days_list is None:
+        rest_days_list = []
+    rest_days_str = ','.join(str(d) for d in rest_days_list)
+    try:
+        cur = conn.cursor()
+        # تعطيل أي خطة سابقة
+        cur.execute("UPDATE study_plans SET is_active = FALSE WHERE user_id = %s AND is_active = TRUE", (user_id,))
+        # إنشاء الخطة الجديدة
+        cur.execute("""
+            INSERT INTO study_plans (user_id, subject, num_weeks, rest_days, start_date)
+            VALUES (%s, %s, %s, %s, %s) RETURNING id
+        """, (user_id, subject, num_weeks, rest_days_str, start_date))
+        plan_id = cur.fetchone()[0]
+        
+        # إنشاء أيام الخطة
+        from datetime import timedelta
+        day_names_ar = ['الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت', 'الأحد']
+        current_date = start_date
+        for week in range(1, num_weeks + 1):
+            for day_idx in range(7):
+                day_name = day_names_ar[current_date.weekday()]
+                # weekday(): 0=Mon,1=Tue,2=Wed,3=Thu,4=Fri,5=Sat,6=Sun
+                is_rest = current_date.weekday() in rest_days_list
+                cur.execute("""
+                    INSERT INTO study_plan_days (plan_id, day_date, week_number, day_name, is_rest_day)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (plan_id, current_date, week, day_name, is_rest))
+                current_date += timedelta(days=1)
+        
+        conn.commit()
+        study_days = num_weeks * 7 - num_weeks * len(rest_days_list)
+        logger.info(f"[DB] Study plan {plan_id} created: {subject}, {num_weeks}w, {study_days} study days, rest={rest_days_list}")
+        return plan_id
+    except Exception as e:
+        logger.error(f"[DB] Error creating study plan: {e}")
+        conn.rollback()
+        return None
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def get_active_study_plan(user_id):
+    """جلب الخطة النشطة للمستخدم"""
+    conn = connect_db()
+    if not conn: return None
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""
+            SELECT * FROM study_plans 
+            WHERE user_id = %s AND is_active = TRUE 
+            ORDER BY created_at DESC LIMIT 1
+        """, (user_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"[DB] Error getting study plan: {e}")
+        return None
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def get_study_plan_days(plan_id, week_number=None):
+    """جلب أيام خطة المذاكرة"""
+    conn = connect_db()
+    if not conn: return []
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        if week_number:
+            cur.execute("""
+                SELECT * FROM study_plan_days 
+                WHERE plan_id = %s AND week_number = %s 
+                ORDER BY day_date
+            """, (plan_id, week_number))
+        else:
+            cur.execute("""
+                SELECT * FROM study_plan_days 
+                WHERE plan_id = %s ORDER BY day_date
+            """, (plan_id,))
+        return [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"[DB] Error getting plan days: {e}")
+        return []
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def update_study_day(day_id, is_completed=True, pages=None, notes=None):
+    """تحديث يوم في خطة المذاكرة"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE study_plan_days 
+            SET is_completed = %s, pages = %s, notes = %s, completed_at = NOW()
+            WHERE id = %s
+        """, (is_completed, pages, notes, day_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error updating study day: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def toggle_study_day(day_id):
+    """تبديل حالة يوم (تم/لم يتم)"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE study_plan_days 
+            SET is_completed = NOT is_completed,
+                completed_at = CASE WHEN is_completed THEN NULL ELSE NOW() END
+            WHERE id = %s
+        """, (day_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error toggling study day: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def get_study_plan_stats(plan_id):
+    """إحصائيات خطة المذاكرة — تستثني أيام الراحة"""
+    conn = connect_db()
+    if not conn: return {}
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""
+            SELECT 
+                COUNT(*) as total_days,
+                COUNT(*) FILTER (WHERE NOT is_rest_day) as study_days,
+                COUNT(*) FILTER (WHERE is_completed AND NOT is_rest_day) as completed_days,
+                COUNT(*) FILTER (WHERE is_rest_day) as rest_days_count,
+                COUNT(DISTINCT week_number) as total_weeks
+            FROM study_plan_days WHERE plan_id = %s
+        """, (plan_id,))
+        row = cur.fetchone()
+        if row:
+            study = row['study_days']
+            completed = row['completed_days']
+            return {
+                'total_days': row['total_days'],
+                'study_days': study,
+                'completed_days': completed,
+                'rest_days_count': row['rest_days_count'],
+                'total_weeks': row['total_weeks'],
+                'progress_pct': round((completed / study * 100) if study > 0 else 0, 1)
+            }
+        return {}
+    except Exception as e:
+        logger.error(f"[DB] Error getting plan stats: {e}")
+        return {}
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def delete_study_plan(plan_id):
+    """حذف خطة مذاكرة"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM study_plans WHERE id = %s", (plan_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error deleting plan: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()

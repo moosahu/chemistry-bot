@@ -46,6 +46,15 @@ try:
     from database.db_setup import get_engine, create_tables # MODIFIED: create_connection to get_engine
     from handlers.common import start_handler, main_menu_callback
     from handlers.common import exam_countdown_callback
+    from handlers.study_schedule import (
+        study_menu_callback,
+        study_view_week_callback,
+        study_toggle_day_callback,
+        study_export_pdf_callback,
+        study_delete_plan_callback,
+        study_delete_confirm_callback,
+        get_study_schedule_conv_handler,
+    )
 
     try:
         from handlers.quiz import quiz_conv_handler
@@ -526,6 +535,16 @@ def main() -> None:
         # Bot Settings handlers
         application.add_handler(CallbackQueryHandler(admin_bot_settings_callback, pattern=r"^admin_bot_settings$"))
         application.add_handler(CallbackQueryHandler(admin_toggle_deletion_callback, pattern=r"^admin_toggle_deletion$"))
+        # Study Schedule handlers
+        application.add_handler(CallbackQueryHandler(study_menu_callback, pattern=r"^study_menu$"))
+        application.add_handler(CallbackQueryHandler(study_view_week_callback, pattern=r"^study_view_week_\d+$"))
+        application.add_handler(CallbackQueryHandler(study_toggle_day_callback, pattern=r"^study_toggle_\d+_w\d+$"))
+        application.add_handler(CallbackQueryHandler(study_export_pdf_callback, pattern=r"^study_export_pdf$"))
+        application.add_handler(CallbackQueryHandler(study_delete_plan_callback, pattern=r"^study_delete_plan$"))
+        application.add_handler(CallbackQueryHandler(study_delete_confirm_callback, pattern=r"^study_delete_confirm$"))
+        study_conv = get_study_schedule_conv_handler()
+        application.add_handler(study_conv)
+        logger.info("Study schedule handlers added.")
         # noop handler for page number display
         async def noop_callback(update, context):
             await update.callback_query.answer()
