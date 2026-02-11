@@ -48,23 +48,27 @@ try:
     from handlers.common import exam_countdown_callback
     from handlers.study_schedule import (
         study_menu_callback,
-        sched_start_callback,
-        sched_subj_toggle_callback,
-        sched_next_pages_callback,
-        sched_default_pages_callback,
-        sched_skip_subj_callback,
-        sched_cancel_callback,
-        sched_dur_callback,
-        sched_rest_toggle_callback,
-        sched_confirm_callback,
-        sched_pages_text_handler,
+        study_new_plan_callback,
+        study_subject_callback,
+        study_duration_callback,
+        study_rest_toggle_callback,
+        study_confirm_create_callback,
         study_view_week_callback,
         study_toggle_day_callback,
         study_record_today_callback,
         study_export_pdf_callback,
-        study_print_cards_callback,
         study_delete_plan_callback,
         study_delete_confirm_callback,
+        study_templates_callback,
+        study_tpl_menu_callback,
+        study_template_gen_callback,
+        study_custom_start_callback,
+        study_custom_subj_toggle_callback,
+        study_custom_next_pages_callback,
+        study_custom_skip_subj_callback,
+        study_cust_cancel_callback,
+        study_custom_dur_callback,
+        study_custom_pages_handler,
     )
 
     try:
@@ -548,27 +552,31 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_bot_settings_callback, pattern=r"^admin_bot_settings$"))
         application.add_handler(CallbackQueryHandler(admin_toggle_deletion_callback, pattern=r"^admin_toggle_deletion$"))
         application.add_handler(CallbackQueryHandler(admin_toggle_schedule_callback, pattern=r"^admin_toggle_schedule$"))
-        # Study Schedule handlers — مدمج (تتبع + بطاقات)
+        # Study Schedule handlers (all callback-based, no ConversationHandler)
         application.add_handler(CallbackQueryHandler(study_menu_callback, pattern=r"^study_menu$"))
-        application.add_handler(CallbackQueryHandler(sched_start_callback, pattern=r"^sched_start$"))
-        application.add_handler(CallbackQueryHandler(sched_subj_toggle_callback, pattern=r"^sched_subj_\d+$"))
-        application.add_handler(CallbackQueryHandler(sched_next_pages_callback, pattern=r"^sched_next_pages$"))
-        application.add_handler(CallbackQueryHandler(sched_default_pages_callback, pattern=r"^sched_def_\d+$"))
-        application.add_handler(CallbackQueryHandler(sched_skip_subj_callback, pattern=r"^sched_skip_subj$"))
-        application.add_handler(CallbackQueryHandler(sched_cancel_callback, pattern=r"^sched_cancel$"))
-        application.add_handler(CallbackQueryHandler(sched_dur_callback, pattern=r"^sched_dur_\d+$"))
-        application.add_handler(CallbackQueryHandler(sched_rest_toggle_callback, pattern=r"^sched_rest_\d$"))
-        application.add_handler(CallbackQueryHandler(sched_confirm_callback, pattern=r"^sched_confirm$"))
-        # التتبع الأسبوعي
+        application.add_handler(CallbackQueryHandler(study_new_plan_callback, pattern=r"^study_new_plan$"))
+        application.add_handler(CallbackQueryHandler(study_subject_callback, pattern=r"^study_subj_"))
+        application.add_handler(CallbackQueryHandler(study_duration_callback, pattern=r"^study_dur_\d+$"))
+        application.add_handler(CallbackQueryHandler(study_rest_toggle_callback, pattern=r"^study_rest_\d$"))
+        application.add_handler(CallbackQueryHandler(study_confirm_create_callback, pattern=r"^study_confirm_create$"))
         application.add_handler(CallbackQueryHandler(study_view_week_callback, pattern=r"^study_view_week_\d+$"))
         application.add_handler(CallbackQueryHandler(study_toggle_day_callback, pattern=r"^study_toggle_\d+_w\d+$"))
         application.add_handler(CallbackQueryHandler(study_record_today_callback, pattern=r"^study_record_today$"))
         application.add_handler(CallbackQueryHandler(study_export_pdf_callback, pattern=r"^study_export_pdf$"))
-        application.add_handler(CallbackQueryHandler(study_print_cards_callback, pattern=r"^study_print_cards$"))
         application.add_handler(CallbackQueryHandler(study_delete_plan_callback, pattern=r"^study_delete_plan$"))
         application.add_handler(CallbackQueryHandler(study_delete_confirm_callback, pattern=r"^study_delete_confirm$"))
+        application.add_handler(CallbackQueryHandler(study_templates_callback, pattern=r"^study_templates$"))
+        application.add_handler(CallbackQueryHandler(study_tpl_menu_callback, pattern=r"^study_tpl_menu$"))
+        application.add_handler(CallbackQueryHandler(study_template_gen_callback, pattern=r"^study_tpl_\d+$"))
+        application.add_handler(CallbackQueryHandler(study_custom_start_callback, pattern=r"^study_custom_start$"))
+        application.add_handler(CallbackQueryHandler(study_custom_subj_toggle_callback, pattern=r"^study_cust_subj_\d+$"))
+        application.add_handler(CallbackQueryHandler(study_custom_next_pages_callback, pattern=r"^study_cust_next_pages$"))
+        application.add_handler(CallbackQueryHandler(study_custom_skip_subj_callback, pattern=r"^study_cust_skip_subj$"))
+        application.add_handler(CallbackQueryHandler(study_cust_cancel_callback, pattern=r"^study_cust_cancel$"))
+        application.add_handler(CallbackQueryHandler(study_custom_dur_callback, pattern=r"^study_cust_dur_\d+$"))
+        # Text handler for custom pages input (group=2 to avoid conflicts)
         application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, sched_pages_text_handler
+            filters.TEXT & ~filters.COMMAND, study_custom_pages_handler
         ), group=2)
         logger.info("Study schedule handlers added.")
         # noop handler for page number display
