@@ -1172,12 +1172,6 @@ def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_i
             _draw_card(c, x, y, card_w, card_h, day, ar)
 
         _draw_card_footer(c, width, bot_username, ar)
-        
-        # إضافة رقم الصفحة في الأسفل
-        page_num = (page_start // cards_per_page) + 1
-        c.setFillColor(colors.HexColor('#888888'))
-        c.setFont('ArabicFont', 9)
-        c.drawCentredString(width / 2, 20, ar(f"ص {page_num}"))
 
     c.save()
     return buf.getvalue()
@@ -1320,10 +1314,6 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
     study_days_count = stats.get('study_days', 0)
 
     _draw_weekly_cover(c, width, height, plan, subj_display, student_name, bot_username, rest_display, study_days_count)
-    # إضافة رقم الصفحة للغلاف
-    c.setFillColor(colors.HexColor('#888888'))
-    c.setFont('ArabicFont', 9)
-    c.drawCentredString(width / 2, 15, _reshape_arabic("ص 1"))
     c.showPage()
 
     weeks_data = {}
@@ -1331,15 +1321,9 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
         weeks_data.setdefault(day['week_number'], []).append(day)
 
     week_nums = sorted(weeks_data.keys())
-    page_num = 2
     for i in range(0, len(week_nums), 4):
         batch = week_nums[i:i + 4]
         _draw_weeks_page(c, width, height, subj_display, weeks_data, batch)
-        # إضافة رقم الصفحة
-        c.setFillColor(colors.HexColor('#888888'))
-        c.setFont('ArabicFont', 9)
-        c.drawCentredString(width / 2, 5, _reshape_arabic(f"ص {page_num}"))
-        page_num += 1
         c.showPage()
 
     c.save()
