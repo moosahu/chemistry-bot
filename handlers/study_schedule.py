@@ -120,22 +120,46 @@ def _clean_user_data(context):
 
 
 def _parse_subjects_json(subject_field):
-    """يحلل حقل المادة — JSON (جديد) أو نص (قديم)"""
+    """يحلل حقل المادة — JSON (قديم) أو أسماء مفصولة بفاصلة (جديد) أو نص عادي"""
+    if not subject_field:
+        return None
+    # محاولة JSON أولاً
     try:
         data = json.loads(subject_field)
         if isinstance(data, list):
             return data
     except (json.JSONDecodeError, TypeError):
         pass
+    # أسماء مفصولة بفاصلة
+    if ',' in subject_field:
+        names = [n.strip() for n in subject_field.split(',')]
+        return _reconstruct_subjects(names)
     return None
+
+
+def _reconstruct_subjects(names):
+    """يسترجع تفاصيل المواد الكاملة من الأسماء"""
+    pool_map = {s['name']: s for s in SUBJECTS_POOL}
+    result = []
+    for name in names:
+        if name in pool_map:
+            s = pool_map[name]
+            default = DEFAULT_PAGES.get(name, (1, 100))
+            result.append({
+                'name': s['name'], 'icon': s['icon'],
+                'start': default[0], 'end': default[1],
+                'bg': s['bg'], 'header': s['header'],
+            })
+    return result if result else None
 
 
 def _display_subjects(plan):
     """يعرض اسم المادة/المواد من الخطة"""
-    data = _parse_subjects_json(plan.get('subject', ''))
+    subject = plan.get('subject', '')
+    data = _parse_subjects_json(subject)
     if data:
         return '، '.join(s.get('name', '') for s in data)
-    return plan.get('subject', 'كيمياء')
+    return subject or 'كيمياء'
 
 
 # ============================================================
@@ -560,10 +584,8 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     # --- حفظ في قاعدة البيانات ---
-    subjects_json = json.dumps([{
-        'name': s['name'], 'icon': s['icon'], 'start': s['start'], 'end': s['end'],
-        'bg': s['bg'], 'header': s['header'],
-    } for s in done], ensure_ascii=False)
+    # نحفظ أسماء المواد فقط (VARCHAR قصير) — التفاصيل نسترجعها من SUBJECTS_POOL
+    subj_names_csv = ','.join(s['name'] for s in done)
 
     weeks = -(-total_days // 7)  # ceiling division
 
@@ -574,7 +596,12 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         days_until_sunday = (6 - today.weekday()) % 7
         start = today + timedelta(days=days_until_sunday if days_until_sunday > 0 else 7)
 
-    plan_id = create_study_plan(user_id, subjects_json, weeks, start, rest_days)
+    plan_id = None
+    try:
+        plan_id = create_study_plan(user_id, subj_names_csv, weeks, start, rest_days)
+        logger.info(f"[Schedule] Plan created: plan_id={plan_id}, user={user_id}, weeks={weeks}, subjects={subj_names_csv}")
+    except Exception as e:
+        logger.error(f"[Schedule] DB create_study_plan failed: {e}", exc_info=True)
 
     # --- إنشاء PDF بطاقات ---
     bot_username = (await context.bot.get_me()).username
@@ -597,22 +624,37 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
     rest_names = [DAY_NAMES.get(d, '') for d in rest_days]
     rest_display = '، '.join(rest_names) if rest_names else 'لا يوجد'
 
-    status = "✅" if plan_id else "⚠️"
-    text = (
-        f"{status} <b>تم إنشاء جدول المذاكرة!</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📖 المواد: <b>{subj_names}</b>\n"
-        f"📅 المدة: {total_days} يوم ({weeks} أسابيع)\n"
-        f"📆 البداية: {start.strftime('%Y-%m-%d')}\n"
-        f"🛋 أيام الراحة: {rest_display}\n\n"
-        f"🖨 PDF جاهز للطباعة!\n"
-        f"📝 تقدر تتابع إنجازك اليومي من البوت\n\n"
-        f"ابدأ رحلتك الآن! 💪🔥"
-    )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 عرض الجدول", callback_data="study_view_week_1")],
-        [InlineKeyboardButton("🔙 قائمة المذاكرة", callback_data="study_menu")],
-    ])
+    if plan_id:
+        text = (
+            f"✅ <b>تم إنشاء جدول المذاكرة!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📖 المواد: <b>{subj_names}</b>\n"
+            f"📅 المدة: {total_days} يوم ({weeks} أسابيع)\n"
+            f"📆 البداية: {start.strftime('%Y-%m-%d')}\n"
+            f"🛋 أيام الراحة: {rest_display}\n\n"
+            f"🖨 PDF جاهز للطباعة!\n"
+            f"📝 تقدر تتابع إنجازك اليومي من البوت\n\n"
+            f"ابدأ رحلتك الآن! 💪🔥"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 عرض الجدول", callback_data="study_view_week_1")],
+            [InlineKeyboardButton("📝 تسجيل إنجاز اليوم", callback_data="study_record_today")],
+            [InlineKeyboardButton("🔙 قائمة المذاكرة", callback_data="study_menu")],
+        ])
+    else:
+        text = (
+            f"⚠️ <b>PDF جاهز لكن فشل حفظ الجدول!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📖 المواد: <b>{subj_names}</b>\n"
+            f"📅 المدة: {total_days} يوم\n\n"
+            f"🖨 PDF تم إرساله\n"
+            f"⚠️ التتبع اليومي غير متاح — حاول إنشاء الجدول مرة ثانية"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 حاول مرة ثانية", callback_data="sched_start")],
+            [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")],
+        ])
+
     await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML",
                                    reply_markup=keyboard)
 
@@ -1198,17 +1240,18 @@ def _draw_card(c, x, y, w, h, day, ar):
 
         c.setFillColor(colors.HexColor('#333333'))
         c.setFont('ArabicFont', 9)
-        c.drawCentredString(cx, ct - 34, ar(f"ص{day['pages_end']}-{day['pages_start']}"))
+        # أرقام بدون bidi — تظهر LTR صحيح
+        c.drawCentredString(cx, ct - 34, f"{day['pages_start']}-{day['pages_end']}")
 
         c.setFillColor(colors.HexColor('#666666'))
         c.setFont('ArabicFont', 7)
         c.drawCentredString(cx, ct - 48, ar(day['phrase']))
 
-        cb_size = 11
+        cb_size = 8
         c.setStrokeColor(colors.HexColor('#999999'))
-        c.setLineWidth(0.8)
+        c.setLineWidth(0.6)
         c.setFillColor(colors.white)
-        c.rect(cx - cb_size / 2, y + 6, cb_size, cb_size, fill=1)
+        c.rect(cx - cb_size / 2, y + 4, cb_size, cb_size, fill=1)
 
 
 def _draw_card_footer(c, width, bot_username, ar):
