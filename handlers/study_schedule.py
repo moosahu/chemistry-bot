@@ -647,14 +647,13 @@ async def sched_pick_start_callback(update: Update, context: ContextTypes.DEFAUL
 async def sched_setstart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """حفظ تاريخ البداية والانتقال للتأكيد"""
     query = update.callback_query
-    await query.answer()
+    await query.answer("⏳ جاري إنشاء الجدول...")
 
     days_offset = int(query.data.replace("sched_setstart_", ""))
     start_date = date.today() + timedelta(days=days_offset)
     context.user_data['sched_start_date'] = start_date
 
-    # الانتقال مباشرة للتأكيد
-    query.data = "sched_confirm"
+    # استدعاء التأكيد مباشرة
     await sched_confirm_callback(update, context)
 
 
@@ -663,7 +662,10 @@ async def sched_setstart_callback(update: Update, context: ContextTypes.DEFAULT_
 # ============================================================
 async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("⏳ جاري إنشاء الجدول...")
+    try:
+        await query.answer("⏳ جاري إنشاء الجدول...")
+    except Exception:
+        pass  # قد يكون تم الرد مسبقاً من sched_setstart
 
     user_id = query.from_user.id
     chat_id = query.message.chat_id
