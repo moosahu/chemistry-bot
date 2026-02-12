@@ -139,6 +139,11 @@ try:
             admin_study_report_menu_callback,
             admin_study_report_callback,
             admin_study_report_email_callback,
+            # Broadcast Read Tracking
+            broadcast_read_callback,
+            broadcast_read_done_callback,
+            broadcast_stats_callback,
+            admin_broadcast_reads_list_callback,
             # Exam Schedule
             admin_exam_schedule_callback,
             admin_exam_status_callback,
@@ -533,6 +538,11 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_study_report_menu_callback, pattern=r"^admin_study_report_menu$"))
         application.add_handler(CallbackQueryHandler(admin_study_report_callback, pattern=r"^admin_study_report_(all|mine)$"))
         application.add_handler(CallbackQueryHandler(admin_study_report_email_callback, pattern=r"^admin_study_report_email$"))
+        # === Broadcast Read Tracking handlers ===
+        application.add_handler(CallbackQueryHandler(broadcast_read_callback, pattern=r"^bc_read_\d+$"))
+        application.add_handler(CallbackQueryHandler(broadcast_read_done_callback, pattern=r"^bc_read_done$"))
+        application.add_handler(CallbackQueryHandler(broadcast_stats_callback, pattern=r"^bc_stats_\d+$"))
+        application.add_handler(CallbackQueryHandler(admin_broadcast_reads_list_callback, pattern=r"^admin_broadcast_reads_list$"))
         # === Exam Schedule handlers ===
         application.add_handler(CallbackQueryHandler(admin_exam_schedule_callback, pattern=r"^admin_exam_schedule$"))
         application.add_handler(CallbackQueryHandler(admin_exam_status_callback, pattern=r"^exam_status_"))
@@ -598,6 +608,33 @@ def main() -> None:
         logger.info("New admin tools (edit/broadcast) ConversationHandlers and related handlers added.")
     else:
         logger.warning("New admin tools (edit/broadcast) were not imported, skipping their addition.")
+
+    # === تتبع قراءة الإشعارات التلقائي ===
+    _auto_track_cache = {}  # {user_id: last_check_timestamp}
+
+    async def _auto_track_read(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """تسجيل قراءة تلقائية عند أي تفاعل — مع كاش 10 دقائق"""
+        try:
+            user = update.effective_user
+            if not user:
+                return
+            import time
+            now = time.time()
+            last = _auto_track_cache.get(user.id, 0)
+            if now - last < 600:  # فحص مرة كل 10 دقائق فقط
+                return
+            _auto_track_cache[user.id] = now
+            try:
+                from database.manager import auto_track_broadcast_read
+            except ImportError:
+                from manager import auto_track_broadcast_read
+            auto_track_broadcast_read(user.id)
+        except Exception:
+            pass
+
+    application.add_handler(MessageHandler(filters.ALL, _auto_track_read), group=99)
+    application.add_handler(CallbackQueryHandler(_auto_track_read), group=99)
+    logger.info("Auto broadcast read tracking enabled (group=99)")
 
     # Add error handler
     application.add_error_handler(error_handler)

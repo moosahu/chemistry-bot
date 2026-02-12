@@ -85,6 +85,7 @@ def get_admin_menu_keyboard():
          InlineKeyboardButton("📱 إشعار الضعاف", callback_data="admin_report_notify")],
         [InlineKeyboardButton("📅 تقرير جداول المذاكرة", callback_data="admin_study_report_menu")],
         [InlineKeyboardButton("📣 إرسال إشعار", callback_data="admin_broadcast_menu")],
+        [InlineKeyboardButton("📊 تتبع قراءة الإشعارات", callback_data="admin_broadcast_reads_list")],
         [InlineKeyboardButton("⏳ مواعيد التحصيلي", callback_data="admin_exam_schedule")],
         [InlineKeyboardButton("✏️ تعديل رسائل البوت", callback_data="admin_edit_messages_menu")],
         [InlineKeyboardButton("⚙️ إعدادات البوت", callback_data="admin_bot_settings")],
@@ -1365,9 +1366,27 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
     failed_count = 0
     failed_users = []
 
+    # تسجيل الإشعار في قاعدة البيانات
+    try:
+        try:
+            from database.manager import create_broadcast_record
+        except ImportError:
+            from manager import create_broadcast_record
+        target_type = 'my_students' if my_students_only else ('grade' if grade_filter else 'all')
+        broadcast_id = create_broadcast_record(broadcast_text, target_type, grade_filter, len(user_ids))
+    except Exception:
+        broadcast_id = None
+
+    # زر "قرأت الإشعار"
+    read_markup = None
+    if broadcast_id:
+        read_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ قرأت", callback_data=f"bc_read_{broadcast_id}")]
+        ])
+
     for user_id in user_ids:
         try:
-            await context.bot.send_message(chat_id=user_id, text=broadcast_text)
+            await context.bot.send_message(chat_id=user_id, text=broadcast_text, reply_markup=read_markup)
             sent_count += 1
             await asyncio.sleep(0.05)
         except Exception as e:
@@ -1383,6 +1402,8 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
         f"تم الإرسال بنجاح إلى: {sent_count} مستخدم.\n"
         f"فشل الإرسال لـ: {failed_count} مستخدم."
     )
+    if broadcast_id:
+        result += f"\n\n📊 رقم الإشعار: #{broadcast_id}\nاضغط الزر لمتابعة القراءة."
 
     if failed_users:
         result += "\n\n📋 قائمة المستخدمين الذين فشل الإرسال لهم:\n"
@@ -1391,9 +1412,12 @@ async def admin_broadcast_confirm_callback(update: Update, context: ContextTypes
         if len(failed_users) > 15:
             result += f"... و {len(failed_users) - 15} آخرين"
 
-    await query.message.reply_text(result)
+    result_keyboard = []
+    if broadcast_id:
+        result_keyboard.append([InlineKeyboardButton(f"📊 متابعة القراءة #{broadcast_id}", callback_data=f"bc_stats_{broadcast_id}")])
+    result_keyboard.append([InlineKeyboardButton("⬅️ لوحة الأدمن", callback_data="admin_show_tools_menu")])
+    await query.message.reply_text(result, reply_markup=InlineKeyboardMarkup(result_keyboard))
     _cleanup_broadcast_data(context)
-    await query.message.reply_text("🛠️ لوحة تحكم الأدمن:", reply_markup=get_admin_menu_keyboard())
     return ConversationHandler.END
 
 
@@ -1417,6 +1441,149 @@ def _cleanup_broadcast_data(context):
     context.user_data.pop("broadcast_text", None)
     context.user_data.pop("broadcast_grade_filter", None)
     context.user_data.pop("broadcast_my_students_only", None)
+
+
+# ============================================================
+#  6b. تتبع قراءة الإشعارات
+# ============================================================
+
+async def broadcast_read_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تسجيل قراءة الإشعار عند ضغط الطالب على زر قرأت"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    broadcast_id = int(query.data.replace("bc_read_", ""))
+
+    try:
+        try:
+            from database.manager import record_broadcast_read
+        except ImportError:
+            from manager import record_broadcast_read
+
+        record_broadcast_read(broadcast_id, user_id)
+        await query.answer("✅ تم تسجيل القراءة")
+        # تحديث الزر ليبين إنه قرأ
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ تمت القراءة", callback_data="bc_read_done")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"[BroadcastRead] Error: {e}")
+        await query.answer("✅")
+
+
+async def broadcast_read_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """الزر بعد القراءة — لا يفعل شيء"""
+    await update.callback_query.answer("✅ سبق وسجلت قراءتك")
+
+
+async def broadcast_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """عرض إحصائيات قراءة إشعار معين — للأدمن"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    broadcast_id = int(query.data.replace("bc_stats_", ""))
+
+    try:
+        try:
+            from database.manager import get_broadcast_read_stats
+        except ImportError:
+            from manager import get_broadcast_read_stats
+
+        stats = get_broadcast_read_stats(broadcast_id)
+        if not stats:
+            await query.edit_message_text("❌ لم يتم العثور على بيانات الإشعار",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]]))
+            return
+
+        msg = f"📊 <b>إحصائيات الإشعار #{broadcast_id}</b>\n"
+        msg += "━━━━━━━━━━━━━━━━━━\n\n"
+        msg += f"📝 <b>النص:</b> {stats['message_text'][:100]}...\n" if len(stats.get('message_text', '')) > 100 else f"📝 <b>النص:</b> {stats.get('message_text', '')}\n"
+        msg += f"📤 أُرسل إلى: {stats['sent_count']}\n"
+        msg += f"👁 قرأ: {stats['read_count']}\n"
+        msg += f"📊 نسبة القراءة: {stats['read_pct']}%\n"
+        created = stats.get('created_at')
+        if created:
+            msg += f"🕐 التاريخ: {created.strftime('%Y-%m-%d %H:%M')}\n"
+        msg += "\n"
+
+        # قائمة القراء
+        readers = stats.get('readers', [])
+        if readers:
+            msg += f"<b>القراء ({len(readers)}):</b>\n"
+            for i, r in enumerate(readers[:30], 1):
+                star = "⭐" if r.get('is_my_student') else ""
+                name = r.get('full_name') or 'بدون اسم'
+                read_time = r['read_at'].strftime('%H:%M') if r.get('read_at') else ''
+                msg += f"  {i}. {star}{name} — {read_time}\n"
+            if len(readers) > 30:
+                msg += f"  ... و{len(readers) - 30} آخرين\n"
+        else:
+            msg += "📭 لم يقرأ أحد الإشعار بعد\n"
+
+        if len(msg) > 3900:
+            msg = msg[:3900] + "\n..."
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 تحديث", callback_data=f"bc_stats_{broadcast_id}")],
+            [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_broadcast_reads_list")],
+        ])
+        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
+
+    except Exception as e:
+        logger.error(f"[BroadcastStats] Error: {e}", exc_info=True)
+        await query.edit_message_text(f"❌ خطأ: {str(e)[:200]}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]]))
+
+
+async def admin_broadcast_reads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """قائمة آخر الإشعارات مع إحصائيات القراءة"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    try:
+        try:
+            from database.manager import get_recent_broadcasts
+        except ImportError:
+            from manager import get_recent_broadcasts
+
+        broadcasts = get_recent_broadcasts(limit=10)
+
+        if not broadcasts:
+            await query.edit_message_text(
+                "📊 <b>تتبع الإشعارات</b>\n\nلا توجد إشعارات مسجلة بعد.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]]))
+            return
+
+        msg = "📊 <b>آخر الإشعارات</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        keyboard = []
+        for bc in broadcasts:
+            sent = bc.get('sent_count', 0)
+            read = bc.get('read_count', 0)
+            pct = round(read / sent * 100) if sent > 0 else 0
+            date_str = bc['created_at'].strftime('%m/%d %H:%M') if bc.get('created_at') else ''
+            text_preview = (bc.get('message_text') or '')[:40]
+            msg += f"📌 <b>#{bc['id']}</b> — {date_str}\n"
+            msg += f"   {text_preview}...\n" if len(bc.get('message_text', '')) > 40 else f"   {text_preview}\n"
+            msg += f"   📤{sent} | 👁{read} | {pct}%\n\n"
+            keyboard.append([InlineKeyboardButton(f"📊 #{bc['id']} — {pct}% قرأ", callback_data=f"bc_stats_{bc['id']}")])
+
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")])
+
+        if len(msg) > 3900:
+            msg = msg[:3900] + "\n..."
+
+        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    except Exception as e:
+        logger.error(f"[BroadcastReadsList] Error: {e}", exc_info=True)
+        await query.edit_message_text(f"❌ خطأ: {str(e)[:200]}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]]))
 
 
 # ============================================================

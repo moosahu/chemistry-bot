@@ -1083,12 +1083,35 @@ def set_bot_setting(key, value):
 # ============================================================
 
 def ensure_study_tables():
-    """إنشاء جداول خطط المذاكرة"""
+    """إنشاء جداول خطط المذاكرة + جداول تتبع الإشعارات"""
     conn = connect_db()
     if not conn:
         return
     try:
         cur = conn.cursor()
+        # جدول الإشعارات
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS broadcasts (
+                id SERIAL PRIMARY KEY,
+                message_text TEXT,
+                target_type VARCHAR(50) DEFAULT 'all',
+                target_filter VARCHAR(100),
+                sent_count INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        # جدول قراءة الإشعارات
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_reads (
+                id SERIAL PRIMARY KEY,
+                broadcast_id INT REFERENCES broadcasts(id) ON DELETE CASCADE,
+                user_id BIGINT NOT NULL,
+                read_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(broadcast_id, user_id)
+            );
+        """)
+        conn.commit()
+        logger.info("[DB] broadcasts & broadcast_reads tables ensured")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS study_plans (
                 id SERIAL PRIMARY KEY,
@@ -1368,6 +1391,148 @@ def get_study_schedule_report(only_my_students=False):
     except Exception as e:
         logger.error(f"[DB] Error getting study schedule report: {e}")
         return []
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+# ============================================================
+#  تتبع قراءة الإشعارات
+# ============================================================
+
+def create_broadcast_record(message_text, target_type='all', target_filter=None, sent_count=0):
+    """تسجيل إشعار جديد"""
+    conn = connect_db()
+    if not conn: return None
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO broadcasts (message_text, target_type, target_filter, sent_count)
+            VALUES (%s, %s, %s, %s) RETURNING id
+        """, (message_text[:500], target_type, target_filter, sent_count))
+        broadcast_id = cur.fetchone()[0]
+        conn.commit()
+        logger.info(f"[DB] Broadcast {broadcast_id} created: {target_type}, sent={sent_count}")
+        return broadcast_id
+    except Exception as e:
+        logger.error(f"[DB] Error creating broadcast: {e}")
+        conn.rollback()
+        return None
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def record_broadcast_read(broadcast_id, user_id):
+    """تسجيل قراءة إشعار"""
+    conn = connect_db()
+    if not conn: return False
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO broadcast_reads (broadcast_id, user_id)
+            VALUES (%s, %s) ON CONFLICT (broadcast_id, user_id) DO NOTHING
+        """, (broadcast_id, user_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error recording broadcast read: {e}")
+        conn.rollback()
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def get_broadcast_read_stats(broadcast_id):
+    """إحصائيات قراءة إشعار معين"""
+    conn = connect_db()
+    if not conn: return {}
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        # بيانات الإشعار
+        cur.execute("SELECT * FROM broadcasts WHERE id = %s", (broadcast_id,))
+        bc = cur.fetchone()
+        if not bc:
+            return {}
+        # عدد القراء
+        cur.execute("SELECT COUNT(*) FROM broadcast_reads WHERE broadcast_id = %s", (broadcast_id,))
+        read_count = cur.fetchone()[0]
+        # أسماء القراء
+        cur.execute("""
+            SELECT u.full_name, u.grade, COALESCE(u.is_my_student, FALSE) as is_my_student, br.read_at
+            FROM broadcast_reads br
+            JOIN users u ON br.user_id = u.user_id
+            WHERE br.broadcast_id = %s
+            ORDER BY br.read_at
+        """, (broadcast_id,))
+        readers = [dict(r) for r in cur.fetchall()]
+
+        return {
+            'broadcast_id': broadcast_id,
+            'message_text': bc['message_text'],
+            'target_type': bc['target_type'],
+            'sent_count': bc['sent_count'],
+            'read_count': read_count,
+            'read_pct': round(read_count / bc['sent_count'] * 100, 1) if bc['sent_count'] > 0 else 0,
+            'created_at': bc['created_at'],
+            'readers': readers
+        }
+    except Exception as e:
+        logger.error(f"[DB] Error getting broadcast stats: {e}")
+        return {}
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def get_recent_broadcasts(limit=10):
+    """قائمة آخر الإشعارات مع إحصائيات القراءة"""
+    conn = connect_db()
+    if not conn: return []
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""
+            SELECT b.id, b.message_text, b.target_type, b.target_filter, b.sent_count, b.created_at,
+                   COUNT(br.id) as read_count
+            FROM broadcasts b
+            LEFT JOIN broadcast_reads br ON b.id = br.broadcast_id
+            GROUP BY b.id
+            ORDER BY b.created_at DESC
+            LIMIT %s
+        """, (limit,))
+        return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"[DB] Error getting recent broadcasts: {e}")
+        return []
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def auto_track_broadcast_read(user_id):
+    """تسجيل قراءة تلقائية — يتحقق من إشعارات آخر 48 ساعة اللي ما قرأها المستخدم"""
+    conn = connect_db()
+    if not conn: return
+    try:
+        cur = conn.cursor()
+        # إشعارات آخر 48 ساعة اللي ما قرأها هذا المستخدم
+        cur.execute("""
+            INSERT INTO broadcast_reads (broadcast_id, user_id)
+            SELECT b.id, %s
+            FROM broadcasts b
+            WHERE b.created_at > NOW() - INTERVAL '48 hours'
+            AND NOT EXISTS (
+                SELECT 1 FROM broadcast_reads br 
+                WHERE br.broadcast_id = b.id AND br.user_id = %s
+            )
+        """, (user_id, user_id))
+        if cur.rowcount > 0:
+            logger.info(f"[AutoTrack] User {user_id} auto-marked {cur.rowcount} broadcasts as read")
+        conn.commit()
+    except Exception as e:
+        logger.error(f"[DB] Error auto-tracking broadcast read: {e}")
+        conn.rollback()
     finally:
         if cur: cur.close()
         if conn: conn.close()
