@@ -1295,7 +1295,7 @@ def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_i
         page_num = (page_start // cards_per_page) + 1
         c.setFillColor(colors.HexColor('#888888'))
         c.setFont('ArabicFont', 9)
-        c.drawCentredString(width / 2, 20, ar(f"ص {page_num}"))
+        c.drawString(40, 20, ar(f"ص {page_num}"))
 
     c.save()
     return buf.getvalue()
