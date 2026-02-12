@@ -135,6 +135,10 @@ try:
             admin_cert_select_all_callback,
             admin_cert_deselect_all_callback,
             admin_report_cert_confirm_callback,
+            # Study Schedule Report
+            admin_study_report_menu_callback,
+            admin_study_report_callback,
+            admin_study_report_email_callback,
             # Exam Schedule
             admin_exam_schedule_callback,
             admin_exam_status_callback,
@@ -525,6 +529,10 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(admin_cert_select_all_callback, pattern=r"^cert_select_all$"))
         application.add_handler(CallbackQueryHandler(admin_cert_deselect_all_callback, pattern=r"^cert_deselect_all$"))
         application.add_handler(CallbackQueryHandler(admin_report_cert_confirm_callback, pattern=r"^admin_report_cert_confirm$"))
+        # === Study Schedule Report handlers ===
+        application.add_handler(CallbackQueryHandler(admin_study_report_menu_callback, pattern=r"^admin_study_report_menu$"))
+        application.add_handler(CallbackQueryHandler(admin_study_report_callback, pattern=r"^admin_study_report_(all|mine)$"))
+        application.add_handler(CallbackQueryHandler(admin_study_report_email_callback, pattern=r"^admin_study_report_email$"))
         # === Exam Schedule handlers ===
         application.add_handler(CallbackQueryHandler(admin_exam_schedule_callback, pattern=r"^admin_exam_schedule$"))
         application.add_handler(CallbackQueryHandler(admin_exam_status_callback, pattern=r"^exam_status_"))

@@ -83,6 +83,7 @@ def get_admin_menu_keyboard():
          InlineKeyboardButton("📊 تقرير شهري", callback_data="admin_report_monthly")],
         [InlineKeyboardButton("🏆 شهادات تفوق", callback_data="admin_report_certificates"),
          InlineKeyboardButton("📱 إشعار الضعاف", callback_data="admin_report_notify")],
+        [InlineKeyboardButton("📅 تقرير جداول المذاكرة", callback_data="admin_study_report_menu")],
         [InlineKeyboardButton("📣 إرسال إشعار", callback_data="admin_broadcast_menu")],
         [InlineKeyboardButton("⏳ مواعيد التحصيلي", callback_data="admin_exam_schedule")],
         [InlineKeyboardButton("✏️ تعديل رسائل البوت", callback_data="admin_edit_messages_menu")],
@@ -2198,6 +2199,185 @@ async def cancel_exam_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.pop('exam_add_step', None)
     await update.message.reply_text("تم الإلغاء", reply_markup=get_admin_menu_keyboard())
     return ConversationHandler.END
+
+
+# ============================================================
+#  10b. تقرير جداول المذاكرة
+# ============================================================
+
+async def admin_study_report_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """قائمة تقرير جداول المذاكرة — الكل أو طلابي"""
+    query = update.callback_query
+    await query.answer()
+    if not await check_admin_privileges(update, context):
+        return
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 تقرير الكل", callback_data="admin_study_report_all")],
+        [InlineKeyboardButton("⭐ تقرير طلابي فقط", callback_data="admin_study_report_mine")],
+        [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")],
+    ])
+    await query.edit_message_text(
+        "📅 <b>تقرير جداول المذاكرة</b>\n\nاختر نوع التقرير:",
+        parse_mode="HTML", reply_markup=keyboard
+    )
+
+
+async def admin_study_report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """إنشاء وعرض تقرير جداول المذاكرة"""
+    query = update.callback_query
+    await query.answer("⏳ جاري إعداد التقرير...")
+    if not await check_admin_privileges(update, context):
+        return
+
+    only_mine = query.data == "admin_study_report_mine"
+    filter_label = "طلابي" if only_mine else "الكل"
+
+    try:
+        try:
+            from database.manager import get_study_schedule_report
+        except ImportError:
+            from manager import get_study_schedule_report
+
+        plans = get_study_schedule_report(only_my_students=only_mine)
+
+        if not plans:
+            await query.edit_message_text(
+                f"📅 <b>تقرير جداول المذاكرة ({filter_label})</b>\n\n"
+                f"لا توجد جداول مذاكرة حالياً.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_study_report_menu")]
+                ])
+            )
+            return
+
+        # تصنيف الطلاب
+        active_plans = [p for p in plans if p.get('is_active')]
+        progressing = [p for p in active_plans if p.get('completed_days', 0) > 0]
+        inactive = [p for p in active_plans if p.get('completed_days', 0) == 0]
+        stopped = [p for p in progressing if p.get('days_since_activity') and p['days_since_activity'] > 3]
+        consistent = [p for p in progressing if not p.get('days_since_activity') or p['days_since_activity'] <= 3]
+
+        # === الرسالة ===
+        msg = f"📅 <b>تقرير جداول المذاكرة ({filter_label})</b>\n"
+        msg += "━━━━━━━━━━━━━━━━━━\n\n"
+
+        msg += f"📊 <b>ملخص:</b>\n"
+        msg += f"  📋 إجمالي الجداول: {len(plans)}\n"
+        msg += f"  🟢 جداول نشطة: {len(active_plans)}\n"
+        msg += f"  ✅ مستمرين: {len(consistent)}\n"
+        msg += f"  ⚠️ توقفوا: {len(stopped)}\n"
+        msg += f"  ❌ لم يبدأوا: {len(inactive)}\n\n"
+
+        # مستمرين
+        if consistent:
+            msg += f"✅ <b>مستمرين ({len(consistent)}):</b>\n"
+            for p in consistent[:15]:
+                pct = round(p['completed_days'] / max(p['study_days'], 1) * 100)
+                star = "⭐" if p.get('is_my_student') else ""
+                msg += f"  {star}{p.get('full_name') or 'بدون اسم'} — {pct}% ({p['completed_days']}/{p['study_days']})\n"
+            if len(consistent) > 15:
+                msg += f"  ... و{len(consistent) - 15} آخرين\n"
+            msg += "\n"
+
+        # توقفوا
+        if stopped:
+            msg += f"⚠️ <b>توقفوا ({len(stopped)}):</b>\n"
+            for p in stopped[:15]:
+                pct = round(p['completed_days'] / max(p['study_days'], 1) * 100)
+                days_ago = p.get('days_since_activity', '?')
+                star = "⭐" if p.get('is_my_student') else ""
+                msg += f"  {star}{p.get('full_name') or 'بدون اسم'} — {pct}% (متوقف {days_ago} يوم)\n"
+            if len(stopped) > 15:
+                msg += f"  ... و{len(stopped) - 15} آخرين\n"
+            msg += "\n"
+
+        # لم يبدأوا
+        if inactive:
+            msg += f"❌ <b>لم يبدأوا ({len(inactive)}):</b>\n"
+            for p in inactive[:10]:
+                star = "⭐" if p.get('is_my_student') else ""
+                created = p['created_at'].strftime('%m/%d') if p.get('created_at') else ''
+                msg += f"  {star}{p.get('full_name') or 'بدون اسم'} — أنشأ: {created}\n"
+            if len(inactive) > 10:
+                msg += f"  ... و{len(inactive) - 10} آخرين\n"
+            msg += "\n"
+
+        # اقتطاع لو الرسالة طويلة
+        if len(msg) > 3800:
+            msg = msg[:3800] + "\n\n... (التقرير الكامل في الإيميل)"
+
+        # حفظ البيانات لإرسال الإيميل
+        context.user_data['study_report_data'] = plans
+        context.user_data['study_report_filter'] = filter_label
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📧 إرسال تقرير مفصل بالإيميل", callback_data="admin_study_report_email")],
+            [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_study_report_menu")],
+        ])
+        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
+
+    except Exception as e:
+        logger.error(f"[StudyReport] Error: {e}", exc_info=True)
+        await query.edit_message_text(
+            f"❌ خطأ: {str(e)[:200]}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]
+            ])
+        )
+
+
+async def admin_study_report_email_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """إرسال تقرير جداول المذاكرة بالإيميل"""
+    query = update.callback_query
+    await query.answer("📧 جاري الإرسال...")
+    if not await check_admin_privileges(update, context):
+        return
+
+    plans = context.user_data.get('study_report_data', [])
+    filter_label = context.user_data.get('study_report_filter', 'الكل')
+
+    if not plans:
+        await query.edit_message_text(
+            "⚠️ لا توجد بيانات — أعد إنشاء التقرير",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_study_report_menu")]
+            ])
+        )
+        return
+
+    try:
+        try:
+            from email_notification import send_study_report_email
+        except ImportError:
+            from handlers.email_notification import send_study_report_email
+
+        success = send_study_report_email(plans, filter_label)
+
+        if success:
+            await query.edit_message_text(
+                "✅ <b>تم إرسال التقرير بالإيميل!</b>\n\nتحقق من بريدك.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]
+                ])
+            )
+        else:
+            await query.edit_message_text(
+                "⚠️ فشل إرسال الإيميل — تحقق من إعدادات البريد",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]
+                ])
+            )
+    except Exception as e:
+        logger.error(f"[StudyReport] Email error: {e}", exc_info=True)
+        await query.edit_message_text(
+            f"❌ خطأ: {str(e)[:200]}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]
+            ])
+        )
 
 
 # ============================================================

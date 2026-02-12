@@ -126,3 +126,73 @@ async def send_new_user_notification_async(user_data):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, send_new_user_notification, user_data)
     return result
+
+
+def send_account_deletion_notification(user_data):
+    """إرسال إشعار بريد إلكتروني للمدير عند حذف مستخدم حسابه"""
+    try:
+        if not is_email_configured():
+            logger.warning("إعدادات البريد غير مكونة — لن يتم إرسال إشعار الحذف")
+            return False
+
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_USERNAME
+        msg['To'] = ADMIN_EMAIL
+        msg['Subject'] = f"🗑 حذف حساب مستخدم - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        body = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; direction: rtl; text-align: right; }}
+                .container {{ padding: 20px; }}
+                .header {{ background-color: #e74c3c; color: white; padding: 10px; text-align: center; }}
+                .content {{ margin-top: 20px; }}
+                .user-info {{ border: 1px solid #ddd; padding: 15px; border-radius: 5px; background-color: #fff5f5; }}
+                .footer {{ margin-top: 20px; font-size: 12px; color: #777; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>🗑 حذف حساب مستخدم</h2>
+                </div>
+                <div class="content">
+                    <p>قام مستخدم بحذف حسابه من بوت الاختبارات:</p>
+                    <div class="user-info">
+                        <p><strong>معرف المستخدم:</strong> {user_data.get('user_id', 'غير متوفر')}</p>
+                        <p><strong>الاسم:</strong> {user_data.get('full_name', 'غير متوفر')}</p>
+                        <p><strong>البريد:</strong> {user_data.get('email', 'غير متوفر')}</p>
+                        <p><strong>الجوال:</strong> {user_data.get('phone', 'غير متوفر')}</p>
+                        <p><strong>الصف:</strong> {user_data.get('grade', 'غير متوفر')}</p>
+                        <p><strong>عدد الاختبارات المحذوفة:</strong> {user_data.get('quizzes_deleted', 0)}</p>
+                        <p><strong>تاريخ الحذف:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    </div>
+                </div>
+                <div class="footer">
+                    <p>هذا إشعار تلقائي من بوت كيم تحصيلي</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        msg.attach(MIMEText(body, 'html', 'utf-8'))
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_USERNAME, ADMIN_EMAIL, msg.as_string())
+
+        logger.info(f"تم إرسال إشعار حذف حساب المستخدم {user_data.get('user_id')}")
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في إرسال إشعار الحذف: {e}")
+        return False
+
+
+async def send_account_deletion_notification_async(user_data):
+    """نسخة غير متزامنة"""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, send_account_deletion_notification, user_data)
+    return result

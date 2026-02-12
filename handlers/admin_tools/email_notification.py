@@ -196,3 +196,163 @@ async def send_account_deletion_notification_async(user_data):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, send_account_deletion_notification, user_data)
     return result
+
+
+def send_study_report_email(plans, filter_label="الكل"):
+    """
+    إرسال تقرير جداول المذاكرة بالإيميل مع جدول HTML مفصل
+    
+    المعلمات:
+        plans (list): بيانات الجداول من get_study_schedule_report
+        filter_label (str): نوع الفلتر (الكل / طلابي)
+    """
+    try:
+        if not is_email_configured():
+            logger.warning("إعدادات البريد غير مكونة — لن يتم إرسال تقرير جداول المذاكرة")
+            return False
+
+        # تصنيف الطلاب
+        active_plans = [p for p in plans if p.get('is_active')]
+        progressing = [p for p in active_plans if p.get('completed_days', 0) > 0]
+        inactive = [p for p in active_plans if p.get('completed_days', 0) == 0]
+        stopped = [p for p in progressing if p.get('days_since_activity') and p['days_since_activity'] > 3]
+        consistent = [p for p in progressing if not p.get('days_since_activity') or p['days_since_activity'] <= 3]
+
+        # بناء صفوف الجدول
+        def build_rows(student_list, status_label, status_color):
+            rows = ""
+            for p in student_list:
+                study_days = p.get('study_days', 0) or 1
+                completed = p.get('completed_days', 0)
+                pct = round(completed / study_days * 100) if study_days > 0 else 0
+                star = "⭐ " if p.get('is_my_student') else ""
+                name = p.get('full_name') or 'بدون اسم'
+                grade = p.get('grade') or '-'
+                subject = p.get('subject') or '-'
+                last_act = ''
+                if p.get('last_activity'):
+                    try:
+                        last_act = p['last_activity'].strftime('%m/%d')
+                    except:
+                        last_act = str(p['last_activity'])[:10]
+                days_ago = p.get('days_since_activity', '-') or '-'
+                created = ''
+                if p.get('created_at'):
+                    try:
+                        created = p['created_at'].strftime('%m/%d')
+                    except:
+                        created = str(p['created_at'])[:10]
+
+                # شريط التقدم بسيط
+                bar_width = min(pct, 100)
+                bar_color = '#27ae60' if pct >= 50 else '#f39c12' if pct >= 20 else '#e74c3c'
+                progress_bar = f'<div style="background:#eee;border-radius:3px;height:12px;width:80px;display:inline-block;"><div style="background:{bar_color};height:12px;border-radius:3px;width:{bar_width}%;"></div></div> {pct}%'
+
+                rows += f"""
+                <tr>
+                    <td style="padding:6px 8px;border:1px solid #ddd;">{star}{name}</td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;">{grade}</td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;">{subject[:30]}</td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;">{progress_bar}</td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;">{completed}/{study_days}</td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;">{last_act}</td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;">{days_ago}</td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;"><span style="color:{status_color};font-weight:bold;">{status_label}</span></td>
+                    <td style="padding:6px 8px;border:1px solid #ddd;text-align:center;">{created}</td>
+                </tr>"""
+            return rows
+
+        all_rows = ""
+        all_rows += build_rows(consistent, "✅ مستمر", "#27ae60")
+        all_rows += build_rows(stopped, "⚠️ متوقف", "#e67e22")
+        all_rows += build_rows(inactive, "❌ لم يبدأ", "#e74c3c")
+
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+        body = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; direction: rtl; text-align: right; background: #f5f5f5; }}
+                .container {{ max-width: 900px; margin: 0 auto; padding: 20px; background: white; }}
+                .header {{ background: linear-gradient(135deg, #2c3e50, #3498db); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+                .summary {{ display: flex; gap: 15px; margin: 20px 0; flex-wrap: wrap; }}
+                .stat-box {{ flex: 1; min-width: 120px; padding: 15px; border-radius: 8px; text-align: center; }}
+                .stat-box h3 {{ margin: 0; font-size: 24px; }}
+                .stat-box p {{ margin: 5px 0 0; font-size: 12px; color: #666; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px; }}
+                th {{ background: #2c3e50; color: white; padding: 10px 8px; border: 1px solid #2c3e50; }}
+                tr:nth-child(even) {{ background: #f8f9fa; }}
+                .footer {{ text-align: center; color: #999; font-size: 11px; margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>📅 تقرير جداول المذاكرة ({filter_label})</h2>
+                    <p>{now_str}</p>
+                </div>
+
+                <div class="summary">
+                    <div class="stat-box" style="background:#e8f5e9;">
+                        <h3>{len(consistent)}</h3>
+                        <p>✅ مستمرين</p>
+                    </div>
+                    <div class="stat-box" style="background:#fff3e0;">
+                        <h3>{len(stopped)}</h3>
+                        <p>⚠️ متوقفين</p>
+                    </div>
+                    <div class="stat-box" style="background:#ffebee;">
+                        <h3>{len(inactive)}</h3>
+                        <p>❌ لم يبدأوا</p>
+                    </div>
+                    <div class="stat-box" style="background:#e3f2fd;">
+                        <h3>{len(plans)}</h3>
+                        <p>📊 إجمالي الجداول</p>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>الطالب</th>
+                            <th>الصف</th>
+                            <th>المواد</th>
+                            <th>التقدم</th>
+                            <th>الأيام</th>
+                            <th>آخر نشاط</th>
+                            <th>أيام التوقف</th>
+                            <th>الحالة</th>
+                            <th>تاريخ الإنشاء</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {all_rows}
+                    </tbody>
+                </table>
+
+                <div class="footer">
+                    <p>بوت كيم تحصيلي — تقرير تلقائي @CHEMISTRY_QUIZ2_BOT</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_USERNAME
+        msg['To'] = ADMIN_EMAIL
+        msg['Subject'] = f"📅 تقرير جداول المذاكرة ({filter_label}) — {now_str}"
+        msg.attach(MIMEText(body, 'html', 'utf-8'))
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_USERNAME, ADMIN_EMAIL, msg.as_string())
+
+        logger.info(f"[StudyReport] Email sent: {len(plans)} plans, filter={filter_label}")
+        return True
+
+    except Exception as e:
+        logger.error(f"[StudyReport] Email error: {e}")
+        return False

@@ -1324,3 +1324,50 @@ def delete_study_plan(plan_id):
     finally:
         if cur: cur.close()
         if conn: conn.close()
+
+
+def get_study_schedule_report(only_my_students=False):
+    """تقرير شامل عن استخدام جداول المذاكرة"""
+    conn = connect_db()
+    if not conn: return []
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        my_filter = "AND COALESCE(u.is_my_student, FALSE) = TRUE" if only_my_students else ""
+        cur.execute(f"""
+            SELECT 
+                sp.id as plan_id,
+                sp.user_id,
+                u.full_name,
+                u.grade,
+                COALESCE(u.is_my_student, FALSE) as is_my_student,
+                sp.subject,
+                sp.num_weeks,
+                sp.rest_days,
+                sp.start_date,
+                sp.created_at,
+                sp.is_active,
+                COUNT(d.id) as total_days,
+                COUNT(d.id) FILTER (WHERE NOT d.is_rest_day) as study_days,
+                COUNT(d.id) FILTER (WHERE d.is_completed AND NOT d.is_rest_day) as completed_days,
+                COUNT(d.id) FILTER (WHERE d.is_rest_day) as rest_count,
+                MAX(d.completed_at) as last_activity,
+                CASE 
+                    WHEN COUNT(d.id) FILTER (WHERE d.is_completed) > 0 THEN TRUE 
+                    ELSE FALSE 
+                END as has_progress,
+                EXTRACT(DAY FROM NOW() - MAX(d.completed_at))::INT as days_since_activity
+            FROM study_plans sp
+            JOIN users u ON sp.user_id = u.user_id
+            LEFT JOIN study_plan_days d ON sp.id = d.plan_id
+            WHERE u.is_registered = TRUE {my_filter}
+            GROUP BY sp.id, sp.user_id, u.full_name, u.grade, u.is_my_student,
+                     sp.subject, sp.num_weeks, sp.rest_days, sp.start_date, sp.created_at, sp.is_active
+            ORDER BY sp.is_active DESC, sp.created_at DESC
+        """)
+        return [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"[DB] Error getting study schedule report: {e}")
+        return []
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
