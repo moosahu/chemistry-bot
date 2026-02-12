@@ -1371,11 +1371,10 @@ def _draw_card(c, x, y, w, h, day, ar):
         c.setFont('ArabicFont', 7)
         c.drawCentredString(cx, ct - 48, ar(day['phrase']))
 
-        cb_size = 5
         c.setStrokeColor(colors.HexColor('#aaaaaa'))
         c.setLineWidth(0.4)
         c.setFillColor(colors.white)
-        c.rect(cx - cb_size / 2, y + 4, cb_size, cb_size, fill=1)
+        c.circle(cx, y + 7, 2.5, fill=1, stroke=1)
 
 
 def _draw_card_footer(c, width, bot_username, ar):
