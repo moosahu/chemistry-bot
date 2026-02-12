@@ -1368,14 +1368,14 @@ def _draw_card(c, x, y, w, h, day, ar):
         c.drawCentredString(cx, ct - 34, ar(f"ص{day['pages_start']}-{day['pages_end']}"))
 
         c.setFillColor(colors.HexColor('#666666'))
-        c.setFont('ArabicFont', 7)
-        c.drawCentredString(cx, ct - 48, ar(day['phrase']))
+        c.setFont('ArabicFont', 6)
+        c.drawCentredString(cx, ct - 44, ar(day['phrase']))
 
         cb_size = 5
         c.setStrokeColor(colors.HexColor('#aaaaaa'))
         c.setLineWidth(0.4)
         c.setFillColor(colors.white)
-        c.rect(cx - cb_size / 2, y + 10, cb_size, cb_size, fill=1)
+        c.rect(cx - cb_size / 2, y + 5, cb_size, cb_size, fill=1)
 
 
 def _draw_card_footer(c, width, bot_username, ar):
