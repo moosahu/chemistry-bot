@@ -42,6 +42,20 @@ def create_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📚 معلومات كيميائية", callback_data="menu_info")],
         [InlineKeyboardButton("📊 إحصائياتي ولوحة الصدارة", callback_data="menu_stats")],
         [InlineKeyboardButton("⏳ موعد التحصيلي", callback_data="exam_countdown")],
+    ]
+    
+    # زر جدول المذاكرة — يظهر فقط إذا مفعّل
+    try:
+        try:
+            from database.manager import get_bot_setting
+        except ImportError:
+            from manager import get_bot_setting
+        if get_bot_setting('allow_study_schedule', 'off') == 'on':
+            keyboard.append([InlineKeyboardButton("📅 جدول المذاكرة", callback_data="study_menu")])
+    except Exception:
+        pass
+    
+    keyboard += [
         [InlineKeyboardButton("👤 تعديل معلوماتي", callback_data="edit_my_info")],
         [InlineKeyboardButton("ℹ️ حول البوت", callback_data="about_bot")]
     ]

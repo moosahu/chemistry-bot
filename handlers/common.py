@@ -78,28 +78,43 @@ def check_user_registration_directly(user_id, db_manager):
             logger.warning(f"DB_MANAGER not available or missing get_user_info method for user {user_id}")
             return False  # افتراض أن المستخدم غير مسجل في حالة عدم وجود DB_MANAGER
         
+        # التحقق من كون المستخدم أدمن — الأدمن دائماً يمر
+        try:
+            if hasattr(db_manager, 'is_user_admin') and db_manager.is_user_admin(user_id):
+                return True
+        except Exception:
+            pass
+        
         user_info = db_manager.get_user_info(user_id)
         if not user_info:
             logger.info(f"User {user_id} not found in database")
             return False
             
-        # التحقق من وجود جميع الحقول الأساسية
+        # التحقق من وجود الاسم كحد أدنى (كافي لاستخدام القائمة)
         full_name = user_info.get('full_name')
+        has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
+        
+        if not has_full_name:
+            logger.info(f"User {user_id} has no valid name - not registered")
+            return False
+        
+        # التحقق من باقي الحقول (للتسجيل الكامل)
         email = user_info.get('email')
         phone = user_info.get('phone')
         grade = user_info.get('grade')
         
-        # التحقق من أن جميع الحقول الأساسية موجودة وليست فارغة
-        has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
         has_email = email not in [None, 'None', '']
         has_phone = phone not in [None, 'None', '']
         has_grade = grade not in [None, 'None', '']
         
-        # اعتبار المستخدم مسجلاً فقط إذا كانت جميع الحقول الأساسية موجودة
-        is_registered = all([has_full_name, has_email, has_phone, has_grade])
+        # المستخدم مسجل إذا عنده اسم + حقل واحد على الأقل
+        is_registered = has_full_name and (has_email or has_phone or has_grade)
+        
+        if not is_registered:
+            # حتى لو ما عنده غير الاسم، نعتبره مسجل مبدئياً
+            is_registered = has_full_name
         
         logger.info(f"User {user_id} registration check: {is_registered}")
-        logger.info(f"Details: Name: {has_full_name} ({full_name}), Email: {has_email} ({email}), Phone: {has_phone} ({phone}), Grade: {has_grade} ({grade})")
         
         return is_registered
     except Exception as e:

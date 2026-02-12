@@ -165,34 +165,10 @@ def _display_subjects(plan):
 # ============================================================
 #  1. القائمة الرئيسية — تعرض الخطة النشطة أو إنشاء جديد
 # ============================================================
-def _is_schedule_enabled():
-    """التحقق من تفعيل ميزة جدول المذاكرة"""
-    try:
-        try:
-            from database.manager import get_bot_setting
-        except ImportError:
-            from manager import get_bot_setting
-        return get_bot_setting('allow_study_schedule', 'off') == 'on'
-    except Exception:
-        return False
-
-
 async def study_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query:
         await query.answer()
-
-    # التحقق من تفعيل الميزة
-    if not _is_schedule_enabled():
-        chat_id = update.effective_chat.id
-        msg_id = query.message.message_id if query else None
-        text = "⚠️ ميزة جدول المذاكرة غير مفعّلة حالياً"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu")]])
-        if msg_id:
-            await _safe_edit(context, chat_id, msg_id, text, kb)
-        else:
-            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
-        return
 
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -1294,7 +1270,7 @@ def _draw_card(c, x, y, w, h, day, ar):
         c.setFillColor(colors.HexColor('#333333'))
         c.setFont('ArabicFont', 9)
         # أرقام الصفحات مع حرف ص
-        c.drawCentredString(cx, ct - 34, f"{day['pages_start']}-{day['pages_end']}")
+        c.drawCentredString(cx, ct - 34, ar(f"ص {day['pages_start']}-{day['pages_end']}"))
 
         c.setFillColor(colors.HexColor('#666666'))
         c.setFont('ArabicFont', 7)
@@ -1472,33 +1448,26 @@ def _draw_weekly_cover(c, width, height, plan, subj_display, student_name, bot_u
 
 def _draw_weeks_page(c, width, height, subj_display, weeks_data, week_nums):
     from reportlab.lib import colors
-    margin = 25
+    margin = 30
     usable_w = width - 2 * margin
 
-    # الهيدر
     c.setFillColor(colors.HexColor('#2c3e50'))
-    c.rect(0, height - 35, width, 35, fill=1)
+    c.rect(0, height - 40, width, 40, fill=1)
     c.setFillColor(colors.white)
-    c.setFont('ArabicFontBold', 11)
-    c.drawCentredString(width / 2, height - 24,
+    c.setFont('ArabicFontBold', 12)
+    c.drawCentredString(width / 2, height - 27,
                         _reshape_arabic(f"جدول مذاكرة {subj_display[:20]} — أ. حسين الموسى — بوت كيم تحصيلي"))
 
-    # حساب أبعاد الجداول
-    top_margin = 45
-    bottom_margin = 35
-    gap_h = 15  # مسافة عمودية بين الصفين
-    gap_w = 15  # مسافة أفقية بين العمودين
+    usable_h = height - 100
+    table_w = (usable_w - 20) / 2
+    table_h = (usable_h - 30) / 2
 
-    usable_h = height - top_margin - bottom_margin
-    table_w = (usable_w - gap_w) / 2
-    table_h = (usable_h - gap_h) / 2
-
-    # ترتيب من اليمين لليسار
+    # ترتيب الجداول من اليمين لليسار (عربي)
     positions = [
-        (margin + table_w + gap_w, height - top_margin - table_h),       # يمين فوق
-        (margin, height - top_margin - table_h),                          # يسار فوق
-        (margin + table_w + gap_w, height - top_margin - 2 * table_h - gap_h),  # يمين تحت
-        (margin, height - top_margin - 2 * table_h - gap_h),              # يسار تحت
+        (margin + table_w + 20, height - 60 - table_h),      # اليمين فوق
+        (margin, height - 60 - table_h),                      # اليسار فوق
+        (margin + table_w + 20, height - 80 - 2 * table_h),  # اليمين تحت
+        (margin, height - 80 - 2 * table_h),                  # اليسار تحت
     ]
 
     for idx, wn in enumerate(week_nums[:4]):
@@ -1507,51 +1476,40 @@ def _draw_weeks_page(c, width, height, subj_display, weeks_data, week_nums):
         _draw_week_table(c, px, py, table_w, table_h, wn, days)
 
     c.setFillColor(colors.HexColor('#888888'))
-    c.setFont('ArabicFont', 8)
-    c.drawCentredString(width / 2, 10, _reshape_arabic(random.choice(MOTIVATIONAL_QUOTES)))
+    c.setFont('ArabicFont', 9)
+    c.drawCentredString(width / 2, 12, _reshape_arabic(random.choice(MOTIVATIONAL_QUOTES)))
 
 
 def _draw_week_table(c, x, y, w, h, week_num, days):
     from reportlab.lib import colors
 
-    # عنوان الأسبوع
-    title_h = 22
     title = f"الأسبوع {WEEK_NAMES.get(week_num, str(week_num))}"
     c.setFillColor(colors.HexColor('#2c3e50'))
-    c.roundRect(x, y + h - title_h, w, title_h, 4, fill=1)
+    c.roundRect(x, y + h - 25, w, 25, 5, fill=1)
     c.setFillColor(colors.white)
-    c.setFont('ArabicFontBold', 10)
-    c.drawCentredString(x + w / 2, y + h - title_h + 6, _reshape_arabic(title))
+    c.setFont('ArabicFontBold', 11)
+    c.drawCentredString(x + w / 2, y + h - 18, _reshape_arabic(title))
 
-    # رأس الجدول
-    header_h = 17
-    header_y = y + h - title_h - header_h
-    # أعمدة: إنجاز | المادة والصفحة | التاريخ | اليوم (من اليسار لليمين)
-    col_labels = ['✓', 'المادة والصفحة', 'التاريخ', 'اليوم']
-    cw = [w * 0.10, w * 0.42, w * 0.23, w * 0.25]
+    header_y = y + h - 50
+    col_labels = ['الإنجاز', 'ملاحظات', 'الصفحة', 'التاريخ', 'اليوم']
+    cw = [w * 0.15, w * 0.18, w * 0.24, w * 0.26, w * 0.17]
 
     c.setFillColor(colors.HexColor('#ecf0f1'))
-    c.rect(x, header_y, w, header_h, fill=1)
-    c.setStrokeColor(colors.HexColor('#bdc3c7'))
-    c.setLineWidth(0.3)
-    c.rect(x, header_y, w, header_h)
-
+    c.rect(x, header_y, w, 20, fill=1)
     c.setFillColor(colors.HexColor('#2c3e50'))
-    c.setFont('ArabicFontBold', 7)
+    c.setFont('ArabicFontBold', 8)
     cx = x
     for i, col in enumerate(col_labels):
-        c.drawCentredString(cx + cw[i] / 2, header_y + 5, _reshape_arabic(col))
+        c.drawCentredString(cx + cw[i] / 2, header_y + 6, _reshape_arabic(col))
         cx += cw[i]
 
-    # صفوف الأيام
-    body_h = h - title_h - header_h - 2
-    row_h = body_h / 7
+    row_h = (h - 55) / 7
+    c.setFont('ArabicFont', 8)
 
     for idx, day in enumerate(days[:7]):
         ry = header_y - (idx + 1) * row_h
         is_rest = day.get('is_rest_day', False)
 
-        # خلفية الصف
         if is_rest:
             c.setFillColor(colors.HexColor('#fff3e0'))
         elif idx % 2 == 0:
@@ -1560,68 +1518,74 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
             c.setFillColor(colors.HexColor('#f8f9fa'))
         c.rect(x, ry, w, row_h, fill=1)
 
-        # حدود الصف
         c.setStrokeColor(colors.HexColor('#dee2e6'))
-        c.setLineWidth(0.2)
+        c.setLineWidth(0.3)
         c.rect(x, ry, w, row_h)
 
+        c.setFillColor(colors.HexColor('#333333'))
         ty = ry + row_h / 2 - 3
+        cx = x
+
+        # === الترتيب المعكوس: الإنجاز، ملاحظات، الصفحة، التاريخ، اليوم ===
 
         if is_rest:
-            # يوم راحة — نص واحد في المنتصف
             c.setFillColor(colors.HexColor('#e67e22'))
-            c.setFont('ArabicFontBold', 8)
-            c.drawCentredString(x + w / 2, ty, _reshape_arabic("🛋 راحة"))
-            c.setFont('ArabicFont', 7)
+            c.setFont('ArabicFontBold', 9)
+            c.drawCentredString(x + w / 2, ty, _reshape_arabic("راحة"))
+            c.setFont('ArabicFont', 8)
             c.setFillColor(colors.HexColor('#333333'))
         else:
-            c.setFillColor(colors.HexColor('#333333'))
-            c.setFont('ArabicFont', 7)
-            cx = x
-
-            # 1. عمود الإنجاز
+            # 1. عمود الإنجاز (الأول من اليمين)
             if day['is_completed']:
                 c.setFillColor(colors.HexColor('#27ae60'))
-                c.setFont('ArabicFontBold', 11)
-                c.drawCentredString(cx + cw[0] / 2, ty, "✓")
+                st = "✓"
             else:
                 c.setFillColor(colors.HexColor('#bdc3c7'))
-                c.setFont('ArabicFont', 10)
-                c.drawCentredString(cx + cw[0] / 2, ty, "☐")
+                st = "☐"
+            c.setFont('ArabicFontBold', 12)
+            c.drawCentredString(cx + cw[0] / 2, ty, st)
+            c.setFont('ArabicFont', 8)
+            c.setFillColor(colors.HexColor('#333333'))
             cx += cw[0]
 
-            # 2. عمود المادة والصفحة
-            c.setFillColor(colors.HexColor('#333333'))
-            c.setFont('ArabicFont', 7)
+            # 2. عمود الملاحظات (الثاني من اليمين)
+            notes_text = day.get('notes', '') or ''
+            if notes_text:
+                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(str(notes_text)[:20]))
+            cx += cw[1]
+
+            # 3. عمود الصفحة (الثالث من اليمين) - المادة + الصفحات
             subject = day.get('subject', '') or ''
             pages_text = day.get('pages', '') or ''
+
+            # جلب رقم الصفحات إذا مو موجود
             if not pages_text:
                 ps = day.get('pages_start', 0)
                 pe = day.get('pages_end', 0)
                 if ps and pe:
                     pages_text = f"{ps}-{pe}"
 
+            # بناء النص: مادة + صفحات
             if subject and pages_text:
-                # سطرين: المادة فوق والصفحات تحت
-                c.setFont('ArabicFontBold', 6.5)
-                c.drawCentredString(cx + cw[1] / 2, ty + 4, _reshape_arabic(subject[:10]))
-                c.setFont('ArabicFont', 6.5)
-                c.drawCentredString(cx + cw[1] / 2, ty - 4, f"{pages_text}")
-            elif subject:
-                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(subject[:12]))
+                display = f"{subject}: {pages_text}"
             elif pages_text:
-                c.drawCentredString(cx + cw[1] / 2, ty, pages_text[:12])
-            cx += cw[1]
+                display = pages_text
+            elif subject:
+                display = subject
+            else:
+                display = ""
 
-            # 3. عمود التاريخ
-            c.setFont('ArabicFont', 7)
-            c.drawCentredString(cx + cw[2] / 2, ty, day['day_date'].strftime('%m/%d'))
+            if display:
+                c.drawCentredString(cx + cw[2] / 2, ty, _reshape_arabic(display[:22]))
             cx += cw[2]
 
-            # 4. عمود اليوم
-            c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(day['day_name'][:8]))
+            # 4. عمود التاريخ (الرابع من اليمين)
+            c.drawCentredString(cx + cw[3] / 2, ty, day['day_date'].strftime('%m/%d'))
+            cx += cw[3]
 
-    # إطار الجدول الخارجي
+            # 5. عمود اليوم (الخامس - أقصى اليسار)
+            c.drawCentredString(cx + cw[4] / 2, ty, _reshape_arabic(day['day_name'][:8]))
+
     c.setStrokeColor(colors.HexColor('#2c3e50'))
-    c.setLineWidth(0.8)
-    c.rect(x, y + h - title_h - header_h - 7 * row_h, w, header_h + 7 * row_h)
+    c.setLineWidth(1)
+    c.rect(x, y, w, h - 25)
