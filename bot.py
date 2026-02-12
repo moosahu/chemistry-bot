@@ -25,6 +25,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ConversationHandler,
     MessageHandler,
+    ContextTypes,
     filters,
     PicklePersistence,
     CallbackContext,
@@ -612,7 +613,7 @@ def main() -> None:
     # === تتبع قراءة الإشعارات التلقائي ===
     _auto_track_cache = {}  # {user_id: last_check_timestamp}
 
-    async def _auto_track_read(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def _auto_track_read(update, context):
         """تسجيل قراءة تلقائية عند أي تفاعل — مع كاش 10 دقائق"""
         try:
             user = update.effective_user
