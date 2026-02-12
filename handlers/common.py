@@ -76,9 +76,9 @@ def check_user_registration_directly(user_id, db_manager):
     try:
         if not db_manager or not hasattr(db_manager, 'get_user_info'):
             logger.warning(f"DB_MANAGER not available or missing get_user_info method for user {user_id}")
-            return False  # افتراض أن المستخدم غير مسجل في حالة عدم وجود DB_MANAGER
+            return False
         
-        # التحقق من كون المستخدم أدمن — الأدمن دائماً يمر
+        # الأدمن دائماً يمر
         try:
             if hasattr(db_manager, 'is_user_admin') and db_manager.is_user_admin(user_id):
                 return True
@@ -90,7 +90,7 @@ def check_user_registration_directly(user_id, db_manager):
             logger.info(f"User {user_id} not found in database")
             return False
             
-        # التحقق من وجود الاسم كحد أدنى (كافي لاستخدام القائمة)
+        # التحقق من الاسم كحد أدنى
         full_name = user_info.get('full_name')
         has_full_name = full_name not in [None, 'None', ''] and len(str(full_name).strip()) >= 3
         
@@ -98,28 +98,12 @@ def check_user_registration_directly(user_id, db_manager):
             logger.info(f"User {user_id} has no valid name - not registered")
             return False
         
-        # التحقق من باقي الحقول (للتسجيل الكامل)
-        email = user_info.get('email')
-        phone = user_info.get('phone')
-        grade = user_info.get('grade')
-        
-        has_email = email not in [None, 'None', '']
-        has_phone = phone not in [None, 'None', '']
-        has_grade = grade not in [None, 'None', '']
-        
-        # المستخدم مسجل إذا عنده اسم + حقل واحد على الأقل
-        is_registered = has_full_name and (has_email or has_phone or has_grade)
-        
-        if not is_registered:
-            # حتى لو ما عنده غير الاسم، نعتبره مسجل مبدئياً
-            is_registered = has_full_name
-        
-        logger.info(f"User {user_id} registration check: {is_registered}")
-        
-        return is_registered
+        # المستخدم مسجل إذا عنده اسم صحيح
+        logger.info(f"User {user_id} registration check: True (has name: {full_name})")
+        return True
     except Exception as e:
         logger.error(f"Error checking registration status for user {user_id}: {e}")
-        return False  # افتراض أن المستخدم غير مسجل في حالة حدوث خطأ
+        return False
 
 async def start_command(update: Update, context: CallbackContext) -> int:
     """Handle the /start command."""

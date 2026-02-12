@@ -56,8 +56,6 @@ try:
         sched_cancel_callback,
         sched_dur_callback,
         sched_rest_toggle_callback,
-        sched_pick_start_callback,
-        sched_setstart_callback,
         sched_confirm_callback,
         sched_pages_text_handler,
         study_view_week_callback,
@@ -560,8 +558,6 @@ def main() -> None:
         application.add_handler(CallbackQueryHandler(sched_cancel_callback, pattern=r"^sched_cancel$"))
         application.add_handler(CallbackQueryHandler(sched_dur_callback, pattern=r"^sched_dur_\d+$"))
         application.add_handler(CallbackQueryHandler(sched_rest_toggle_callback, pattern=r"^sched_rest_\d$"))
-        application.add_handler(CallbackQueryHandler(sched_pick_start_callback, pattern=r"^sched_pick_start$"))
-        application.add_handler(CallbackQueryHandler(sched_setstart_callback, pattern=r"^sched_setstart_\d+$"))
         application.add_handler(CallbackQueryHandler(sched_confirm_callback, pattern=r"^sched_confirm$"))
         # التتبع الأسبوعي
         application.add_handler(CallbackQueryHandler(study_view_week_callback, pattern=r"^study_view_week_\d+$"))

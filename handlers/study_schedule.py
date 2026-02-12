@@ -115,7 +115,8 @@ def _progress_bar(pct):
 
 def _clean_user_data(context):
     for k in ['sched_selected', 'sched_subjects', 'sched_pages_idx',
-              'sched_pages_state', 'sched_total_days', 'sched_rest_days']:
+              'sched_pages_state', 'sched_total_days', 'sched_rest_days',
+              'sched_start_date']:
         context.user_data.pop(k, None)
 
 
@@ -563,7 +564,7 @@ async def _show_rest_days(context, chat_id, message_id):
 
     keyboard = [
         row1, row2,
-        [InlineKeyboardButton(f"✅ تأكيد وإنشاء ({study_total} يوم مذاكرة)", callback_data="sched_confirm")],
+        [InlineKeyboardButton(f"▶ التالي: موعد البداية ({study_total} يوم مذاكرة)", callback_data="sched_pick_start")],
         [InlineKeyboardButton("❌ إلغاء", callback_data="sched_cancel")],
     ]
     await _safe_edit(context, chat_id, message_id, text, InlineKeyboardMarkup(keyboard))
@@ -586,6 +587,75 @@ async def sched_rest_toggle_callback(update: Update, context: ContextTypes.DEFAU
 
     context.user_data['sched_rest_days'] = selected
     await _show_rest_days(context, query.message.chat_id, query.message.message_id)
+
+
+# ============================================================
+#  5b. خطوة إضافية: اختيار موعد البداية
+# ============================================================
+async def sched_pick_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض خيارات موعد البداية"""
+    query = update.callback_query
+    await query.answer()
+
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    # حساب أقرب أحد
+    if today.weekday() == 6:
+        next_sun = today
+    else:
+        days_to_sun = (6 - today.weekday()) % 7
+        next_sun = today + timedelta(days=days_to_sun if days_to_sun > 0 else 7)
+
+    done = context.user_data.get('sched_subjects', [])
+    total_days = context.user_data.get('sched_total_days', 30)
+    rest_days = context.user_data.get('sched_rest_days', [4])
+    subj_names = ' '.join(s['icon'] + s['name'] for s in done)
+
+    text = (
+        f"📅 <b>إنشاء جدول مذاكرة</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>الخطوة الأخيرة:</b> متى تبدأ؟\n\n"
+        f"📚 {subj_names}\n"
+        f"📅 المدة: {total_days} يوم\n\n"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton(
+            f"📅 اليوم ({DAY_NAMES.get(today.weekday(), '')} {today.strftime('%m/%d')})",
+            callback_data=f"sched_setstart_0"
+        )],
+        [InlineKeyboardButton(
+            f"📅 بكرة ({DAY_NAMES.get(tomorrow.weekday(), '')} {tomorrow.strftime('%m/%d')})",
+            callback_data=f"sched_setstart_1"
+        )],
+    ]
+
+    # لو الأحد أبعد من بكرة، نضيفه كخيار ثالث
+    if next_sun > tomorrow:
+        keyboard.append([InlineKeyboardButton(
+            f"📅 بداية الأسبوع ({DAY_NAMES.get(next_sun.weekday(), '')} {next_sun.strftime('%m/%d')})",
+            callback_data=f"sched_setstart_{(next_sun - today).days}"
+        )])
+
+    keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data="sched_cancel")])
+
+    await _safe_edit(context, query.message.chat_id, query.message.message_id,
+                     text, InlineKeyboardMarkup(keyboard))
+
+
+async def sched_setstart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """حفظ تاريخ البداية والانتقال للتأكيد"""
+    query = update.callback_query
+    await query.answer()
+
+    days_offset = int(query.data.replace("sched_setstart_", ""))
+    start_date = date.today() + timedelta(days=days_offset)
+    context.user_data['sched_start_date'] = start_date
+
+    # الانتقال مباشرة للتأكيد
+    query.data = "sched_confirm"
+    await sched_confirm_callback(update, context)
 
 
 # ============================================================
@@ -613,12 +683,8 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     weeks = -(-total_days // 7)  # ceiling division
 
-    today = date.today()
-    if today.weekday() == 6:
-        start = today
-    else:
-        days_until_sunday = (6 - today.weekday()) % 7
-        start = today + timedelta(days=days_until_sunday if days_until_sunday > 0 else 7)
+    # استخدام التاريخ المختار أو اليوم كافتراضي
+    start = context.user_data.get('sched_start_date', date.today())
 
     plan_id = None
     try:
@@ -632,7 +698,7 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
     exam_info = _fetch_exam_info()
 
     try:
-        pdf_bytes = _generate_card_pdf(total_days, done, rest_days, bot_username, exam_info)
+        pdf_bytes = _generate_card_pdf(total_days, done, rest_days, bot_username, exam_info, start_weekday=start.weekday())
         subj_names = ' '.join(s['icon'] + s['name'] for s in done)
         await context.bot.send_document(
             chat_id=chat_id,
@@ -978,12 +1044,15 @@ def _fetch_exam_info():
 # ============================================================
 #  توزيع الصفحات مع أيام الراحة
 # ============================================================
-def _distribute_pages(total_days, subjects, rest_weekdays=None):
+def _distribute_pages(total_days, subjects, rest_weekdays=None, start_weekday=None):
     if rest_weekdays is None:
         rest_weekdays = []
 
-    # تحديد أيام الراحة
-    start_weekday = 6  # الأحد
+    # تحديد يوم البداية — إذا ما حُدد، نستخدم اليوم الحالي
+    if start_weekday is None:
+        from datetime import date as _d
+        start_weekday = _d.today().weekday()
+
     rest_day_nums = set()
     for i in range(total_days):
         if (start_weekday + i) % 7 in rest_weekdays:
@@ -1173,7 +1242,7 @@ def _ensure_arabic_font():
 # ============================================================
 #  PDF بطاقات — Card Layout
 # ============================================================
-def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_info=None):
+def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_info=None, start_weekday=None):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.pdfgen import canvas
@@ -1183,7 +1252,7 @@ def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_i
         raise RuntimeError("خط عربي غير متوفر")
 
     ar = _reshape_arabic
-    days = _distribute_pages(total_days, subjects, rest_weekdays)
+    days = _distribute_pages(total_days, subjects, rest_weekdays, start_weekday=start_weekday)
 
     buf = io.BytesIO()
     width, height = A4
@@ -1386,7 +1455,8 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
 
     if subjects_data:
         total_days = plan.get('num_weeks', 1) * 7
-        distributed = _distribute_pages(total_days, subjects_data, rest_days_list)
+        plan_start_weekday = plan['start_date'].weekday() if plan.get('start_date') else None
+        distributed = _distribute_pages(total_days, subjects_data, rest_days_list, start_weekday=plan_start_weekday)
 
         # نستخدم INDEX بدل day_number للربط (أدق وأضمن)
         for idx, day in enumerate(all_days):
@@ -1486,8 +1556,8 @@ def _draw_weeks_page(c, width, height, subj_display, weeks_data, week_nums):
     # حساب أبعاد الجداول
     top_margin = 45
     bottom_margin = 35
-    gap_h = 15  # مسافة عمودية بين الصفين
-    gap_w = 15  # مسافة أفقية بين العمودين
+    gap_h = 15
+    gap_w = 15
 
     usable_h = height - top_margin - bottom_margin
     table_w = (usable_w - gap_w) / 2
@@ -1495,10 +1565,10 @@ def _draw_weeks_page(c, width, height, subj_display, weeks_data, week_nums):
 
     # ترتيب من اليمين لليسار
     positions = [
-        (margin + table_w + gap_w, height - top_margin - table_h),       # يمين فوق
-        (margin, height - top_margin - table_h),                          # يسار فوق
-        (margin + table_w + gap_w, height - top_margin - 2 * table_h - gap_h),  # يمين تحت
-        (margin, height - top_margin - 2 * table_h - gap_h),              # يسار تحت
+        (margin + table_w + gap_w, height - top_margin - table_h),
+        (margin, height - top_margin - table_h),
+        (margin + table_w + gap_w, height - top_margin - 2 * table_h - gap_h),
+        (margin, height - top_margin - 2 * table_h - gap_h),
     ]
 
     for idx, wn in enumerate(week_nums[:4]):
@@ -1523,10 +1593,9 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
     c.setFont('ArabicFontBold', 10)
     c.drawCentredString(x + w / 2, y + h - title_h + 6, _reshape_arabic(title))
 
-    # رأس الجدول
+    # رأس الجدول — 4 أعمدة بدون ملاحظات
     header_h = 17
     header_y = y + h - title_h - header_h
-    # أعمدة: إنجاز | المادة والصفحة | التاريخ | اليوم (من اليسار لليمين)
     col_labels = ['✓', 'المادة والصفحة', 'التاريخ', 'اليوم']
     cw = [w * 0.10, w * 0.42, w * 0.23, w * 0.25]
 
@@ -1560,7 +1629,6 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
             c.setFillColor(colors.HexColor('#f8f9fa'))
         c.rect(x, ry, w, row_h, fill=1)
 
-        # حدود الصف
         c.setStrokeColor(colors.HexColor('#dee2e6'))
         c.setLineWidth(0.2)
         c.rect(x, ry, w, row_h)
@@ -1568,7 +1636,6 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
         ty = ry + row_h / 2 - 3
 
         if is_rest:
-            # يوم راحة — نص واحد في المنتصف
             c.setFillColor(colors.HexColor('#e67e22'))
             c.setFont('ArabicFontBold', 8)
             c.drawCentredString(x + w / 2, ty, _reshape_arabic("🛋 راحة"))
@@ -1590,9 +1657,8 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
                 c.drawCentredString(cx + cw[0] / 2, ty, "☐")
             cx += cw[0]
 
-            # 2. عمود المادة والصفحة
+            # 2. عمود المادة والصفحة (سطرين)
             c.setFillColor(colors.HexColor('#333333'))
-            c.setFont('ArabicFont', 7)
             subject = day.get('subject', '') or ''
             pages_text = day.get('pages', '') or ''
             if not pages_text:
@@ -1602,14 +1668,15 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
                     pages_text = f"{ps}-{pe}"
 
             if subject and pages_text:
-                # سطرين: المادة فوق والصفحات تحت
                 c.setFont('ArabicFontBold', 6.5)
                 c.drawCentredString(cx + cw[1] / 2, ty + 4, _reshape_arabic(subject[:10]))
                 c.setFont('ArabicFont', 6.5)
-                c.drawCentredString(cx + cw[1] / 2, ty - 4, f"{pages_text}")
+                c.drawCentredString(cx + cw[1] / 2, ty - 4, pages_text)
             elif subject:
+                c.setFont('ArabicFont', 7)
                 c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(subject[:12]))
             elif pages_text:
+                c.setFont('ArabicFont', 7)
                 c.drawCentredString(cx + cw[1] / 2, ty, pages_text[:12])
             cx += cw[1]
 
@@ -1621,7 +1688,7 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
             # 4. عمود اليوم
             c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(day['day_name'][:8]))
 
-    # إطار الجدول الخارجي
+    # إطار الجدول
     c.setStrokeColor(colors.HexColor('#2c3e50'))
     c.setLineWidth(0.8)
-    c.rect(x, y + h - title_h - header_h - 7 * row_h, w, header_h + 7 * row_h)
+    c.rect(x, header_y - 7 * row_h, w, header_h + 7 * row_h)
