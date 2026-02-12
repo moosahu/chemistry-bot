@@ -1265,7 +1265,7 @@ def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_i
     margin_x = 35  # زيادة الهامش الجانبي
     gap = 8  # زيادة المسافة بين المربعات
     top_area = 75
-    bottom_area = 120  # زيادة المساحة السفلية لضمان ظهور QR code
+    bottom_area = 130  # مساحة سفلية مرفوعة لضمان ظهور QR عند الطباعة
 
     usable_w = width - 2 * margin_x
     usable_h = height - top_area - bottom_area
@@ -1382,20 +1382,21 @@ def _draw_card_footer(c, width, bot_username, ar):
     from reportlab.lib import colors
     from reportlab.lib.utils import ImageReader
 
+    # رفع الفوتر بالكامل عشان الباركود ما ينقص عند الطباعة
     c.setFillColor(colors.HexColor('#2c3e50'))
     c.setFont('ArabicFontBold', 10)
-    c.drawCentredString(width / 2, 88, ar("إعداد الأستاذ حسين الموسى"))
+    c.drawCentredString(width / 2, 105, ar("إعداد الأستاذ حسين الموسى"))
 
     c.setFillColor(colors.HexColor('#555555'))
     c.setFont('ArabicFont', 9)
-    c.drawCentredString(width / 2, 74, ar(random.choice(MOTIVATIONAL_QUOTES)))
+    c.drawCentredString(width / 2, 91, ar(random.choice(MOTIVATIONAL_QUOTES)))
 
     c.setFont('ArabicFont', 8)
-    c.drawCentredString(width / 2, 60, ar("سجل في بوت الكيمياء للاختبارات والتدريبات"))
+    c.drawCentredString(width / 2, 77, ar("سجل في بوت الكيمياء للاختبارات والتدريبات"))
 
     c.setFillColor(colors.HexColor('#2c3e50'))
     c.setFont('ArabicFontBold', 10)
-    c.drawCentredString(width / 2, 46, f"@{bot_username.upper()}")
+    c.drawCentredString(width / 2, 63, f"@{bot_username.upper()}")
 
     try:
         import qrcode
@@ -1406,7 +1407,7 @@ def _draw_card_footer(c, width, bot_username, ar):
         qr_buf = io.BytesIO()
         qr_img.save(qr_buf, format='PNG')
         qr_buf.seek(0)
-        c.drawImage(ImageReader(qr_buf), width / 2 - 20, 2, 40, 40)
+        c.drawImage(ImageReader(qr_buf), width / 2 - 20, 20, 40, 40)
     except Exception:
         pass
 
