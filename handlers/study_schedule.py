@@ -1242,6 +1242,43 @@ def _ensure_arabic_font():
 
 
 # ============================================================
+#  علامة مائية — Watermark
+# ============================================================
+def _draw_watermark(c, width, height, bot_username):
+    """رسم علامة مائية شفافة: نص كيم تحصيلي + باركود خفيف"""
+    from reportlab.lib.utils import ImageReader
+
+    c.saveState()
+
+    # نص مائل شفاف
+    c.setFillColor('#000000')
+    c.setFillAlpha(0.04)
+    c.setFont('ArabicFontBold', 50)
+    c.translate(width / 2, height / 2)
+    c.rotate(35)
+    c.drawCentredString(0, 0, _reshape_arabic("كيم تحصيلي"))
+    c.rotate(-35)
+    c.translate(-width / 2, -height / 2)
+
+    # باركود صغير شفاف في الزاوية
+    try:
+        import qrcode
+        qr = qrcode.QRCode(version=1, box_size=2, border=1)
+        qr.add_data(f"https://t.me/{bot_username}")
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        qr_buf = io.BytesIO()
+        qr_img.save(qr_buf, format='PNG')
+        qr_buf.seek(0)
+        c.setFillAlpha(0.06)
+        c.drawImage(ImageReader(qr_buf), width - 55, height - 55, 40, 40, mask='auto')
+    except Exception:
+        pass
+
+    c.restoreState()
+
+
+# ============================================================
 #  PDF بطاقات — Card Layout
 # ============================================================
 def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_info=None, start_weekday=None):
@@ -1276,6 +1313,9 @@ def _generate_card_pdf(total_days, subjects, rest_weekdays, bot_username, exam_i
     for page_start in range(0, len(days), cards_per_page):
         if page_start > 0:
             c.showPage()
+
+        # العلامة المائية أولاً (خلف المحتوى)
+        _draw_watermark(c, width, height, bot_username)
 
         page_days = days[page_start:page_start + cards_per_page]
         _draw_card_header(c, width, height, total_days, exam_info, ar)
@@ -1385,7 +1425,7 @@ def _draw_card_footer(c, width, bot_username, ar):
     # رفع الفوتر بالكامل عشان الباركود ما ينقص عند الطباعة
     c.setFillColor(colors.HexColor('#2c3e50'))
     c.setFont('ArabicFontBold', 10)
-    c.drawCentredString(width / 2, 105, ar("إعداد الأستاذ حسين الموسى"))
+    c.drawCentredString(width / 2, 105, ar("إعداد وتطوير أ. حسين الموسى"))
 
     c.setFillColor(colors.HexColor('#555555'))
     c.setFont('ArabicFont', 9)
@@ -1438,6 +1478,7 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
     rest_display = '، '.join(rest_names) if rest_names else 'لا يوجد'
     study_days_count = stats.get('study_days', 0)
 
+    _draw_watermark(c, width, height, bot_username)
     _draw_weekly_cover(c, width, height, plan, subj_display, student_name, bot_username, rest_display, study_days_count)
     # إضافة رقم الصفحة للغلاف
     c.setFillColor(colors.HexColor('#888888'))
@@ -1477,6 +1518,7 @@ def _generate_weekly_pdf(plan, all_days, stats, student_name, bot_username):
     page_num = 2
     for i in range(0, len(week_nums), 4):
         batch = week_nums[i:i + 4]
+        _draw_watermark(c, width, height, bot_username)
         _draw_weeks_page(c, width, height, subj_display, weeks_data, batch)
         # إضافة رقم الصفحة
         c.setFillColor(colors.HexColor('#888888'))
