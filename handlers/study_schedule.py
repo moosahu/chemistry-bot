@@ -1365,7 +1365,7 @@ def _draw_card(c, x, y, w, h, day, ar):
         c.setFillColor(colors.HexColor('#333333'))
         c.setFont('ArabicFont', 9)
         # أرقام الصفحات مع حرف ص
-        c.drawCentredString(cx, ct - 34, f"{day['pages_start']}-{day['pages_end']}")
+        c.drawCentredString(cx, ct - 34, ar(f"ص{day['pages_start']}-{day['pages_end']}"))
 
         c.setFillColor(colors.HexColor('#666666'))
         c.setFont('ArabicFont', 7)
@@ -1595,11 +1595,12 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
     c.setFont('ArabicFontBold', 10)
     c.drawCentredString(x + w / 2, y + h - title_h + 6, _reshape_arabic(title))
 
-    # رأس الجدول — 4 أعمدة بدون ملاحظات
+    # رأس الجدول — 5 أعمدة مع ملاحظات
     header_h = 17
     header_y = y + h - title_h - header_h
-    col_labels = ['✓', 'المادة والصفحة', 'التاريخ', 'اليوم']
-    cw = [w * 0.10, w * 0.42, w * 0.23, w * 0.25]
+    # ✓ | ملاحظات | المادة والصفحة | التاريخ | اليوم
+    col_labels = ['✓', 'ملاحظات', 'المادة والصفحة', 'التاريخ', 'اليوم']
+    cw = [w * 0.08, w * 0.18, w * 0.32, w * 0.20, w * 0.22]
 
     c.setFillColor(colors.HexColor('#ecf0f1'))
     c.rect(x, header_y, w, header_h, fill=1)
@@ -1608,7 +1609,7 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
     c.rect(x, header_y, w, header_h)
 
     c.setFillColor(colors.HexColor('#2c3e50'))
-    c.setFont('ArabicFontBold', 7)
+    c.setFont('ArabicFontBold', 6)
     cx = x
     for i, col in enumerate(col_labels):
         c.drawCentredString(cx + cw[i] / 2, header_y + 5, _reshape_arabic(col))
@@ -1645,50 +1646,60 @@ def _draw_week_table(c, x, y, w, h, week_num, days):
             c.setFillColor(colors.HexColor('#333333'))
         else:
             c.setFillColor(colors.HexColor('#333333'))
-            c.setFont('ArabicFont', 7)
+            c.setFont('ArabicFont', 6.5)
             cx = x
 
             # 1. عمود الإنجاز
             if day['is_completed']:
                 c.setFillColor(colors.HexColor('#27ae60'))
-                c.setFont('ArabicFontBold', 11)
+                c.setFont('ArabicFontBold', 10)
                 c.drawCentredString(cx + cw[0] / 2, ty, "✓")
             else:
                 c.setFillColor(colors.HexColor('#bdc3c7'))
-                c.setFont('ArabicFont', 10)
+                c.setFont('ArabicFont', 9)
                 c.drawCentredString(cx + cw[0] / 2, ty, "☐")
             cx += cw[0]
 
-            # 2. عمود المادة والصفحة (سطرين)
+            # 2. عمود الملاحظات (فارغ للكتابة يدوياً)
             c.setFillColor(colors.HexColor('#333333'))
-            subject = day.get('subject', '') or ''
-            pages_text = day.get('pages', '') or ''
-            if not pages_text:
-                ps = day.get('pages_start', 0)
-                pe = day.get('pages_end', 0)
-                if ps and pe:
-                    pages_text = f"{ps}-{pe}"
-
-            if subject and pages_text:
-                c.setFont('ArabicFontBold', 6.5)
-                c.drawCentredString(cx + cw[1] / 2, ty + 4, _reshape_arabic(subject[:10]))
-                c.setFont('ArabicFont', 6.5)
-                c.drawCentredString(cx + cw[1] / 2, ty - 4, pages_text)
-            elif subject:
-                c.setFont('ArabicFont', 7)
-                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(subject[:12]))
-            elif pages_text:
-                c.setFont('ArabicFont', 7)
-                c.drawCentredString(cx + cw[1] / 2, ty, pages_text[:12])
+            c.setFont('ArabicFont', 5.5)
+            notes_text = day.get('notes', '') or ''
+            if notes_text:
+                c.drawCentredString(cx + cw[1] / 2, ty, _reshape_arabic(str(notes_text)[:15]))
             cx += cw[1]
 
-            # 3. عمود التاريخ
-            c.setFont('ArabicFont', 7)
-            c.drawCentredString(cx + cw[2] / 2, ty, day['day_date'].strftime('%m/%d'))
+            # 3. عمود المادة والصفحة (سطرين)
+            c.setFillColor(colors.HexColor('#333333'))
+            subject = day.get('subject', '') or ''
+            pages_text = ''
+            ps = day.get('pages_start', 0)
+            pe = day.get('pages_end', 0)
+            raw_pages = day.get('pages', '') or ''
+            if raw_pages:
+                pages_text = _reshape_arabic(f"ص{raw_pages}")
+            elif ps and pe:
+                pages_text = _reshape_arabic(f"ص{ps}-{pe}")
+
+            if subject and pages_text:
+                c.setFont('ArabicFontBold', 6)
+                c.drawCentredString(cx + cw[2] / 2, ty + 4, _reshape_arabic(subject[:8]))
+                c.setFont('ArabicFont', 6)
+                c.drawCentredString(cx + cw[2] / 2, ty - 4, pages_text)
+            elif subject:
+                c.setFont('ArabicFont', 6.5)
+                c.drawCentredString(cx + cw[2] / 2, ty, _reshape_arabic(subject[:10]))
+            elif pages_text:
+                c.setFont('ArabicFont', 6.5)
+                c.drawCentredString(cx + cw[2] / 2, ty, pages_text)
             cx += cw[2]
 
-            # 4. عمود اليوم
-            c.drawCentredString(cx + cw[3] / 2, ty, _reshape_arabic(day['day_name'][:8]))
+            # 4. عمود التاريخ
+            c.setFont('ArabicFont', 6.5)
+            c.drawCentredString(cx + cw[3] / 2, ty, day['day_date'].strftime('%m/%d'))
+            cx += cw[3]
+
+            # 5. عمود اليوم
+            c.drawCentredString(cx + cw[4] / 2, ty, _reshape_arabic(day['day_name'][:8]))
 
     # إطار الجدول
     c.setStrokeColor(colors.HexColor('#2c3e50'))
