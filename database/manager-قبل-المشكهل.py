@@ -1516,23 +1516,17 @@ def auto_track_broadcast_read(user_id):
     if not conn: return
     try:
         cur = conn.cursor()
-        # إشعارات آخر 48 ساعة اللي ما قرأها هذا المستخدم وموجهة له
+        # إشعارات آخر 48 ساعة اللي ما قرأها هذا المستخدم
         cur.execute("""
             INSERT INTO broadcast_reads (broadcast_id, user_id)
             SELECT b.id, %s
             FROM broadcasts b
-            JOIN users u ON u.user_id = %s
             WHERE b.created_at > NOW() - INTERVAL '48 hours'
             AND NOT EXISTS (
                 SELECT 1 FROM broadcast_reads br 
                 WHERE br.broadcast_id = b.id AND br.user_id = %s
             )
-            AND (
-                b.target_type = 'all'
-                OR (b.target_type = 'grade' AND b.target_filter = u.grade)
-                OR (b.target_type = 'my_students' AND COALESCE(u.is_my_student, FALSE) = TRUE)
-            )
-        """, (user_id, user_id, user_id))
+        """, (user_id, user_id))
         if cur.rowcount > 0:
             logger.info(f"[AutoTrack] User {user_id} auto-marked {cur.rowcount} broadcasts as read")
         conn.commit()
