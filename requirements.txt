@@ -13,3 +13,4 @@ qrcode[pil]
 
 schedule>=1.2.0
 hijri-converter
+pytz

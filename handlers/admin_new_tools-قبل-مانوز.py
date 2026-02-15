@@ -17,9 +17,7 @@ import os
 import psycopg2
 import psycopg2.extras
 from datetime import datetime, timedelta
-import pytz
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import BadRequest
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes, ConversationHandler
@@ -284,8 +282,7 @@ async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEF
             recent_quizzes = cur.fetchall()
 
         # بناء الرسالة
-        riyadh_tz = pytz.timezone('Asia/Riyadh')
-        now = datetime.now(riyadh_tz).strftime("%Y-%m-%d %H:%M")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
         msg = f"📊 ملخص سريع — {now}\n\n"
 
         msg += f"👥 المسجلين: {total_registered}\n"
@@ -307,15 +304,7 @@ async def admin_quick_summary_callback(update: Update, context: ContextTypes.DEF
                 star = "⭐" if rq['is_my_student'] else ""
                 name = (rq['full_name'] or "—")[:15]
                 score = rq['score_percentage'] or 0
-                # تحويل التوقيت إلى GMT+3
-                completed_at = rq.get('completed_at')
-                if completed_at:
-                    if completed_at.tzinfo is None:
-                        completed_at = pytz.utc.localize(completed_at)
-                    completed_at_local = completed_at.astimezone(riyadh_tz)
-                    time_str = completed_at_local.strftime("%H:%M")
-                else:
-                    time_str = "—"
+                time_str = rq['completed_at'].strftime("%H:%M") if rq['completed_at'] else "—"
                 msg += f"   • {star}{name}: {score}% ({time_str})\n"
 
         keyboard = InlineKeyboardMarkup([
@@ -444,17 +433,7 @@ def _format_student_details(r) -> str:
     is_my = "⭐ طالبي" if r.get('is_my_student') else ""
     quizzes = r['quiz_count'] or 0
     avg_score = r['avg_score'] or 0
-    
-    # تحويل التوقيت إلى GMT+3
-    last_quiz_dt = r.get('last_quiz')
-    if last_quiz_dt:
-        riyadh_tz = pytz.timezone('Asia/Riyadh')
-        if last_quiz_dt.tzinfo is None:
-            last_quiz_dt = pytz.utc.localize(last_quiz_dt)
-        last_quiz_local = last_quiz_dt.astimezone(riyadh_tz)
-        last_quiz = last_quiz_local.strftime("%Y-%m-%d %H:%M")
-    else:
-        last_quiz = "—"
+    last_quiz = r['last_quiz'].strftime("%Y-%m-%d %H:%M") if r['last_quiz'] else "—"
 
     if avg_score >= 80:
         performance = "🟢 ممتاز"
@@ -1519,9 +1498,6 @@ async def broadcast_stats_callback(update: Update, context: ContextTypes.DEFAULT
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]]))
             return
 
-        # تحويل المنطقة الزمنية إلى GMT+3
-        riyadh_tz = pytz.timezone('Asia/Riyadh')
-        
         msg = f"📊 <b>إحصائيات الإشعار #{broadcast_id}</b>\n"
         msg += "━━━━━━━━━━━━━━━━━━\n\n"
         msg += f"📝 <b>النص:</b> {stats['message_text'][:100]}...\n" if len(stats.get('message_text', '')) > 100 else f"📝 <b>النص:</b> {stats.get('message_text', '')}\n"
@@ -1530,11 +1506,7 @@ async def broadcast_stats_callback(update: Update, context: ContextTypes.DEFAULT
         msg += f"📊 نسبة القراءة: {stats['read_pct']}%\n"
         created = stats.get('created_at')
         if created:
-            # تحويل التوقيت إلى GMT+3
-            if created.tzinfo is None:
-                created = pytz.utc.localize(created)
-            created_local = created.astimezone(riyadh_tz)
-            msg += f"🕐 التاريخ: {created_local.strftime('%Y-%m-%d %H:%M')}\n"
+            msg += f"🕐 التاريخ: {created.strftime('%Y-%m-%d %H:%M')}\n"
         msg += "\n"
 
         # قائمة القراء
@@ -1544,15 +1516,7 @@ async def broadcast_stats_callback(update: Update, context: ContextTypes.DEFAULT
             for i, r in enumerate(readers[:30], 1):
                 star = "⭐" if r.get('is_my_student') else ""
                 name = r.get('full_name') or 'بدون اسم'
-                read_at = r.get('read_at')
-                if read_at:
-                    # تحويل التوقيت إلى GMT+3
-                    if read_at.tzinfo is None:
-                        read_at = pytz.utc.localize(read_at)
-                    read_at_local = read_at.astimezone(riyadh_tz)
-                    read_time = read_at_local.strftime('%H:%M')
-                else:
-                    read_time = ''
+                read_time = r['read_at'].strftime('%H:%M') if r.get('read_at') else ''
                 msg += f"  {i}. {star}{name} — {read_time}\n"
             if len(readers) > 30:
                 msg += f"  ... و{len(readers) - 30} آخرين\n"
@@ -1566,17 +1530,7 @@ async def broadcast_stats_callback(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("🔄 تحديث", callback_data=f"bc_stats_{broadcast_id}")],
             [InlineKeyboardButton("⬅️ رجوع", callback_data="admin_broadcast_reads_list")],
         ])
-        
-        # معالجة خطأ "Message is not modified"
-        try:
-            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
-        except BadRequest as e:
-            if "Message is not modified" in str(e):
-                # إرسال إشعار للمستخدم بأنه لا توجد تحديثات جديدة
-                await query.answer("✅ لا توجد تحديثات جديدة", show_alert=False)
-            else:
-                # إعادة رفع الخطأ إذا كان لسبب آخر
-                raise
+        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"[BroadcastStats] Error: {e}", exc_info=True)
@@ -1606,26 +1560,13 @@ async def admin_broadcast_reads_list_callback(update: Update, context: ContextTy
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="admin_show_tools_menu")]]))
             return
 
-        # تحويل المنطقة الزمنية إلى GMT+3
-        riyadh_tz = pytz.timezone('Asia/Riyadh')
-        
         msg = "📊 <b>آخر الإشعارات</b>\n━━━━━━━━━━━━━━━━━━\n\n"
         keyboard = []
         for bc in broadcasts:
             sent = bc.get('sent_count', 0)
             read = bc.get('read_count', 0)
             pct = round(read / sent * 100) if sent > 0 else 0
-            
-            # تحويل التوقيت إلى GMT+3
-            created_at = bc.get('created_at')
-            if created_at:
-                if created_at.tzinfo is None:
-                    created_at = pytz.utc.localize(created_at)
-                created_at_local = created_at.astimezone(riyadh_tz)
-                date_str = created_at_local.strftime('%m/%d %H:%M')
-            else:
-                date_str = ''
-            
+            date_str = bc['created_at'].strftime('%m/%d %H:%M') if bc.get('created_at') else ''
             text_preview = (bc.get('message_text') or '')[:40]
             msg += f"📌 <b>#{bc['id']}</b> — {date_str}\n"
             msg += f"   {text_preview}...\n" if len(bc.get('message_text', '')) > 40 else f"   {text_preview}\n"
@@ -2522,18 +2463,9 @@ async def admin_study_report_callback(update: Update, context: ContextTypes.DEFA
         # لم يبدأوا
         if inactive:
             msg += f"❌ <b>لم يبدأوا ({len(inactive)}):</b>\n"
-            riyadh_tz = pytz.timezone('Asia/Riyadh')
             for p in inactive[:10]:
                 star = "⭐" if p.get('is_my_student') else ""
-                # تحويل التوقيت إلى GMT+3
-                created_at = p.get('created_at')
-                if created_at:
-                    if created_at.tzinfo is None:
-                        created_at = pytz.utc.localize(created_at)
-                    created_at_local = created_at.astimezone(riyadh_tz)
-                    created = created_at_local.strftime('%m/%d')
-                else:
-                    created = ''
+                created = p['created_at'].strftime('%m/%d') if p.get('created_at') else ''
                 msg += f"  {star}{p.get('full_name') or 'بدون اسم'} — أنشأ: {created}\n"
             if len(inactive) > 10:
                 msg += f"  ... و{len(inactive) - 10} آخرين\n"
